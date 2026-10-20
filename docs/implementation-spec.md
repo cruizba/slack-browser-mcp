@@ -276,7 +276,9 @@ user id and the label is that person's name; a group DM is named after its
 members (`mpdm-<handles>-<n>` resolved through the user list). The same label
 feeds `list_conversations` filtering and sorting, so a person's name finds their
 DM, and `dm:<person>` or `@<person>` is accepted anywhere a channel is
-expected.
+expected. A listing appends the conversation id to the label, and reading a
+reference takes the id back out, so the printed line is itself a handle; the peer
+user id a DM is archived under is accepted for the same reason.
 
 Limits exist to protect the context window: `read_messages` caps at 200, and the
 footer tells the model how to page rather than dumping history.

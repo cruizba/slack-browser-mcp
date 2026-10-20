@@ -703,7 +703,7 @@ export function buildServer(): McpServer {
         channel: z
           .string()
           .describe(
-            'Channel name (with or without #), Slack channel id, DM id, or the person a DM is with (dm:Ana Ruiz, @ana).',
+            'Channel name (with or without #), Slack channel id, DM id, the person a DM is with (dm:Ana Ruiz, @ana), or a label as list_conversations prints it: dm:Ana Ruiz (D01ANA).',
           ),
         limit: z.number().int().min(1).max(200).default(20),
         oldest: z.string().optional().describe('Slack ts; only messages after it.'),
@@ -808,7 +808,7 @@ export function buildServer(): McpServer {
         'Read every reply of a thread. Pass the ts of the parent message as thread_ts; read_messages prints it next to messages that have replies. Served from the archive when the whole thread is there, otherwise from Slack (and kept).',
       inputSchema: {
         workspace,
-        channel: z.string().describe('Channel name or id where the thread lives.'),
+        channel: z.string().describe('Channel name or id where the thread lives, in any form read_messages takes.'),
         thread_ts: z.string().describe('ts of the parent message, for example 1729432991.123456.'),
         limit: z.number().int().min(1).max(200).default(100),
       },
@@ -924,7 +924,7 @@ export function buildServer(): McpServer {
         channel: z
           .string()
           .describe(
-            'Channel name or id, the person a DM is with (dm:Ana Ruiz), or "me" for your own direct messages.',
+            'Channel name or id, the person a DM is with (dm:Ana Ruiz), "me" for your own direct messages, or a label as list_conversations prints it.',
           ),
         text: z.string().min(1).max(4000),
         thread_ts: z
@@ -1004,7 +1004,7 @@ export function buildServer(): McpServer {
         channel: z
           .string()
           .optional()
-          .describe('Restrict to a channel name (or id) present in the archive.'),
+          .describe('Restrict to a channel name (or id) present in the archive, or a label as list_conversations prints it.'),
         limit: z.number().int().min(1).max(100).default(20),
         include_deleted: z.boolean().default(false),
       },

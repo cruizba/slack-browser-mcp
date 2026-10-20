@@ -64,11 +64,34 @@ describe('conversationLabel', () => {
     assert.equal(conversationLabel({ id: 'C03GONE', name: 'gone' }), '#gone')
     assert.equal(conversationLabel({ id: 'C03GONE' }), '#C03GONE')
   })
+
+  it('keeps a DM and a group DM what they are when only the id arrived', () => {
+    assert.equal(channelLabel({ id: 'D01ANA' }, directory), 'dm:Ana')
+    assert.equal(channelLabel({ id: 'D02GROUP' }, directory), 'group:Ana, Luis Gomez, Michel Maes')
+    assert.equal(channelLabel({ id: 'C01RANDOM' }, directory), '#random')
+  })
 })
 
 describe('conversationFilter', () => {
   it('prefers the conversation id when the reference is one', () => {
     assert.deepEqual(conversationFilter('D01ANA'), { channel: 'D01ANA' })
+  })
+
+  it('takes the id back out of the label a listing printed', () => {
+    for (const ref of [
+      { id: 'C01RANDOM' },
+      { id: 'C02LEADS' },
+      { id: 'D01ANA' },
+      { id: 'D02GROUP' },
+    ]) {
+      const printed = `${conversationLabel(ref, directory)} (${ref.id})`
+      assert.deepEqual(conversationFilter(printed, directory), { channel: ref.id }, printed)
+    }
+  })
+
+  it('maps the peer id a DM is archived under to the same DM', () => {
+    assert.deepEqual(conversationFilter('dm:U02ANA', directory), { channel: 'D01ANA' })
+    assert.deepEqual(conversationFilter('U02ANA', directory), { channel: 'D01ANA' })
   })
 
   it('maps a named person to their DM', () => {
@@ -106,6 +129,16 @@ describe('directoryConversation', () => {
     assert.equal(dm?.id, 'D01ANA')
     const at = directoryConversation(directory, '@Ana')
     assert.equal(at?.id, 'D01ANA')
+  })
+
+  it('resolves the printed label and the archived peer id', () => {
+    assert.equal(directoryConversation(directory, 'dm:Ana (D01ANA)')?.id, 'D01ANA')
+    assert.equal(directoryConversation(directory, 'dm:U02ANA')?.id, 'D01ANA')
+    assert.equal(directoryConversation(directory, 'U02ANA')?.is_im, true)
+  })
+
+  it('hands back an unknown printed id instead of asking Slack for it', () => {
+    assert.deepEqual(directoryConversation(directory, 'dm:Ana (D09GONE)'), { id: 'D09GONE' })
   })
 
   it('returns the SlackChannel shape with is_im set for DMs', () => {

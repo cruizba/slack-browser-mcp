@@ -81,6 +81,15 @@ describe('directory helpers', () => {
     assert.equal(directoryUserByReference(dir, 'luis'), undefined)
   })
 
+  it('resolves a person by the user id the archive stores', () => {
+    const dir = directory({
+      users: [{ id: 'U02ANA', name: 'ana.ruiz', real_name: 'Ana Ruiz' }],
+    })
+    assert.equal(directoryUserByReference(dir, 'U02ANA')?.id, 'U02ANA')
+    assert.equal(directoryUserByReference(dir, '@u02ana')?.id, 'U02ANA')
+    assert.equal(directoryUserByReference(dir, 'U09NOBODY'), undefined)
+  })
+
   it('refuses to pick one of two people who share a name', () => {
     const dir = directory({
       users: [

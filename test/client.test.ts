@@ -117,6 +117,14 @@ describe('SlackClient', () => {
     assert.equal(calls.length, 0)
   })
 
+  it('takes the id from the label a listing printed', async () => {
+    const { fetchImpl, calls } = recordingFetch([])
+    const client = new SlackClient(account, { fetch: fetchImpl })
+    const channel = await client.resolveChannel('dm:Ana Ruiz (D01ANARUIZ)')
+    assert.equal(channel.id, 'D01ANARUIZ')
+    assert.equal(calls.length, 0)
+  })
+
   it('resolves a DM from the person it is with', async () => {
     const { fetchImpl } = recordingFetch([
       () =>

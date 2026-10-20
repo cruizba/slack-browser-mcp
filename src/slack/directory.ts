@@ -68,7 +68,12 @@ export interface DirectoryClient {
 export function conversationKind(channel: SlackChannel): ConversationKind {
   if (channel.is_im) return 'dm'
   if (channel.is_mpim) return 'mpim'
-  return channel.is_private ? 'private' : 'channel'
+  if (channel.is_private) return 'private'
+  // A channel known only by its id (a reference passed through, not a Slack
+  // listing) still says what it is in its first letter.
+  if (channel.id.startsWith('D')) return 'dm'
+  if (channel.id.startsWith('G')) return 'mpim'
+  return 'channel'
 }
 
 export const DIRECTORY_MAX_AGE_MS = 24 * 60 * 60_000
@@ -120,8 +125,9 @@ export function directoryUserByHandle(
 }
 
 /**
- * Matches what a person is called around here, so `dm:Ana Ruiz` works. A name two
- * people share resolves to nobody: picking one would address the wrong person.
+ * Matches what a person is called around here, so `dm:Ana Ruiz` works, and the
+ * user id the archive stores in place of a name works too. A name two people
+ * share resolves to nobody: picking one would address the wrong person.
  */
 export function directoryUserByReference(
   directory: Directory | undefined,
@@ -129,10 +135,12 @@ export function directoryUserByReference(
 ): DirectoryUser | undefined {
   const needle = reference.trim().replace(/^@/, '').toLowerCase()
   if (!needle || !directory) return undefined
-  const matches = directory.users.filter((user) =>
-    [user.display_name, user.name, user.real_name].some(
-      (field) => field !== undefined && field.toLowerCase() === needle,
-    ),
+  const matches = directory.users.filter(
+    (user) =>
+      user.id.toLowerCase() === needle ||
+      [user.display_name, user.name, user.real_name].some(
+        (field) => field !== undefined && field.toLowerCase() === needle,
+      ),
   )
   return matches.length === 1 ? matches[0] : undefined
 }

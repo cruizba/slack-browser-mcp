@@ -19,6 +19,7 @@ import {
   type Directory,
   type DirectoryChannel,
 } from './directory.ts'
+import { parsePrintedReference } from './labels.ts'
 
 export interface ConversationRef {
   id: string
@@ -106,8 +107,16 @@ export function conversationLabel(ref: ConversationRef, directory?: Directory): 
 }
 
 export function slackChannelLabel(channel: SlackChannel, directory?: Directory): string {
+  // Without a flag or a name, the kind is decided by the directory entry or the
+  // id prefix; passing `channel` as-is would freeze it to a public channel.
+  const described = channel.is_im || channel.is_mpim || channel.is_private
   return conversationLabel(
-    { id: channel.id, name: channel.name, peer: channel.user, kind: conversationKind(channel) },
+    {
+      id: channel.id,
+      name: channel.name,
+      peer: channel.user,
+      ...(described ? { kind: conversationKind(channel) } : {}),
+    },
     directory,
   )
 }
@@ -135,12 +144,17 @@ export function directoryConversation(
   reference: string,
 ): SlackChannel | undefined {
   if (!directory) return undefined
-  const raw = reference.trim().replace(/^#/, '')
+  const printed = parsePrintedReference(reference)
+  if (printed.id) {
+    const entry = directoryChannel(directory, printed.id)
+    return entry ? asSlackChannel(entry) : { id: printed.id }
+  }
+  const raw = printed.reference.replace(/^#/, '')
   if (!raw) return undefined
 
   const byId = directory.channels.find((entry) => entry.id === raw)
   if (byId) return asSlackChannel(byId)
-  if (CONVERSATION_ID.test(raw)) return { id: raw, name: raw }
+  if (CONVERSATION_ID.test(raw)) return { id: raw }
 
   const lowered = raw.toLowerCase()
   const named = directory.channels.filter((entry) => entry.name)
@@ -170,7 +184,9 @@ export function conversationFilter(
   directory?: Directory | Array<Directory | undefined>,
 ): ConversationFilter {
   const directories = Array.isArray(directory) ? directory : [directory]
-  const raw = reference.trim()
+  const printed = parsePrintedReference(reference)
+  if (printed.id) return { channel: printed.id }
+  const raw = printed.reference
   if (CONVERSATION_ID.test(raw)) return { channel: raw }
 
   const addressingPerson = /^(dm:|@)/.test(raw)

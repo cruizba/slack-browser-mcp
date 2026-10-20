@@ -7,6 +7,7 @@
 import type { SlackAccount } from '../auth/store.ts'
 import { AuthError, SlackApiError } from '../errors.ts'
 import { redact } from '../log/redact.ts'
+import { parsePrintedReference } from './labels.ts'
 
 const API_BASE = 'https://slack.com/api/'
 
@@ -321,8 +322,11 @@ export class SlackClient {
     reference: string,
     options: ResolveChannelOptions = {},
   ): Promise<SlackChannel> {
-    const raw = reference.trim().replace(/^#/, '')
-    if (/^[CGD][A-Z0-9]{6,}$/.test(raw)) return { id: raw, name: raw }
+    const printed = parsePrintedReference(reference)
+    // No name: a DM has none, and filing one would put an id in channel_name.
+    if (printed.id) return { id: printed.id }
+    const raw = printed.reference.replace(/^#/, '')
+    if (/^[CGD][A-Z0-9]{6,}$/.test(raw)) return { id: raw }
     if (['me', '@me', 'self', 'dm:self'].includes(raw.toLowerCase())) return this.openSelfDm()
 
     const channels = await this.listMyChannels()

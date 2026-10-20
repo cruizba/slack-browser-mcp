@@ -305,6 +305,12 @@ other side, so its label comes from the directory, and a group DM is named after
 its members. A person the directory does not know falls back to the raw id rather
 than a guessed name.
 
+A listing prints the label followed by the conversation id, `dm:Ana Ruiz
+(D01ANA) 2 members`, and that whole line is a valid `channel` in the next call:
+the id is taken from it and the label is not re-resolved. The peer id a DM is
+archived under (`dm:U02ANA`) is accepted as well, which matters for a message the
+archive holds without ever having seen the conversation listed.
+
 **Names instead of ids.** Slack stores a mention as `<@U02ANA>`, a channel as
 `<#C01RANDOM>` and a user group as `<!subteam^S0123|@team>`. Message output
 resolves all of them, plus links and HTML entities, through
