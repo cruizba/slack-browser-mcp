@@ -29,19 +29,19 @@ describe('ArchiveFileStore', () => {
     try {
       const store = new ArchiveFileStore(root)
       const saved = await store.save(
-        'T01OPENVIDU',
+        'T01ACME',
         { id: 'F0ABC', name: 'foto.png', mimetype: 'image/png' },
         new Uint8Array([1, 2, 3, 4]),
       )
       assert.equal((await stat(saved.path)).mode & 0o777, 0o600)
-      assert.equal((await stat(join(root, 'T01OPENVIDU', 'files'))).mode & 0o777, 0o700)
+      assert.equal((await stat(join(root, 'T01ACME', 'files'))).mode & 0o777, 0o700)
       assert.deepEqual([...(await readFile(saved.path))], [1, 2, 3, 4])
 
-      const found = await store.find('T01OPENVIDU', 'F0ABC')
+      const found = await store.find('T01ACME', 'F0ABC')
       assert.equal(found?.path, saved.path)
       assert.equal(found?.name, 'foto.png')
       assert.equal(found?.bytes, 4)
-      assert.equal(await store.find('T01OPENVIDU', 'F9NOPE'), undefined)
+      assert.equal(await store.find('T01ACME', 'F9NOPE'), undefined)
       assert.equal(await store.find('T99OTHER', 'F0ABC'), undefined)
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -53,11 +53,11 @@ describe('ArchiveFileStore', () => {
     try {
       const store = new ArchiveFileStore(root)
       const file = { id: 'F0ABC', name: 'foto.png' }
-      await store.save('T01OPENVIDU', file, new Uint8Array([1]))
-      const again = await store.save('T01OPENVIDU', file, new Uint8Array([2, 3]))
+      await store.save('T01ACME', file, new Uint8Array([1]))
+      const again = await store.save('T01ACME', file, new Uint8Array([2, 3]))
       assert.equal(again.bytes, 2)
       assert.deepEqual([...(await readFile(again.path))], [2, 3])
-      assert.equal((await store.find('T01OPENVIDU', 'F0ABC'))?.bytes, 2)
+      assert.equal((await store.find('T01ACME', 'F0ABC'))?.bytes, 2)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

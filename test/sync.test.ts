@@ -12,7 +12,7 @@ import type { HistoryPage, SlackChannel, SlackMessage } from '../src/slack/clien
 
 const account: SlackAccount = {
   team_id: 'T0TEST',
-  team_name: 'CodeURJC',
+  team_name: 'Globex',
   token: 'xoxc-test',
   d_cookie: 'xoxd-test',
   saved_at: '2026-10-20T00:00:00.000Z',
@@ -69,7 +69,7 @@ function ts(minutesAgo: number, suffix = '000100'): string {
 
 const parent: SlackMessage = {
   ts: '1792500000.000100',
-  user: 'U0CARLOS',
+  user: 'U0AUTHOR',
   text: 'despliegue terminado',
   reply_count: 2,
 }
@@ -172,7 +172,7 @@ test('thread backlog drains a few threads per run instead of all at once', async
   const { store, index } = await scratch(t)
   const parents: SlackMessage[] = [1, 2, 3].map((index) => ({
     ts: `1792500${index}00.000100`,
-    user: 'U0CARLOS',
+    user: 'U0AUTHOR',
     text: `hilo ${index}`,
     reply_count: 1,
   }))

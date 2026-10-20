@@ -38,7 +38,7 @@ else:
 ```text
 /slack-login                              # sign in to a workspace in a browser window
 /slack-workspaces                         # what is stored, which one is the default
-/slack-workspaces use openvidu            # change the default
+/slack-workspaces use acme                # change the default
 /slack                                    # sessions and archive status
 /slack operations 20                      # last 20 messages of #operations
 /slack operations 1792500000.000100       # a thread
@@ -50,7 +50,7 @@ else:
 Everything else — CLI, workspaces, the archive, the sync timer, security,
 troubleshooting — is in [docs/reference.md](docs/reference.md).
 
-Messages come out with names, not ids: mentions like `<@U4C140PEW>`, channel
+Messages come out with names, not ids: mentions like `<@U02ANA>`, channel
 references and user groups are resolved through a local directory that refreshes
 once a day. Attachments are printed as `[file: name id=F0ABC]`, and asking the
 agent to open one saves it to the archive and brings images back into the

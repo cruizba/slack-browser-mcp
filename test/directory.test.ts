@@ -18,29 +18,29 @@ import {
 function directory(overrides: Partial<Directory> = {}): Directory {
   return {
     version: 1,
-    team_id: 'T01OPENVIDU',
+    team_id: 'T01ACME',
     saved_at: '2026-10-20T18:00:00.000Z',
-    users: [{ id: 'U4C140PEW', name: 'mica', display_name: 'mica' }],
-    channels: [{ id: 'C0PJJ70E6', name: 'random' }],
+    users: [{ id: 'U02ANA', name: 'ana', display_name: 'ana' }],
+    channels: [{ id: 'C01RANDOM', name: 'random' }],
     usergroups: [{ id: 'S01TEACH', handle: 'profesores' }],
     ...overrides,
   }
 }
 
 const clients: DirectoryClient = {
-  listUsers: async () => [{ id: 'U4C140PEW', display_name: 'mica' }],
-  listAllChannels: async () => [{ id: 'C0PJJ70E6', name: 'random' }],
+  listUsers: async () => [{ id: 'U02ANA', display_name: 'ana' }],
+  listAllChannels: async () => [{ id: 'C01RANDOM', name: 'random' }],
   listUsergroups: async () => [{ id: 'S01TEACH', handle: 'profesores' }],
 }
 
 describe('directory helpers', () => {
   it('answers references from the stored names', () => {
     const scope = directoryScope(directory())
-    assert.equal(scope?.user('U4C140PEW'), 'mica')
-    assert.equal(scope?.channel('C0PJJ70E6'), 'random')
+    assert.equal(scope?.user('U02ANA'), 'ana')
+    assert.equal(scope?.channel('C01RANDOM'), 'random')
     assert.equal(scope?.usergroup('S01TEACH'), 'profesores')
     assert.equal(scope?.user('U999'), undefined)
-    assert.equal(directoryUser(directory(), 'U4C140PEW'), 'mica')
+    assert.equal(directoryUser(directory(), 'U02ANA'), 'ana')
   })
 
   it('prefers display_name, then real_name, then the handle', () => {
@@ -58,9 +58,9 @@ describe('directory helpers', () => {
 
 describe('fetchDirectory', () => {
   it('collects users, channels and groups', async () => {
-    const fetched = await fetchDirectory(clients, 'T01OPENVIDU', new Date('2026-10-20T18:30:00Z'))
+    const fetched = await fetchDirectory(clients, 'T01ACME', new Date('2026-10-20T18:30:00Z'))
     assert.equal(fetched.saved_at, '2026-10-20T18:30:00.000Z')
-    assert.deepEqual(fetched.channels, [{ id: 'C0PJJ70E6', name: 'random' }])
+    assert.deepEqual(fetched.channels, [{ id: 'C01RANDOM', name: 'random' }])
     assert.equal(fetched.usergroups[0]?.handle, 'profesores')
   })
 
@@ -75,7 +75,7 @@ describe('fetchDirectory', () => {
           throw new Error('missing_scope')
         },
       },
-      'T01OPENVIDU',
+      'T01ACME',
     )
     assert.equal(fetched.users.length, 1)
     assert.deepEqual(fetched.channels, [])
@@ -95,7 +95,7 @@ describe('fetchDirectory', () => {
             },
             listUsergroups: async () => [],
           },
-          'T01OPENVIDU',
+          'T01ACME',
         ),
       /ratelimited/,
     )
@@ -109,7 +109,7 @@ describe('DirectoryStore', () => {
       const store = new DirectoryStore(root)
       const file = await store.write(directory())
       assert.equal((await stat(file)).mode & 0o777, 0o600)
-      assert.deepEqual(await store.read('T01OPENVIDU'), directory())
+      assert.deepEqual(await store.read('T01ACME'), directory())
       assert.equal(await store.read('T99MISSING'), undefined)
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -120,9 +120,9 @@ describe('DirectoryStore', () => {
     const root = await mkdtemp(join(tmpdir(), 'slack-browser-mcp-directory-'))
     try {
       const store = new DirectoryStore(root)
-      await mkdir(join(root, 'T01OPENVIDU'), { recursive: true })
-      await writeFile(join(root, 'T01OPENVIDU', 'directory.json'), 'not json', 'utf8')
-      assert.equal(await store.read('T01OPENVIDU'), undefined)
+      await mkdir(join(root, 'T01ACME'), { recursive: true })
+      await writeFile(join(root, 'T01ACME', 'directory.json'), 'not json', 'utf8')
+      assert.equal(await store.read('T01ACME'), undefined)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -134,9 +134,9 @@ describe('loadDirectory', () => {
     const root = await mkdtemp(join(tmpdir(), 'slack-browser-mcp-directory-'))
     try {
       const store = new DirectoryStore(root)
-      const loaded = await loadDirectory({ client: clients, teamId: 'T01OPENVIDU', store })
-      assert.equal(loaded?.users[0]?.id, 'U4C140PEW')
-      assert.match(await readFile(join(root, 'T01OPENVIDU', 'directory.json'), 'utf8'), /mica/)
+      const loaded = await loadDirectory({ client: clients, teamId: 'T01ACME', store })
+      assert.equal(loaded?.users[0]?.id, 'U02ANA')
+      assert.match(await readFile(join(root, 'T01ACME', 'directory.json'), 'utf8'), /ana/)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -156,7 +156,7 @@ describe('loadDirectory', () => {
             return []
           },
         },
-        teamId: 'T01OPENVIDU',
+        teamId: 'T01ACME',
         store,
         now: new Date(Date.parse('2026-10-20T18:00:00.000Z') + DIRECTORY_MAX_AGE_MS - 1000),
       })
@@ -185,7 +185,7 @@ describe('loadDirectory', () => {
             throw new Error('offline')
           },
         },
-        teamId: 'T01OPENVIDU',
+        teamId: 'T01ACME',
         store,
       })
       assert.equal(calls, 1)
@@ -193,7 +193,7 @@ describe('loadDirectory', () => {
 
       const refreshed = await loadDirectory({
         client: clients,
-        teamId: 'T01OPENVIDU',
+        teamId: 'T01ACME',
         store,
         now: new Date('2026-10-21T00:00:00Z'),
       })

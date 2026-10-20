@@ -135,11 +135,11 @@ File format (`<team_id>.json`):
 
 ```json
 {
-  "team_id": "T01OPENVIDU",
-  "team_name": "OpenVidu",
-  "team_domain": "openvidu",
-  "user": "carlos",
-  "user_id": "U01CARLOS",
+  "team_id": "T01ACME",
+  "team_name": "Acme",
+  "team_domain": "acme",
+  "user": "ana",
+  "user_id": "U01ANA",
   "token": "xoxc-…",
   "d_cookie": "xoxd-…%2B…",
   "d_cookie_name": "d",
@@ -177,7 +177,7 @@ by hand:
 
 ```json
 {
-  "default_workspace": "T01OPENVIDU"
+  "default_workspace": "T01ACME"
 }
 ```
 
@@ -309,9 +309,9 @@ and deletions, so the file is an append-only event log where **the last line for
 `ts` wins**:
 
 ```json
-{"ts":"1792446183.465779","channel":"C051LUGN03F","channel_name":"ci-notifications","user":"U051…","text":"b2d backup SUCCESS","reply_count":0,"synced_at":"2026-10-20T13:56:28.251Z"}
-{"ts":"1792503446.737539","channel":"C051LUGN03F","channel_name":"ci-notifications","user":"UG95…","text":"Testing Custom Slack MCP","thread_ts":null,"synced_at":"2026-10-20T13:59:00.000Z"}
-{"ts":"1792503446.737539","channel":"C051LUGN03F","deleted_at":"2026-10-20T14:02:11.000Z","synced_at":"2026-10-20T14:02:11.000Z"}
+{"ts":"1700000000.000100","channel":"C01CI","channel_name":"ci-notifications","user":"U01…","text":"deploy finished","reply_count":0,"synced_at":"2026-10-20T13:56:28.251Z"}
+{"ts":"1700000100.000200","channel":"C01CI","channel_name":"ci-notifications","user":"U02…","text":"hello from the thread","thread_ts":null,"synced_at":"2026-10-20T13:59:00.000Z"}
+{"ts":"1700000100.000200","channel":"C01CI","deleted_at":"2026-10-20T14:02:11.000Z","synced_at":"2026-10-20T14:02:11.000Z"}
 ```
 
 A deletion is a line with `deleted_at`, and the original text stays in the file.
@@ -459,9 +459,9 @@ Unit tests need no browser and no network:
   disappeared messages, thread backlog draining across runs, and no rewritten
   lines when nothing changed.
 
-Verified against a real workspace on 2026-10-20: login over Google SSO with 2FA
-(CodeURJC, `T0PJJ9F1D`), read of `#ci-notifications`, and two `chat.postMessage`
-sends (channel and self-DM), each read back afterwards.
+Verified against a real workspace on 2026-10-20: login over Google SSO with 2FA,
+read of one channel, and two `chat.postMessage` sends (channel and self-DM), each
+read back afterwards.
 
 Manual checklist for the login path (cannot be automated without a real account):
 

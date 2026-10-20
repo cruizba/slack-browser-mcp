@@ -5,14 +5,14 @@ import { renderMessages } from '../src/slack/format.ts'
 import { resolveReferences, type ReferenceScope } from '../src/slack/references.ts'
 
 const scope: ReferenceScope = {
-  user: (id) => (id === 'U4C140PEW' ? 'mica' : undefined),
-  channel: (id) => (id === 'C0PJJ70E6' ? 'random' : undefined),
+  user: (id) => (id === 'U02ANA' ? 'ana' : undefined),
+  channel: (id) => (id === 'C01RANDOM' ? 'random' : undefined),
   usergroup: (id) => (id === 'S01TEACH' ? 'profesores' : undefined),
 }
 
 describe('resolveReferences', () => {
   it('turns a mention into the name the directory knows', () => {
-    assert.equal(resolveReferences('<@U4C140PEW> tio, miralo', scope), '@mica tio, miralo')
+    assert.equal(resolveReferences('<@U02ANA> tio, miralo', scope), '@ana tio, miralo')
   })
 
   it('keeps the id when the directory has never seen the user', () => {
@@ -24,8 +24,8 @@ describe('resolveReferences', () => {
   })
 
   it('resolves channel references by id', () => {
-    assert.equal(resolveReferences('mira <#C0PJJ70E6>', scope), 'mira #random')
-    assert.equal(resolveReferences('mira <#C0PJJ70E6|random>', scope), 'mira #random')
+    assert.equal(resolveReferences('mira <#C01RANDOM>', scope), 'mira #random')
+    assert.equal(resolveReferences('mira <#C01RANDOM|random>', scope), 'mira #random')
   })
 
   it('resolves user groups and special mentions', () => {
@@ -59,14 +59,14 @@ describe('renderMessages', () => {
       [
         {
           ts: '1792519300.197699',
-          user: 'U4C140PEW',
-          text: '<@U4C140PEW> mira <#C0PJJ70E6> &amp; esta foto',
+          user: 'U02ANA',
+          text: '<@U02ANA> mira <#C01RANDOM> &amp; esta foto',
           files: [{ id: 'F0ABC', name: 'foto.png', mimetype: 'image/png' }],
         },
       ],
-      { names: new Map([['U4C140PEW', 'mica']]), scope },
+      { names: new Map([['U02ANA', 'ana']]), scope },
     )
-    assert.match(line, /mica: @mica mira #random & esta foto/)
+    assert.match(line, /ana: @ana mira #random & esta foto/)
     assert.match(line, /\[file: foto\.png id=F0ABC\]/)
   })
 })

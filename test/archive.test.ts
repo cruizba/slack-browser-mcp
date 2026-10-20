@@ -19,7 +19,7 @@ function record(overrides: Partial<ArchivedMessage> = {}): ArchivedMessage {
     ts: '1792500000.000100',
     channel: CHANNEL,
     channel_name: 'ci-notifications',
-    user: 'U0CARLOS',
+    user: 'U0AUTHOR',
     text: 'hola despliegue',
     synced_at: '2026-10-20T12:00:00.000Z',
     ...overrides,
@@ -80,26 +80,26 @@ describe('ArchiveStore', () => {
       ts: '1792500000.000700',
       channel: CHANNEL,
       text: 'foto vieja',
-      files: ['IMG_1685.jpg'],
+      files: ['holiday.jpg'],
       synced_at: '2026-10-20T12:00:00.000Z',
     } as unknown as ArchivedMessage
     await store.append(TEAM, CHANNEL, [legacy])
     const messages = await store.read(TEAM, CHANNEL)
     assert.deepEqual(
       messages.find((message) => message.ts === '1792500000.000700')?.files,
-      [{ name: 'IMG_1685.jpg' }],
+      [{ name: 'holiday.jpg' }],
     )
 
     await store.append(TEAM, CHANNEL, [
       record({
         ts: '1792500000.000700',
         text: 'foto con id',
-        files: [{ id: 'F0ABC', name: 'IMG_1685.jpg', mimetype: 'image/jpeg', size: 2048 }],
+        files: [{ id: 'F0ABC', name: 'holiday.jpg', mimetype: 'image/jpeg', size: 2048 }],
       }),
     ])
     const updated = await store.read(TEAM, CHANNEL)
     assert.deepEqual(updated.find((message) => message.ts === '1792500000.000700')?.files, [
-      { id: 'F0ABC', name: 'IMG_1685.jpg', mimetype: 'image/jpeg', size: 2048 },
+      { id: 'F0ABC', name: 'holiday.jpg', mimetype: 'image/jpeg', size: 2048 },
     ])
   })
 

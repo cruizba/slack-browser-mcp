@@ -14,7 +14,7 @@ test('recordSend appends one 0600 line with a redacted, bounded preview', async 
   const long = `token=xoxc-supersecret ${'x'.repeat(300)}`
   const file = await recordSend(
     {
-      workspace: 'CodeURJC',
+      workspace: 'Globex',
       channel: '#ci-notifications',
       channel_id: 'C0CINOTIF',
       message_ts: '1792500000.000100',
@@ -30,7 +30,7 @@ test('recordSend appends one 0600 line with a redacted, bounded preview', async 
   assert.equal(lines.length, 1)
   const record = JSON.parse(lines[0]!)
   assert.equal(record.at, '2026-10-20T15:40:00.000Z')
-  assert.equal(record.workspace, 'CodeURJC')
+  assert.equal(record.workspace, 'Globex')
   assert.equal(record.channel_id, 'C0CINOTIF')
   assert.equal(record.message_ts, '1792500000.000100')
   assert.equal(record.chars, long.length)

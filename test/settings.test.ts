@@ -53,15 +53,15 @@ describe('FileSettingsStore', () => {
   })
 
   it('writes the default 0600 and reads it back', async () => {
-    await settings.setDefaultWorkspace('T01OPENVIDU')
+    await settings.setDefaultWorkspace('T01ACME')
     const mode = (await stat(settingsFile)).mode & 0o777
     assert.equal(mode, 0o600)
-    assert.deepEqual(await settings.read(), { default_workspace: 'T01OPENVIDU' })
-    assert.match(await readFile(settingsFile, 'utf8'), /"default_workspace": "T01OPENVIDU"/)
+    assert.deepEqual(await settings.read(), { default_workspace: 'T01ACME' })
+    assert.match(await readFile(settingsFile, 'utf8'), /"default_workspace": "T01ACME"/)
   })
 
   it('drops the key when the default is cleared', async () => {
-    await settings.setDefaultWorkspace('T01OPENVIDU')
+    await settings.setDefaultWorkspace('T01ACME')
     await settings.setDefaultWorkspace(null)
     assert.deepEqual(await settings.read(), {})
     assert.equal((await readFile(settingsFile, 'utf8')).trim(), '{}')
@@ -85,59 +85,59 @@ describe('FileSettingsStore', () => {
 
 describe('ensureDefaultWorkspace', () => {
   it('fills the default the first time a workspace is stored', async () => {
-    assert.equal(await ensureDefaultWorkspace(settings, 'T01OPENVIDU'), true)
-    assert.deepEqual(await settings.read(), { default_workspace: 'T01OPENVIDU' })
+    assert.equal(await ensureDefaultWorkspace(settings, 'T01ACME'), true)
+    assert.deepEqual(await settings.read(), { default_workspace: 'T01ACME' })
   })
 
   it('leaves a default the user already chose', async () => {
     await settings.setDefaultWorkspace('T0CODEURJC')
-    assert.equal(await ensureDefaultWorkspace(settings, 'T01OPENVIDU'), false)
+    assert.equal(await ensureDefaultWorkspace(settings, 'T01ACME'), false)
     assert.deepEqual(await settings.read(), { default_workspace: 'T0CODEURJC' })
   })
 })
 
 describe('workspace resolution', () => {
   it('keeps working with a single stored session', async () => {
-    await store.save(account('T01OPENVIDU', 'OpenVidu', 'openvidu'))
-    assert.equal((await store.resolve()).team_id, 'T01OPENVIDU')
-    assert.deepEqual(await store.default(), { team_id: 'T01OPENVIDU', source: 'only' })
+    await store.save(account('T01ACME', 'Acme', 'acme'))
+    assert.equal((await store.resolve()).team_id, 'T01ACME')
+    assert.deepEqual(await store.default(), { team_id: 'T01ACME', source: 'only' })
   })
 
   it('asks for a reference when several sessions exist and none is default', async () => {
-    await store.save(account('T01OPENVIDU', 'OpenVidu', 'openvidu'))
-    await store.save(account('T0PJJ9F1D', 'CodeURJC', 'codeurjc'))
+    await store.save(account('T01ACME', 'Acme', 'acme'))
+    await store.save(account('T02GLOBEX', 'Globex', 'globex'))
     await assert.rejects(() => store.resolve(), /Several Slack sessions are stored/)
     await assert.rejects(() => store.resolve(), /workspace use/)
     assert.equal(await store.default(), null)
   })
 
   it('uses the default saved in config.json', async () => {
-    await store.save(account('T01OPENVIDU', 'OpenVidu', 'openvidu'))
-    await store.save(account('T0PJJ9F1D', 'CodeURJC', 'codeurjc'))
-    await settings.setDefaultWorkspace('T0PJJ9F1D')
-    assert.equal((await store.resolve()).team_id, 'T0PJJ9F1D')
-    assert.deepEqual(await store.default(), { team_id: 'T0PJJ9F1D', source: 'config' })
+    await store.save(account('T01ACME', 'Acme', 'acme'))
+    await store.save(account('T02GLOBEX', 'Globex', 'globex'))
+    await settings.setDefaultWorkspace('T02GLOBEX')
+    assert.equal((await store.resolve()).team_id, 'T02GLOBEX')
+    assert.deepEqual(await store.default(), { team_id: 'T02GLOBEX', source: 'config' })
   })
 
   it('lets an explicit reference win over env and config', async () => {
-    await store.save(account('T01OPENVIDU', 'OpenVidu', 'openvidu'))
-    await store.save(account('T0PJJ9F1D', 'CodeURJC', 'codeurjc'))
-    await settings.setDefaultWorkspace('T01OPENVIDU')
-    process.env.SLACK_BROWSER_MCP_TEAM = 'T0PJJ9F1D'
-    assert.equal((await store.resolve('OpenVidu')).team_id, 'T01OPENVIDU')
+    await store.save(account('T01ACME', 'Acme', 'acme'))
+    await store.save(account('T02GLOBEX', 'Globex', 'globex'))
+    await settings.setDefaultWorkspace('T01ACME')
+    process.env.SLACK_BROWSER_MCP_TEAM = 'T02GLOBEX'
+    assert.equal((await store.resolve('Acme')).team_id, 'T01ACME')
   })
 
   it('lets SLACK_BROWSER_MCP_TEAM win over config.json', async () => {
-    await store.save(account('T01OPENVIDU', 'OpenVidu', 'openvidu'))
-    await store.save(account('T0PJJ9F1D', 'CodeURJC', 'codeurjc'))
-    await settings.setDefaultWorkspace('T01OPENVIDU')
-    process.env.SLACK_BROWSER_MCP_TEAM = 'codeurjc'
-    assert.equal((await store.resolve()).team_id, 'T0PJJ9F1D')
-    assert.deepEqual(await store.default(), { team_id: 'T0PJJ9F1D', source: 'environment' })
+    await store.save(account('T01ACME', 'Acme', 'acme'))
+    await store.save(account('T02GLOBEX', 'Globex', 'globex'))
+    await settings.setDefaultWorkspace('T01ACME')
+    process.env.SLACK_BROWSER_MCP_TEAM = 'globex'
+    assert.equal((await store.resolve()).team_id, 'T02GLOBEX')
+    assert.deepEqual(await store.default(), { team_id: 'T02GLOBEX', source: 'environment' })
   })
 
   it('explains a default that points at a workspace that is no longer stored', async () => {
-    await store.save(account('T01OPENVIDU', 'OpenVidu', 'openvidu'))
+    await store.save(account('T01ACME', 'Acme', 'acme'))
     await settings.setDefaultWorkspace('T0GONE')
     await assert.rejects(() => store.resolve(), /No Slack session matches "T0GONE"/)
     await assert.rejects(() => store.resolve(), /workspace use/)
@@ -146,14 +146,14 @@ describe('workspace resolution', () => {
 
 describe('workspaceLabels', () => {
   it('maps team ids to names', async () => {
-    await store.save(account('T01OPENVIDU', 'OpenVidu'))
+    await store.save(account('T01ACME', 'Acme'))
     const labels = await workspaceLabels(store)
-    assert.equal(labels.get('T01OPENVIDU'), 'OpenVidu')
+    assert.equal(labels.get('T01ACME'), 'Acme')
   })
 
   it('degrades to an empty map instead of failing on a broken account file', async () => {
-    await store.save(account('T01OPENVIDU', 'OpenVidu'))
-    await chmod(join(root, 'accounts', 'T01OPENVIDU.json'), 0o644)
+    await store.save(account('T01ACME', 'Acme'))
+    await chmod(join(root, 'accounts', 'T01ACME.json'), 0o644)
     assert.equal((await workspaceLabels(store)).size, 0)
   })
 })

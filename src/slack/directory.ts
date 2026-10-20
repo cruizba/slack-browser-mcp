@@ -1,6 +1,6 @@
 /**
  * A local registry of who is who: user ids, channel ids and user-group ids, so a
- * render can say `@mica` and `#random` instead of `U4C140PEW` and `C0PJJ70E6`.
+ * render can say `@ana` and `#random` instead of `U02ANA` and `C01RANDOM`.
  *
  * It is cached on disk because resolution must also work offline (the archive is
  * searchable with no network) and because `users.list` is far cheaper once a day

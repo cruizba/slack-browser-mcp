@@ -82,7 +82,7 @@ test('exposes the Slack tools and survives an empty store', async (t) => {
   assert.match(textOf(missing), /Pass workspace/)
   const nothing = await client.callTool({
     name: 'set_default_workspace',
-    arguments: { workspace: 'OpenVidu' },
+    arguments: { workspace: 'Acme' },
   })
   assert.match(textOf(nothing), /No Slack session stored yet/)
 })

@@ -6,8 +6,8 @@ import { AuthError, SlackApiError } from '../src/errors.ts'
 import { SlackClient } from '../src/slack/client.ts'
 
 const account: SlackAccount = {
-  team_id: 'T01OPENVIDU',
-  team_name: 'OpenVidu',
+  team_id: 'T01ACME',
+  team_name: 'Acme',
   token: 'xoxc-1234567890-abcdef',
   d_cookie: 'xoxd-abcdef%2Bghij',
   d_cookie_name: 'd',
@@ -36,7 +36,7 @@ function recordingFetch(responses: Array<() => Response>) {
 describe('SlackClient', () => {
   it('sends the xoxc token as a form field and the d cookie as a header', async () => {
     const { fetchImpl, calls } = recordingFetch([
-      () => respond({ ok: true, team: 'OpenVidu', team_id: 'T01', user: 'carlos', user_id: 'U01' }),
+      () => respond({ ok: true, team: 'Acme', team_id: 'T01', user: 'ana', user_id: 'U01' }),
     ])
     const client = new SlackClient(account, { fetch: fetchImpl })
     await client.authTest()
@@ -52,13 +52,13 @@ describe('SlackClient', () => {
 
   it('parses auth.test into the workspace identity', async () => {
     const { fetchImpl } = recordingFetch([
-      () => respond({ ok: true, team: 'OpenVidu', team_id: 'T01', user: 'carlos', user_id: 'U01' }),
+      () => respond({ ok: true, team: 'Acme', team_id: 'T01', user: 'ana', user_id: 'U01' }),
     ])
     const client = new SlackClient(account, { fetch: fetchImpl })
     assert.deepEqual(await client.authTest(), {
-      team: 'OpenVidu',
+      team: 'Acme',
       team_id: 'T01',
-      user: 'carlos',
+      user: 'ana',
       user_id: 'U01',
     })
   })
@@ -85,7 +85,7 @@ describe('SlackClient', () => {
     const waits: number[] = []
     const { fetchImpl, calls } = recordingFetch([
       () => respond({ ok: false, error: 'ratelimited' }, { status: 429, headers: { 'retry-after': '1' } }),
-      () => respond({ ok: true, team: 'OpenVidu', team_id: 'T01', user: 'carlos', user_id: 'U01' }),
+      () => respond({ ok: true, team: 'Acme', team_id: 'T01', user: 'ana', user_id: 'U01' }),
     ])
     const client = new SlackClient(account, {
       fetch: fetchImpl,
@@ -124,11 +124,11 @@ describe('SlackClient', () => {
           ok: true,
           members: [
             {
-              id: 'U4C140PEW',
-              name: 'mica',
+              id: 'U02ANA',
+              name: 'ana',
               real_name: 'Mica Test',
               is_bot: false,
-              profile: { display_name: 'mica' },
+              profile: { display_name: 'ana' },
             },
           ],
         }),
@@ -136,10 +136,10 @@ describe('SlackClient', () => {
     const client = new SlackClient(account, { fetch: fetchImpl })
     const [user] = await client.listUsers()
     assert.deepEqual(user, {
-      id: 'U4C140PEW',
-      name: 'mica',
+      id: 'U02ANA',
+      name: 'ana',
       real_name: 'Mica Test',
-      display_name: 'mica',
+      display_name: 'ana',
       is_bot: false,
     })
   })

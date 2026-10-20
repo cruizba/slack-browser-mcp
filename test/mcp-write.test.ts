@@ -23,10 +23,10 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
   const { FileCredentialStore } = await import('../src/auth/store.ts')
   await new FileCredentialStore(join(root, 'config', 'accounts')).save({
     team_id: 'T0TEST',
-    team_name: 'CodeURJC',
-    team_domain: 'codeurjc',
-    user: 'carlos.ruiz',
-    user_id: 'U0CARLOS',
+    team_name: 'Globex',
+    team_domain: 'globex',
+    user: 'ana.lopez',
+    user_id: 'U0AUTHOR',
     token: 'xoxc-test-token',
     d_cookie: 'xoxd-test%2Bcookie',
     d_cookie_name: 'd',
@@ -74,7 +74,7 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
 
   const dry = await client.callTool({
     name: 'post_message',
-    arguments: { channel: 'ci-notifications', text: 'Testing Custom Slack MCP - Forget about this' },
+    arguments: { channel: 'ci-notifications', text: 'hola desde el test' },
   })
   const dryText = (dry.content as Array<{ type: string; text?: string }>)[0]?.text ?? ''
   assert.match(dryText, /Nothing sent/)
@@ -89,17 +89,17 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
     name: 'post_message',
     arguments: {
       channel: 'ci-notifications',
-      text: 'Testing Custom Slack MCP - Forget about this',
+      text: 'hola desde el test',
       confirm: true,
     },
   })
   const sentText = (sent.content as Array<{ type: string; text?: string }>)[0]?.text ?? ''
-  assert.match(sentText, /Sent to CodeURJC · #ci-notifications \(C0CINOTIF\) at ts 1792500000\.000100/)
+  assert.match(sentText, /Sent to Globex · #ci-notifications \(C0CINOTIF\) at ts 1792500000\.000100/)
 
   const post = calls.find((call) => call.method === 'chat.postMessage')
   assert.ok(post, 'chat.postMessage was not called')
   assert.equal(post.body.get('channel'), 'C0CINOTIF')
-  assert.equal(post.body.get('text'), 'Testing Custom Slack MCP - Forget about this')
+  assert.equal(post.body.get('text'), 'hola desde el test')
   assert.equal(post.body.get('token'), 'xoxc-test-token')
   assert.equal(
     calls.filter((call) => call.method === 'chat.postMessage').length,

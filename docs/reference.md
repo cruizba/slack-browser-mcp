@@ -143,7 +143,7 @@ unexpanded, so there it is a TUI feature.
 slack-browser accounts                                   # what is stored
 slack-browser status                                     # is Slack still happy?
 slack-browser read general --limit 10                    # a channel by name
-slack-browser read general --workspace openvidu          # ...in another workspace
+slack-browser read general --workspace acme              # ...in another workspace
 slack-browser read C0123ABCD --oldest 1729432991.000000  # page back in time
 slack-browser thread general 1729432991.123456           # a thread
 slack-browser read me --limit 5                          # your own DM
@@ -164,7 +164,7 @@ Each stored session is a workspace. `list_workspaces` shows them and
 
 ```bash
 slack-browser workspace                   # '*' marks the default workspace
-slack-browser workspace use codeurjc      # default for calls without --workspace
+slack-browser workspace use globex        # default for calls without --workspace
 slack-browser workspace clear             # back to "the only stored session" rule
 ```
 
@@ -188,15 +188,15 @@ source of truth: the index can be rebuilt from it at any time.
 
 ```bash
 slack-browser sync                    # incremental; every workspace by default
-slack-browser sync --workspace openvidu  # just one
+slack-browser sync --workspace acme   # just one
 slack-browser sync --full             # re-fetch the backfill window
 slack-browser sync --since 90         # widen the first backfill to 90 days
 slack-browser sync --quiet            # no per-channel progress on stderr
 slack-browser archive search "mtu"               # full-text, ranked, all workspaces
 slack-browser archive search "mtu" --channel operations
-slack-browser archive search "mtu" --workspace codeurjc
+slack-browser archive search "mtu" --workspace globex
 slack-browser archive stats
-slack-browser archive stats --workspace codeurjc
+slack-browser archive stats --workspace globex
 slack-browser archive reindex         # rebuild the index from the JSONL files
 ```
 
@@ -268,8 +268,8 @@ id and falls back to the default described in
 [Several workspaces](#several-workspaces); `auth_status` prints which one that is
 and why, and an unfiltered `search_messages` labels each hit with its workspace.
 
-**Names instead of ids.** Slack stores a mention as `<@U4C140PEW>`, a channel as
-`<#C0PJJ70E6>` and a user group as `<!subteam^S0123|@team>`. Message output
+**Names instead of ids.** Slack stores a mention as `<@U02ANA>`, a channel as
+`<#C01RANDOM>` and a user group as `<!subteam^S0123|@team>`. Message output
 resolves all of them, plus links and HTML entities, through
 `archive/<team>/directory.json`: a registry built from `users.list`,
 `conversations.list` and `usergroups.list`, refreshed once a day. Unknown ids fall
