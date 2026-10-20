@@ -60,11 +60,11 @@ if ! command -v google-chrome >/dev/null 2>&1 \
   echo "    no Chrome in PATH; the login will need CHROME_PATH or 'npx playwright install chromium'"
 fi
 
-step "Preparing $DIR"
 SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SELF_DIR/package.json" ] && [ -d "$SELF_DIR/src" ] && [ "$DIR_GIVEN" = 0 ]; then
   DIR="$SELF_DIR"
 fi
+step "Preparing $DIR"
 if [ -d "$DIR/.git" ]; then
   echo "    using the existing checkout"
 else
