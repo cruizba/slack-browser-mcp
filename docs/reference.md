@@ -29,7 +29,7 @@ server `slack`. Finally it renders `systemd/slack-browser-sync.service.in` into
 `~/.config/systemd/user/`, installs the timer, enables it and turns on linger.
 It only opens the browser when no session is stored yet, and re-running it is
 safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left on
-its branch).
+its branch). That re-run is also the update: there is no separate command.
 
 ```bash
 ./install.sh --help

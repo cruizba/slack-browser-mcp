@@ -22,6 +22,15 @@ does the rest for every agent it finds — `pi`, `claude`, `opencode`:
 
 Re-running it is safe; `install.sh --help` lists the flags.
 
+## Update
+
+Run the same script again. It pulls `main` and rebuilds before touching anything
+else:
+
+```bash
+~/slack-browser-mcp/install.sh
+```
+
 ## Examples
 
 ```text
