@@ -4,23 +4,37 @@ Slack read and write for pi, Claude Code and opencode, from a normal browser log
 
 ## Install
 
+Pick your agent and paste its one-liner. Everything is installed and registered
+by the time it finishes; `slack-browser login` opens Chrome at the end.
+
+**pi**
+
 ```bash
-git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp ~/slack-browser-mcp && cd ~/slack-browser-mcp && npm install && npm run build && npm link && slack-browser login
-for d in ~/.pi/agent/prompts ~/.claude/commands ~/.config/opencode/commands; do mkdir -p "$d" && ln -sf ~/slack-browser-mcp/commands/slack*.md "$d"/; done
+git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp ~/slack-browser-mcp \
+  && cd ~/slack-browser-mcp && npm install && npm run build && npm link \
+  && mkdir -p ~/.pi/agent/prompts && ln -sf ~/slack-browser-mcp/commands/slack*.md ~/.pi/agent/prompts/ \
+  && pi mcp add slack -- slack-browser serve \
+  && slack-browser login
 ```
 
-## Connect
+**Claude Code**
 
 ```bash
-pi mcp add slack -- slack-browser serve
+git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp ~/slack-browser-mcp \
+  && cd ~/slack-browser-mcp && npm install && npm run build && npm link \
+  && mkdir -p ~/.claude/commands && ln -sf ~/slack-browser-mcp/commands/slack*.md ~/.claude/commands/ \
+  && claude mcp add --scope user slack -- slack-browser serve \
+  && slack-browser login
 ```
 
-```bash
-claude mcp add --scope user slack -- slack-browser serve
-```
+**opencode**
 
 ```bash
-opencode mcp add --global slack -- slack-browser serve
+git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp ~/slack-browser-mcp \
+  && cd ~/slack-browser-mcp && npm install && npm run build && npm link \
+  && mkdir -p ~/.config/opencode/commands && ln -sf ~/slack-browser-mcp/commands/slack*.md ~/.config/opencode/commands/ \
+  && opencode mcp add --global slack -- slack-browser serve \
+  && slack-browser login
 ```
 
 ## Examples
