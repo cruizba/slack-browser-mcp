@@ -53,6 +53,31 @@ export interface SlackChannel {
   topic?: { value?: string }
 }
 
+export interface SlackFile {
+  id?: string
+  name?: string
+  title?: string
+  mimetype?: string
+  size?: number
+  url_private?: string
+  url_private_download?: string
+}
+
+export interface SlackUser {
+  id: string
+  name?: string
+  real_name?: string
+  display_name?: string
+  deleted?: boolean
+  is_bot?: boolean
+}
+
+export interface SlackUsergroup {
+  id: string
+  handle?: string
+  name?: string
+}
+
 export interface SlackMessage {
   ts: string
   user?: string
@@ -64,7 +89,7 @@ export interface SlackMessage {
   reply_count?: number
   latest_reply?: string
   edited?: { ts?: string; user?: string }
-  files?: Array<{ name?: string; title?: string; mimetype?: string }>
+  files?: SlackFile[]
 }
 
 export interface HistoryPage {
@@ -313,11 +338,97 @@ export class SlackClient {
     return { id, name: 'self-dm', is_im: true, user: userId }
   }
 
-  async namesFor(messages: SlackMessage[]): Promise<Map<string, string>> {
+  async listUsers(): Promise<SlackUser[]> {
+    const collected: SlackUser[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < 20; page += 1) {
+      const payload = await this.call<
+        SlackEnvelope & {
+          members?: Array<SlackUser & { profile?: { display_name?: string } }>
+          response_metadata?: { next_cursor?: string }
+        }
+      >('users.list', { limit: 200, ...(cursor ? { cursor } : {}) })
+      for (const member of payload.members ?? []) {
+        collected.push({
+          id: member.id,
+          ...(member.name ? { name: member.name } : {}),
+          ...(member.real_name ? { real_name: member.real_name } : {}),
+          ...(member.profile?.display_name
+            ? { display_name: member.profile.display_name }
+            : {}),
+          ...(member.deleted !== undefined ? { deleted: member.deleted } : {}),
+          ...(member.is_bot !== undefined ? { is_bot: member.is_bot } : {}),
+        })
+      }
+      cursor = payload.response_metadata?.next_cursor || undefined
+      if (!cursor) break
+    }
+    return collected
+  }
+
+  async listAllChannels(): Promise<SlackChannel[]> {
+    const collected: SlackChannel[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < 20; page += 1) {
+      const payload = await this.call<
+        SlackEnvelope & { channels?: SlackChannel[]; response_metadata?: { next_cursor?: string } }
+      >('conversations.list', {
+        types: 'public_channel,private_channel',
+        exclude_archived: true,
+        limit: 200,
+        ...(cursor ? { cursor } : {}),
+      })
+      collected.push(...(payload.channels ?? []))
+      cursor = payload.response_metadata?.next_cursor || undefined
+      if (!cursor) break
+    }
+    return collected
+  }
+
+  async listUsergroups(): Promise<SlackUsergroup[]> {
+    const payload = await this.call<SlackEnvelope & { usergroups?: SlackUsergroup[] }>(
+      'usergroups.list',
+    )
+    return payload.usergroups ?? []
+  }
+
+  async fileInfo(fileId: string): Promise<SlackFile> {
+    const payload = await this.call<SlackEnvelope & { file?: SlackFile }>('files.info', {
+      file: fileId,
+    })
+    if (!payload.file) throw new Error(`files.info returned no file for ${fileId}`)
+    return payload.file
+  }
+
+  /**
+   * Attachment bytes need the same credentials, so they are fetched here rather
+   * than by a caller holding only a URL. Slack redirects between its own hosts,
+   * which keeps the `Authorization` header on the request.
+   */
+  async downloadFile(url: string): Promise<{ bytes: Uint8Array; contentType?: string }> {
+    const cookieName = this.account.d_cookie_name ?? 'd'
+    const response = await this.fetchImpl(url, {
+      headers: {
+        Authorization: `Bearer ${this.account.token}`,
+        Cookie: `${cookieName}=${this.account.d_cookie}`,
+      },
+    })
+    if (!response.ok) {
+      throw new SlackApiError('files.download', `http_${response.status}`)
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    const contentType = response.headers.get('content-type') ?? undefined
+    return contentType ? { bytes, contentType } : { bytes }
+  }
+
+  async namesFor(
+    messages: SlackMessage[],
+    known?: (userId: string) => string | undefined,
+  ): Promise<Map<string, string>> {
     const names = new Map<string, string>()
     for (const message of messages) {
       if (!message.user || names.has(message.user)) continue
-      names.set(message.user, await this.displayName(message.user))
+      names.set(message.user, known?.(message.user) ?? (await this.displayName(message.user)))
     }
     return names
   }

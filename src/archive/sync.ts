@@ -81,8 +81,14 @@ function channelName(channel: SlackChannel): string | undefined {
 function toRecord(channel: SlackChannel, message: SlackMessage, now: Date): ArchivedMessage {
   const name = channelName(channel)
   const files = (message.files ?? [])
-    .map((file) => file.name ?? file.title ?? file.mimetype)
-    .filter((file): file is string => Boolean(file))
+    .map((file) => ({
+      ...(file.id ? { id: file.id } : {}),
+      ...(file.name ? { name: file.name } : {}),
+      ...(file.title ? { title: file.title } : {}),
+      ...(file.mimetype ? { mimetype: file.mimetype } : {}),
+      ...(file.size !== undefined ? { size: file.size } : {}),
+    }))
+    .filter((file) => Object.keys(file).length > 0)
   return {
     ts: message.ts,
     channel: channel.id,
@@ -106,7 +112,8 @@ function changed(cached: ArchivedMessage | undefined, record: ArchivedMessage): 
   return (
     cached.text !== record.text ||
     cached.edited_ts !== record.edited_ts ||
-    cached.reply_count !== record.reply_count
+    cached.reply_count !== record.reply_count ||
+    JSON.stringify(cached.files ?? []) !== JSON.stringify(record.files ?? [])
   )
 }
 

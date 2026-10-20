@@ -3,7 +3,8 @@
  * raw `ts` preserved so a follow-up call can address the same message.
  */
 
-import type { SlackChannel, SlackMessage } from './client.ts'
+import type { SlackChannel, SlackFile, SlackMessage } from './client.ts'
+import { resolveReferences, type ReferenceScope } from './references.ts'
 
 const MAX_MESSAGE_CHARS = 2000
 
@@ -19,12 +20,21 @@ export function channelLabel(channel: SlackChannel): string {
   return `${channel.is_private ? 'private:' : '#'}${channel.name ?? channel.id}`
 }
 
-function messageBody(message: SlackMessage): string {
+/**
+ * The id is the handle `read_file` needs, so it has to travel next to the name:
+ * a re-uploaded or renamed file keeps its id, the label does not.
+ */
+function fileLabel(file: SlackFile): string {
+  const label = file.name ?? file.title ?? file.mimetype ?? 'unnamed'
+  return file.id ? `[file: ${label} id=${file.id}]` : `[file: ${label}]`
+}
+
+function messageBody(message: SlackMessage, scope?: ReferenceScope): string {
   let text = message.text?.trim() ?? ''
   if (!text && message.subtype) text = `(${message.subtype})`
+  text = resolveReferences(text, scope)
   for (const file of message.files ?? []) {
-    const label = file.name ?? file.title ?? file.mimetype ?? 'unnamed'
-    text = `${text}${text ? ' ' : ''}[file: ${label}]`
+    text = `${text}${text ? ' ' : ''}${fileLabel(file)}`
   }
   if (text.length > MAX_MESSAGE_CHARS) {
     text = `${text.slice(0, MAX_MESSAGE_CHARS)}… [truncated]`
@@ -38,6 +48,7 @@ function indentContinuation(text: string, prefix: string): string {
 
 export interface RenderOptions {
   names: Map<string, string>
+  scope?: ReferenceScope | undefined
 }
 
 export function renderMessages(messages: SlackMessage[], options: RenderOptions): string {
@@ -46,7 +57,7 @@ export function renderMessages(messages: SlackMessage[], options: RenderOptions)
       const name = message.user
         ? (options.names.get(message.user) ?? message.user)
         : (message.username ?? message.bot_id ?? 'unknown')
-      const body = indentContinuation(messageBody(message), '    ')
+      const body = indentContinuation(messageBody(message, options.scope), '    ')
       const thread =
         message.reply_count && message.thread_ts === undefined
           ? `  (${message.reply_count} replies, thread_ts ${message.ts})`

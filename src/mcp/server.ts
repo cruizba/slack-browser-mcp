@@ -7,7 +7,7 @@
 
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -22,6 +22,7 @@ import {
   type SlackAccount,
 } from '../auth/store.ts'
 import { ArchiveIndex } from '../archive/index.ts'
+import { ArchiveFileStore } from '../archive/files.ts'
 import { Lock, SyncLock, type LockOwner } from '../archive/lock.ts'
 import { formatAge, oldestAge, teamStatus } from '../archive/status.ts'
 import { ArchiveStore } from '../archive/store.ts'
@@ -31,8 +32,16 @@ import { syncAccount } from '../archive/sync.ts'
 import { AuthError } from '../errors.ts'
 import { redact } from '../log/redact.ts'
 import { recordSend } from '../slack/audit.ts'
-import { SlackClient } from '../slack/client.ts'
+import { SlackClient, type SlackFile } from '../slack/client.ts'
+import {
+  directoryScope,
+  directoryUser,
+  loadDirectory,
+  DirectoryStore,
+  type Directory,
+} from '../slack/directory.ts'
 import { channelLabel, renderMessages } from '../slack/format.ts'
+import { resolveReferences } from '../slack/references.ts'
 
 const VERSION = '0.1.0'
 
@@ -53,7 +62,14 @@ different one, and call auth_status to learn which ones are stored.
 Start with auth_status when a call fails with a session error, then
 list_conversations to learn the channel names, because Slack channel ids and
 names differ per workspace. Message output keeps the raw Slack \`ts\` values: use
-them as thread_ts in get_thread and as oldest/latest in read_messages.
+them as thread_ts in get_thread and as oldest/latest in read_messages. Mentions,
+channel references and user groups are printed as names, resolved through a
+local directory that refreshes once a day; the raw ids stay in the archive.
+
+Attachments appear as \`[file: <name> id=<file id>]\`. \`read_file\` downloads that
+id into the local archive and returns images as an image block, so a screenshot
+or a photo can be part of the conversation instead of a filename. Downloads are
+on demand: nothing large moves until it is asked for.
 
 post_message is the only tool with a side effect on a shared surface. It refuses
 to send unless the call carries confirm=true, and every send is appended to an
@@ -120,6 +136,36 @@ interface Session {
 async function openSession(workspace?: string): Promise<Session> {
   const account = await store.resolve(workspace)
   return { account, client: new SlackClient(account) }
+}
+
+async function openDirectory(account: SlackAccount, client: SlackClient): Promise<Directory | undefined> {
+  return loadDirectory({ client, teamId: account.team_id })
+}
+
+function humanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** Base64 costs a third more than the file, and the model pays for every byte. */
+const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
+
+const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  heic: 'image/heic',
+}
+
+/** A cached file is served when Slack is unreachable, and then the name is all there is. */
+function imageMime(stored: { name: string }, mimetype?: string): string | undefined {
+  if (mimetype) return mimetype
+  const extension = stored.name.toLowerCase().split('.').pop() ?? ''
+  return IMAGE_MIME_BY_EXTENSION[extension]
 }
 
 async function teamIdFor(reference: string): Promise<string> {
@@ -526,7 +572,7 @@ export function buildServer(): McpServer {
     {
       title: 'Read Slack messages',
       description:
-        'Read messages from a channel or DM. Returns them oldest first with their raw Slack ts values. Use oldest/latest to page back in time.',
+        'Read messages from a channel or DM. Returns them oldest first with their raw Slack ts values. Use oldest/latest to page back in time. Attachments show up as [file: name id=F0ABC]; read_file fetches them.',
       inputSchema: {
         workspace,
         channel: z.string().describe('Channel name (with or without #), DM id, or Slack channel id.'),
@@ -556,7 +602,8 @@ export function buildServer(): McpServer {
         }
 
         const chronological = [...page.messages].reverse()
-        const names = await client.namesFor(chronological)
+        const directory = await openDirectory(account, client)
+        const names = await client.namesFor(chronological, (id) => directoryUser(directory, id))
         const header = `${account.team_name} · ${channelLabel(target)} (${target.id}) — ${chronological.length} messages, oldest first`
         const footer = page.has_more
           ? `\n\nmore history exists; call again with oldest=${chronological[0]!.ts}`
@@ -566,7 +613,7 @@ export function buildServer(): McpServer {
           content: [
             {
               type: 'text' as const,
-              text: `${header}\n${renderMessages(chronological, { names })}${footer}`,
+              text: `${header}\n${renderMessages(chronological, { names, scope: directoryScope(directory) })}${footer}`,
             },
           ],
         }
@@ -595,13 +642,79 @@ export function buildServer(): McpServer {
         const { account, client } = await openSession(reference)
         const target = await client.resolveChannel(channel)
         const messages = await client.replies({ channel: target.id, thread_ts, limit })
-        const names = await client.namesFor(messages)
+        const directory = await openDirectory(account, client)
+        const names = await client.namesFor(messages, (id) => directoryUser(directory, id))
         const header = `${account.team_name} · thread in ${channelLabel(target)} (${target.id}) — ${messages.length} messages`
         return {
           content: [
-            { type: 'text' as const, text: `${header}\n${renderMessages(messages, { names })}` },
+            { type: 'text' as const, text: `${header}\n${renderMessages(messages, { names, scope: directoryScope(directory) })}` },
           ],
         }
+      } catch (error) {
+        return failure(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'read_file',
+    {
+      title: 'Read a Slack attachment',
+      description:
+        'Download a file posted in Slack, keep it in the local archive and return it. Message lines print attachments as [file: name id=F0ABC], and that id is the argument here. Images come back as an image block so they can be looked at; anything else comes back as a path to the saved file.',
+      inputSchema: {
+        workspace,
+        file: z.string().min(1).describe('Slack file id, as printed after id= in a message line.'),
+        refresh: z.boolean().default(false).describe('Download again even if the archive already has it.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ workspace: reference, file, refresh }) => {
+      try {
+        const { account, client } = await openSession(reference)
+        const files = new ArchiveFileStore()
+        const cached = refresh ? undefined : await files.find(account.team_id, file)
+
+        let info: SlackFile | undefined
+        try {
+          info = await client.fileInfo(file)
+        } catch (error) {
+          if (!cached) throw error
+        }
+
+        let stored = cached
+        if (!stored) {
+          const url = info?.url_private_download ?? info?.url_private
+          if (!url) {
+            throw new Error(
+              `Slack returned no download URL for ${file}; it may be an external link preview or a deleted file.`,
+            )
+          }
+          const downloaded = await client.downloadFile(url)
+          stored = await files.save(account.team_id, info ?? { id: file }, downloaded.bytes)
+        }
+
+        const mimeType = imageMime(stored, info?.mimetype)
+        const isImage = mimeType?.startsWith('image/') ?? false
+        const summary =
+          `${account.team_name} · ${stored.name} (${file}, ${mimeType ?? 'unknown type'}, ${humanSize(stored.bytes)})` +
+          `\n${stored.path}`
+
+        if (isImage && mimeType && stored.bytes <= MAX_INLINE_IMAGE_BYTES) {
+          const bytes = await readFile(stored.path)
+          return {
+            content: [
+              { type: 'text' as const, text: summary },
+              { type: 'image' as const, data: bytes.toString('base64'), mimeType },
+            ],
+          }
+        }
+
+        const note = isImage
+          ? `\nToo large to inline (limit ${humanSize(MAX_INLINE_IMAGE_BYTES)}); the file is on disk.`
+          : '\nNot an image: read it from that path if the content matters.'
+
+        return { content: [{ type: 'text' as const, text: `${summary}${note}` }] }
       } catch (error) {
         return failure(error)
       }
@@ -731,14 +844,25 @@ export function buildServer(): McpServer {
           }
 
           const labels = team ? new Map<string, string>() : await workspaceLabels(store)
+          const directories = new Map<string, Directory | undefined>()
+          for (const hit of hits) {
+            if (directories.has(hit.team)) continue
+            directories.set(hit.team, await new DirectoryStore(archive.root).read(hit.team))
+          }
           const lines = hits.map((hit) => {
             const label = hit.channel_name ? `#${hit.channel_name}` : hit.channel
-            const author = hit.username ?? hit.user ?? 'unknown'
+            const directory = directories.get(hit.team)
+            const author =
+              hit.username ??
+              directoryUser(directory, hit.user ?? '') ??
+              hit.user ??
+              'unknown'
+            const text = resolveReferences(hit.text ?? '', directoryScope(directory))
             const thread = hit.thread_ts ? ` (thread ${hit.thread_ts})` : ''
             const deleted = hit.deleted ? ' [deleted]' : ''
             const scope = labels.get(hit.team)
             const prefix = scope ? `${scope} · ` : ''
-            return `[${hit.ts}] ${prefix}${label} ${author}: ${hit.text ?? ''}${thread}${deleted}`
+            return `[${hit.ts}] ${prefix}${label} ${author}: ${text}${thread}${deleted}`
           })
           return {
             content: [

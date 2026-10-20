@@ -75,6 +75,34 @@ describe('ArchiveStore', () => {
     assert.equal(messages.find((message) => message.ts === '1792500000.000100')?.deleted_at, undefined)
   })
 
+  it('accepts file records from before attachments carried ids', async () => {
+    const legacy = {
+      ts: '1792500000.000700',
+      channel: CHANNEL,
+      text: 'foto vieja',
+      files: ['IMG_1685.jpg'],
+      synced_at: '2026-10-20T12:00:00.000Z',
+    } as unknown as ArchivedMessage
+    await store.append(TEAM, CHANNEL, [legacy])
+    const messages = await store.read(TEAM, CHANNEL)
+    assert.deepEqual(
+      messages.find((message) => message.ts === '1792500000.000700')?.files,
+      [{ name: 'IMG_1685.jpg' }],
+    )
+
+    await store.append(TEAM, CHANNEL, [
+      record({
+        ts: '1792500000.000700',
+        text: 'foto con id',
+        files: [{ id: 'F0ABC', name: 'IMG_1685.jpg', mimetype: 'image/jpeg', size: 2048 }],
+      }),
+    ])
+    const updated = await store.read(TEAM, CHANNEL)
+    assert.deepEqual(updated.find((message) => message.ts === '1792500000.000700')?.files, [
+      { id: 'F0ABC', name: 'IMG_1685.jpg', mimetype: 'image/jpeg', size: 2048 },
+    ])
+  })
+
   it('round-trips the sync state atomically', async () => {
     await store.saveState({
       version: 1,

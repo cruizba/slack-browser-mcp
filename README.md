@@ -49,3 +49,9 @@ else:
 
 Everything else — CLI, workspaces, the archive, the sync timer, security,
 troubleshooting — is in [docs/reference.md](docs/reference.md).
+
+Messages come out with names, not ids: mentions like `<@U4C140PEW>`, channel
+references and user groups are resolved through a local directory that refreshes
+once a day. Attachments are printed as `[file: name id=F0ABC]`, and asking the
+agent to open one saves it to the archive and brings images back into the
+conversation.

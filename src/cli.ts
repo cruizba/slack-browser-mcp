@@ -23,6 +23,7 @@ import { main as serve } from './mcp/server.ts'
 import { recordSend } from './slack/audit.ts'
 import { SlackClient } from './slack/client.ts'
 import { channelLabel, renderMessages } from './slack/format.ts'
+import { directoryScope, directoryUser, loadDirectory } from './slack/directory.ts'
 
 const HELP = `slack-browser — Slack read access from a browser session
 
@@ -267,11 +268,12 @@ async function commandRead(args: ParsedArgs): Promise<number> {
   })
 
   const chronological = [...page.messages].reverse()
-  const names = await client.namesFor(chronological)
+  const directory = await loadDirectory({ client, teamId: account.team_id })
+  const names = await client.namesFor(chronological, (id) => directoryUser(directory, id))
   console.log(
     `${account.team_name} · ${channelLabel(channel)} (${channel.id}) — ${chronological.length} messages, oldest first`,
   )
-  console.log(renderMessages(chronological, { names }))
+  console.log(renderMessages(chronological, { names, scope: directoryScope(directory) }))
   if (page.has_more) {
     console.error(`more history exists; use --oldest=${chronological[0]?.ts}`)
   }
@@ -288,11 +290,12 @@ async function commandThread(args: ParsedArgs): Promise<number> {
   const client = new SlackClient(account)
   const channel = await client.resolveChannel(channelReference)
   const messages = await client.replies({ channel: channel.id, thread_ts: threadTs })
-  const names = await client.namesFor(messages)
+  const directory = await loadDirectory({ client, teamId: account.team_id })
+  const names = await client.namesFor(messages, (id) => directoryUser(directory, id))
   console.log(
     `${account.team_name} · thread in ${channelLabel(channel)} (${channel.id}) — ${messages.length} messages`,
   )
-  console.log(renderMessages(messages, { names }))
+  console.log(renderMessages(messages, { names, scope: directoryScope(directory) }))
   return 0
 }
 
@@ -377,12 +380,14 @@ async function commandSync(args: ParsedArgs): Promise<number> {
     }
 
     let report
+    const client = new SlackClient(account)
     try {
       report = await syncAccount({
         account,
-        client: new SlackClient(account),
+        client,
         options: options(remaining),
       })
+      await loadDirectory({ client, teamId: account.team_id })
     } catch (error) {
       failures += 1
       console.error(`FAIL ${account.team_name} (${account.team_id}): ${messageOf(error)}`)

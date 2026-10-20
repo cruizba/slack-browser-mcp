@@ -48,6 +48,7 @@ test('exposes the Slack tools and survives an empty store', async (t) => {
       'list_workspaces',
       'login_workspace',
       'post_message',
+      'read_file',
       'read_messages',
       'search_messages',
       'set_default_workspace',

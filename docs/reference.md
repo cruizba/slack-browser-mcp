@@ -257,6 +257,7 @@ see [Several workspaces](#several-workspaces) for how the default is chosen.
 | `read_messages` | `workspace?`, `channel`, `limit?`, `oldest?`, `latest?` | Oldest first, raw Slack `ts` preserved for paging. |
 | `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?` | Every reply in the thread. |
 | `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm` | `confirm=true` is required; without it the call returns the exact message and posts nothing. |
+| `read_file` | `workspace?`, `file`, `refresh?` | Saves a Slack file into the archive and returns images as an image block, so the model can see them. `file` is the id printed after `id=` in a message line. |
 | `search_messages` | `query`, `workspace?`, `channel?`, `limit?`, `include_deleted?` | Full-text over the local archive. No network; covers what `sync` has fetched. |
 | `archive_status` | `workspace?` | Age of the archive, channels, thread backlog, per-channel errors, whether a sync is running now. |
 
@@ -266,6 +267,22 @@ lists the candidates. Every `workspace` argument accepts a name, domain or team
 id and falls back to the default described in
 [Several workspaces](#several-workspaces); `auth_status` prints which one that is
 and why, and an unfiltered `search_messages` labels each hit with its workspace.
+
+**Names instead of ids.** Slack stores a mention as `<@U4C140PEW>`, a channel as
+`<#C0PJJ70E6>` and a user group as `<!subteam^S0123|@team>`. Message output
+resolves all of them, plus links and HTML entities, through
+`archive/<team>/directory.json`: a registry built from `users.list`,
+`conversations.list` and `usergroups.list`, refreshed once a day. Unknown ids fall
+back to the raw id instead of guessing. The archive keeps the markup, so a later
+directory refresh also improves old messages and `search_messages` resolves names
+without network.
+
+**Attachments.** In `read_messages` and `get_thread`, every file shows as
+`[file: name id=F0ABC]`. The id is what `read_file` takes: it downloads the
+original through `files.info` + the authenticated URL, keeps it under
+`archive/<team>/files/` and returns images as an image block (up to 4 MB inline;
+larger ones come back as a path). Downloads happen on demand, never during `sync`,
+so a backfill does not pull every screenshot ever posted.
 
 ## Where things live
 
@@ -277,7 +294,8 @@ and why, and an unfiltered `search_messages` labels each hit with its workspace.
 | `~/.local/share/slack-browser-mcp/audit.jsonl` | one line per message sent, `0600` |
 | `~/.local/share/slack-browser-mcp/login.lock/` | held while a sign-in is running, `0700` |
 | `~/.local/share/slack-browser-mcp/login.log` | progress and errors of the last sign-in, `0600` |
-| `~/.local/share/slack-browser-mcp/archive/` | JSONL per channel + `state.json`, `0700`/`0600` |
+| `~/.local/share/slack-browser-mcp/archive/` | JSONL per channel + `state.json` + `directory.json` (names), `0700`/`0600` |
+| `~/.local/share/slack-browser-mcp/archive/<team>/files/` | attachments downloaded by `read_file`, `0700`/`0600` |
 | `~/.local/share/slack-browser-mcp/archive.sqlite` | FTS5 index, rebuildable, `0600` |
 
 Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),

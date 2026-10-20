@@ -12,6 +12,14 @@ import { join } from 'node:path'
 
 import { archiveDir } from '../config/paths.ts'
 
+export interface ArchivedFile {
+  id?: string
+  name?: string
+  title?: string
+  mimetype?: string
+  size?: number
+}
+
 export interface ArchivedMessage {
   ts: string
   channel: string
@@ -24,7 +32,7 @@ export interface ArchivedMessage {
   subtype?: string
   edited_ts?: string
   reply_count?: number
-  files?: string[]
+  files?: ArchivedFile[]
   synced_at: string
   deleted_at?: string
 }
@@ -45,6 +53,17 @@ export interface SyncState {
 
 function emptyState(): SyncState {
   return { version: 1, teams: {} }
+}
+
+/**
+ * Archives written before files carried ids hold bare names, and reading them
+ * must not need a migration step: both shapes fold into the object form.
+ */
+function normalizeFiles(value: unknown): ArchivedFile[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined
+  return value.map((entry) =>
+    typeof entry === 'string' ? { name: entry } : (entry as ArchivedFile),
+  )
 }
 
 function fold(records: ArchivedMessage[]): ArchivedMessage[] {
@@ -106,7 +125,11 @@ export class ArchiveStore {
       raw
         .split('\n')
         .filter((line) => line.trim().length > 0)
-        .map((line) => JSON.parse(line) as ArchivedMessage),
+        .map((line) => {
+          const parsed = JSON.parse(line) as ArchivedMessage & { files?: unknown }
+          const files = normalizeFiles(parsed.files)
+          return files ? { ...parsed, files } : (parsed as ArchivedMessage)
+        }),
     )
   }
 

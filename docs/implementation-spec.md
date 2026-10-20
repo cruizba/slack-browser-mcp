@@ -199,7 +199,9 @@ client sends and avoids an `Authorization` path that behaves differently for
 `xoxc` tokens.
 
 Endpoints in use: `auth.test`, `users.conversations`, `conversations.history`,
-`conversations.replies`, `users.info`.
+`conversations.replies`, `users.info`, `users.list`, `conversations.list`,
+`usergroups.list`, `files.info`, plus an authenticated `GET` of `url_private` for
+attachment bytes.
 
 Behaviours:
 
@@ -210,6 +212,13 @@ Behaviours:
   `public_channel,private_channel,mpim,im`, and cached per client instance.
 - `users.info` results are cached per user id; failures degrade to the raw id
   instead of failing a read.
+- `users.list`, `conversations.list` and `usergroups.list` feed a directory that
+  resolves mentions, channel references and user groups. It is stored under the
+  team's archive directory and refreshed once a day; the optional sources may
+  fail without losing the rest.
+- Attachment bytes are fetched with the same `xoxc` token plus `d` cookie sent as
+  `Authorization: Bearer …` (Slack redirects only between its own hosts), and are
+  stored under `archive/<team>/files/` when `read_file` asks for them.
 - Message text is truncated at 2000 chars per message; the rest of the payload
   stays out of the model's context by design.
 
@@ -224,6 +233,7 @@ Behaviours:
 | `read_messages` | `workspace?`, `channel`, `limit?=20`, `oldest?`, `latest?` | header + oldest-first lines + paging footer | read-only |
 | `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?=100` | header + thread lines | read-only |
 | `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm=false` | `Sent to <where> at ts <ts>` + audit path, or the exact dry-run text | destructive |
+| `read_file` | `workspace?`, `file`, `refresh=false` | saved path + summary, plus an `image` block for images up to 4 MB | read-only |
 | `search_messages` | `query`, `workspace?`, `channel?`, `limit?=20`, `include_deleted=false` | `archive: <age>` then ranked hits `[ts] channel author: text`, prefixed with the workspace when the search spans more than one | read-only |
 | `archive_status` | `workspace?` | last sync, channels, thread backlog, errors, lock holder | read-only |
 
@@ -249,8 +259,15 @@ so a result set that spans workspaces is never ambiguous.
   copy of secrets someone pasted into a channel.
 
 Every message line is `[<ts>] <iso time> <author>: <text>`, plus
-`(N replies, thread_ts <ts>)` when a parent has replies. The raw `ts` is the
-handle for follow-up calls (`thread_ts`, `oldest`, `latest`).
+`(N replies, thread_ts <ts>)` when a parent has replies, plus one
+`[file: <name> id=<file id>]` per attachment. The raw `ts` is the handle for
+follow-up calls (`thread_ts`, `oldest`, `latest`); the file id is the handle for
+`read_file`.
+
+Names come from the directory described in §7: `<@U…>`, `<#C…>`, `<!subteam^S…>`,
+`<!here>` and links are resolved at render time, so the model never reads a raw id
+it cannot act on. The archive keeps the markup and resolution stays a display
+concern.
 
 Limits exist to protect the context window: `read_messages` caps at 200, and the
 footer tells the model how to page rather than dumping history.
@@ -277,6 +294,8 @@ $XDG_DATA_HOME/slack-browser-mcp/archive/
 ├── state.json                     # per-channel cursors, backlogs, last errors
 └── <TEAM_ID>/
     ├── <CHANNEL_ID>.jsonl         # one JSON object per line
+    ├── directory.json             # users, channels and groups: ids to names
+    ├── files/                     # attachments fetched by read_file
     └── ...
 $XDG_DATA_HOME/slack-browser-mcp/archive.sqlite   # rebuildable FTS5 index
 ```
@@ -371,8 +390,9 @@ disables it for machines where background work is unwelcome.
   the daily reconcile, so they can lag up to 24 hours.
 - Deleted messages stay in the archive with their text. That is deliberate, and it
   is also why the directory is `0700`.
-- Reactions, pins and files' contents are not archived; only message text and file
-  names.
+- Reactions and pins are not archived. Attachment bytes are, but only when
+  `read_file` asks for one: the JSONL keeps the id, name, mimetype and size, not
+  the content.
 
 ## 10. Error model
 
@@ -419,13 +439,21 @@ Unit tests need no browser and no network:
   check) and debug-port allocation.
 - `test/mcp.test.ts` — in-memory MCP transport: tool list, descriptions,
   read-only annotations, and a graceful answer with an empty store.
+- `test/references.test.ts` — mention, channel, user-group, special-mention, link
+  and entity resolution, including the raw-id fallback and the rendered file id.
+- `test/directory.test.ts` — directory fetch with a failing optional source,
+  0600/atomic storage, corrupt file tolerated, freshness window, and the stale
+  copy serving when a refresh fails.
+- `test/files.test.ts` — safe file names that cannot escape the team directory,
+  idempotent overwrite, find by id, and permissions.
 - `test/mcp-write.test.ts` — the confirm gate end to end over the MCP transport:
   dry run posts nothing, `confirm=true` posts exactly once with the right
   channel, text and token, and the send lands in the audit log.
 - `test/audit.test.ts` — one line per send, `0600`, bounded and redacted preview.
 - `test/archive.test.ts` — JSONL folding, tombstones that keep the text, a message
-  that reappears clearing `deleted_at`, permissions, FTS search with user-typed
-  operators, deleted filtering, and a rebuild from plain text after a reset.
+  that reappears clearing `deleted_at`, file records from before ids existed,
+  permissions, FTS search with user-typed operators, deleted filtering, and a
+  rebuild from plain text after a reset.
 - `test/sync.test.ts` — first backfill plus threads, incremental cursor on the
   second run, no refetch when `reply_count` is unchanged, daily reconcile marking
   disappeared messages, thread backlog draining across runs, and no rewritten
@@ -484,6 +512,10 @@ Manual checklist for the login path (cannot be automated without a real account)
 
 **M3 — polish**
 
+- [x] Resolve mentions, channel references, user groups and links through a
+      cached directory instead of leaking raw ids
+- [x] `read_file`: fetch attachment bytes on demand and return images as an
+      image block
 - [ ] Cursor pass-through for `read_messages` instead of only `oldest`
 - [ ] Serve archived history to `read_messages` when the requested range is cached
 - [ ] Retention policy (`slack-browser archive prune --older-than`)
