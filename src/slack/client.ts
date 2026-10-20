@@ -53,6 +53,14 @@ export interface SlackChannel {
   topic?: { value?: string }
 }
 
+export interface ResolveChannelOptions {
+  /**
+   * Maps a person reference (`@ana`, `dm:Ana Ruiz`) to a user id, so a DM can be
+   * addressed the way a person names it.
+   */
+  person?: (reference: string) => string | undefined | Promise<string | undefined>
+}
+
 export interface SlackFile {
   id?: string
   name?: string
@@ -232,7 +240,16 @@ export class SlackClient {
     return collected
   }
 
-  async resolveChannel(reference: string): Promise<SlackChannel> {
+  /** IMs and group DMs, which a channel listing never returns. */
+  async listDmChannels(): Promise<SlackChannel[]> {
+    const channels = await this.listMyChannels()
+    return channels.filter((channel) => channel.is_im || channel.is_mpim)
+  }
+
+  async resolveChannel(
+    reference: string,
+    options: ResolveChannelOptions = {},
+  ): Promise<SlackChannel> {
     const raw = reference.trim().replace(/^#/, '')
     if (/^[CGD][A-Z0-9]{6,}$/.test(raw)) return { id: raw, name: raw }
     if (['me', '@me', 'self', 'dm:self'].includes(raw.toLowerCase())) return this.openSelfDm()
@@ -247,6 +264,8 @@ export class SlackClient {
 
     if (partial.length === 1) return partial[0]!
     if (partial.length === 0) {
+      const person = await this.resolvePerson(reference, channels, options)
+      if (person) return person
       throw new Error(
         `No conversation named "${raw}" in ${this.account.team_name}. ` +
           'Use list_conversations to see the available names.',
@@ -257,6 +276,32 @@ export class SlackClient {
       .map((channel) => `${channel.is_private ? 'private:' : '#'}${channel.name} (${channel.id})`)
       .join(', ')
     throw new Error(`"${raw}" matches several conversations: ${candidates}.`)
+  }
+
+  /**
+   * A DM has no name, so the only way to name one is the person it is with. The
+   * client holds no directory, so the caller supplies the lookup; without it a
+   * person reference fails like any unknown channel.
+   */
+  private async resolvePerson(
+    reference: string,
+    channels: SlackChannel[],
+    options: ResolveChannelOptions,
+  ): Promise<SlackChannel | undefined> {
+    const lookup = options.person
+    if (!lookup) return undefined
+    const name = reference.trim().replace(/^#/, '').replace(/^(dm:|@)/, '')
+    if (!name) return undefined
+    const userId = await lookup(name)
+    if (!userId) return undefined
+    const direct = channels.find((channel) => channel.is_im && channel.user === userId)
+    if (direct) return direct
+    // Closed DMs can be missing from the listing; `conversations.open` would
+    // recreate one, and reading must not write.
+    throw new Error(
+      `No open direct message with ${name} in ${this.account.team_name}. ` +
+        'list_conversations kind=dm shows the ones you have.',
+    )
   }
 
   async history(params: {

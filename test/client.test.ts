@@ -117,6 +117,36 @@ describe('SlackClient', () => {
     assert.equal(calls.length, 0)
   })
 
+  it('resolves a DM from the person it is with', async () => {
+    const { fetchImpl } = recordingFetch([
+      () =>
+        respond({
+          ok: true,
+          channels: [
+            { id: 'C01GENERAL', name: 'general' },
+            { id: 'D01ANARUIZ', is_im: true, user: 'U02ANARUIZ' },
+          ],
+        }),
+    ])
+    const client = new SlackClient(account, { fetch: fetchImpl })
+    const channel = await client.resolveChannel('dm:Ana Ruiz', {
+      person: (reference) => (reference === 'Ana Ruiz' ? 'U02ANARUIZ' : undefined),
+    })
+    assert.equal(channel.id, 'D01ANARUIZ')
+    assert.equal(channel.is_im, true)
+  })
+
+  it('says so when the person has no open DM', async () => {
+    const { fetchImpl } = recordingFetch([
+      () => respond({ ok: true, channels: [{ id: 'C01GENERAL', name: 'general' }] }),
+    ])
+    const client = new SlackClient(account, { fetch: fetchImpl })
+    await assert.rejects(
+      () => client.resolveChannel('@ana', { person: () => 'U02ANARUIZ' }),
+      /No open direct message with ana/,
+    )
+  })
+
   it('flattens the profile when listing users for the directory', async () => {
     const { fetchImpl } = recordingFetch([
       () =>

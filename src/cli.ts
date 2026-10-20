@@ -23,7 +23,16 @@ import { main as serve } from './mcp/server.ts'
 import { recordSend } from './slack/audit.ts'
 import { SlackClient } from './slack/client.ts'
 import { channelLabel, renderMessages } from './slack/format.ts'
-import { directoryScope, directoryUser, loadDirectory, DirectoryStore } from './slack/directory.ts'
+import { conversationFilter, conversationLabel } from './slack/conversations.ts'
+import {
+  directoryScope,
+  directoryUser,
+  directoryUserByReference,
+  loadDirectory,
+  memoizedDirectory,
+  DirectoryStore,
+  type Directory,
+} from './slack/directory.ts'
 import { resolveReferences } from './slack/references.ts'
 
 const HELP = `slack-browser — Slack read access from a browser session
@@ -261,7 +270,8 @@ async function commandRead(args: ParsedArgs): Promise<number> {
   const store = new FileCredentialStore()
   const account = await store.resolve(stringFlag(args, 'workspace'))
   const client = new SlackClient(account)
-  const channel = await client.resolveChannel(channelReference)
+  const directory = memoizedDirectory(() => loadDirectory({ client, teamId: account.team_id }))
+  const channel = await client.resolveChannel(channelReference, { person: directory.person })
   const page = await client.history({
     channel: channel.id,
     limit: numberFlag(args, 'limit', 20),
@@ -270,12 +280,12 @@ async function commandRead(args: ParsedArgs): Promise<number> {
   })
 
   const chronological = [...page.messages].reverse()
-  const directory = await loadDirectory({ client, teamId: account.team_id })
-  const names = await client.namesFor(chronological, (id) => directoryUser(directory, id))
+  const dir = await directory.get()
+  const names = await client.namesFor(chronological, (id) => directoryUser(dir, id))
   console.log(
-    `${account.team_name} · ${channelLabel(channel)} (${channel.id}) — ${chronological.length} messages, oldest first`,
+    `${account.team_name} · ${channelLabel(channel, dir)} (${channel.id}) — ${chronological.length} messages, oldest first`,
   )
-  console.log(renderMessages(chronological, { names, scope: directoryScope(directory) }))
+  console.log(renderMessages(chronological, { names, scope: directoryScope(dir) }))
   if (page.has_more) {
     console.error(`more history exists; use --oldest=${chronological[0]?.ts}`)
   }
@@ -290,14 +300,15 @@ async function commandThread(args: ParsedArgs): Promise<number> {
   const store = new FileCredentialStore()
   const account = await store.resolve(stringFlag(args, 'workspace'))
   const client = new SlackClient(account)
-  const channel = await client.resolveChannel(channelReference)
+  const directory = memoizedDirectory(() => loadDirectory({ client, teamId: account.team_id }))
+  const channel = await client.resolveChannel(channelReference, { person: directory.person })
   const messages = await client.replies({ channel: channel.id, thread_ts: threadTs })
-  const directory = await loadDirectory({ client, teamId: account.team_id })
-  const names = await client.namesFor(messages, (id) => directoryUser(directory, id))
+  const dir = await directory.get()
+  const names = await client.namesFor(messages, (id) => directoryUser(dir, id))
   console.log(
-    `${account.team_name} · thread in ${channelLabel(channel)} (${channel.id}) — ${messages.length} messages`,
+    `${account.team_name} · thread in ${channelLabel(channel, dir)} (${channel.id}) — ${messages.length} messages`,
   )
-  console.log(renderMessages(messages, { names, scope: directoryScope(directory) }))
+  console.log(renderMessages(messages, { names, scope: directoryScope(dir) }))
   return 0
 }
 
@@ -309,9 +320,14 @@ async function commandSend(args: ParsedArgs): Promise<number> {
   const store = new FileCredentialStore()
   const account = await store.resolve(stringFlag(args, 'workspace'))
   const client = new SlackClient(account)
-  const channel = await client.resolveChannel(channelReference)
+  // A send names the target from the directory on disk; it never refreshes it.
+  const directory = await new DirectoryStore().read(account.team_id)
+  const channel = await client.resolveChannel(channelReference, {
+    person: (name) => directoryUserByReference(directory, name)?.id,
+  })
+  const label = channelLabel(channel, directory)
   const threadTs = stringFlag(args, 'thread')
-  const target = `${account.team_name} · ${channelLabel(channel)} (${channel.id})`
+  const target = `${account.team_name} · ${label} (${channel.id})`
 
   if (args.flags.get('send') !== true) {
     console.log(`dry run — would post to ${target}${threadTs ? ` in thread ${threadTs}` : ''}:`)
@@ -327,7 +343,7 @@ async function commandSend(args: ParsedArgs): Promise<number> {
   })
   const audit = await recordSend({
     workspace: account.team_name,
-    channel: channelLabel(channel),
+    channel: label,
     channel_id: channel.id,
     ...(threadTs ? { thread_ts: threadTs } : {}),
     message_ts: posted.ts,
@@ -452,14 +468,25 @@ async function commandArchive(args: ParsedArgs): Promise<number> {
     if (subcommand === 'search') {
       const query = args.positional.slice(1).join(' ')
       if (!query) throw new Error('archive search needs a query')
-      const channel = stringFlag(args, 'channel')?.replace(/^#/, '')
+      const channel = stringFlag(args, 'channel')
       const reference = stringFlag(args, 'workspace')
       const team = reference ? (await store.resolve(reference)).team_id : undefined
+      const directories = new Map<string, Awaited<ReturnType<DirectoryStore['read']>>>()
+      const directoryFor = async (teamId: string): Promise<Directory | undefined> => {
+        if (!directories.has(teamId)) {
+          directories.set(teamId, await new DirectoryStore().read(teamId))
+        }
+        return directories.get(teamId)
+      }
+      const teamIds = team ? [team] : (await store.list()).map((summary) => summary.team_id)
+      const filter = channel
+        ? conversationFilter(channel, await Promise.all(teamIds.map(directoryFor)))
+        : {}
       const hits = index.search({
         query,
         limit: numberFlag(args, 'limit', 20),
         includeDeleted: args.flags.get('deleted') === true,
-        ...(channel ? { channelName: channel } : {}),
+        ...filter,
         ...(team ? { team } : {}),
       })
       if (hits.length === 0) {
@@ -467,15 +494,10 @@ async function commandArchive(args: ParsedArgs): Promise<number> {
         return 0
       }
       const labels = team ? new Map<string, string>() : await workspaceLabels(store)
-      const directories = new Map<string, Awaited<ReturnType<DirectoryStore['read']>>>()
+      for (const hit of hits) await directoryFor(hit.team)
       for (const hit of hits) {
-        if (!directories.has(hit.team)) {
-          directories.set(hit.team, await new DirectoryStore().read(hit.team))
-        }
-      }
-      for (const hit of hits) {
-        const label = hit.channel_name ? `#${hit.channel_name}` : hit.channel
         const directory = directories.get(hit.team)
+        const label = conversationLabel({ id: hit.channel, name: hit.channel_name }, directory)
         const author =
           hit.username ?? directoryUser(directory, hit.user ?? '') ?? hit.user ?? 'unknown'
         const deleted = hit.deleted ? ' [deleted]' : ''

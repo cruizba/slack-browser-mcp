@@ -212,10 +212,11 @@ Behaviours:
   `public_channel,private_channel,mpim,im`, and cached per client instance.
 - `users.info` results are cached per user id; failures degrade to the raw id
   instead of failing a read.
-- `users.list`, `conversations.list` and `usergroups.list` feed a directory that
-  resolves mentions, channel references and user groups. It is stored under the
-  team's archive directory and refreshed once a day; the optional sources may
-  fail without losing the rest.
+- `users.list`, `conversations.list` (channels and private channels) and
+  `users.conversations` (DMs and group DMs) feed a directory that resolves
+  mentions, channel references, user groups and DM labels; `usergroups.list` adds
+  the groups. It is stored under the team's archive directory and refreshed once a
+  day; a missing source may fail without losing the rest.
 - Attachment bytes are fetched with the same `xoxc` token plus `d` cookie sent as
   `Authorization: Bearer …` (Slack redirects only between its own hosts), and are
   stored under `archive/<team>/files/` when `read_file` asks for them.
@@ -269,6 +270,14 @@ Names come from the directory described in §7: `<@U…>`, `<#C…>`, `<!subteam
 it cannot act on. The archive keeps the markup and resolution stays a display
 concern.
 
+A conversation is labelled `#channel`, `private:channel`, `dm:<person>` or
+`group:<people>`. Slack gives a DM no name, so the directory records the peer's
+user id and the label is that person's name; a group DM is named after its
+members (`mpdm-<handles>-<n>` resolved through the user list). The same label
+feeds `list_conversations` filtering and sorting, so a person's name finds their
+DM, and `dm:<person>` or `@<person>` is accepted anywhere a channel is
+expected.
+
 Limits exist to protect the context window: `read_messages` caps at 200, and the
 footer tells the model how to page rather than dumping history.
 
@@ -295,7 +304,7 @@ $XDG_DATA_HOME/slack-browser-mcp/archive/
 ├── state.json                     # per-channel cursors, backlogs, last errors
 └── <TEAM_ID>/
     ├── <CHANNEL_ID>.jsonl         # one JSON object per line
-    ├── directory.json             # users, channels and groups: ids to names
+    ├── directory.json             # users, conversations, groups: ids to names
     ├── files/                     # attachments fetched by read_file
     └── ...
 $XDG_DATA_HOME/slack-browser-mcp/archive.sqlite   # rebuildable FTS5 index
@@ -429,7 +438,10 @@ upgrade or vanishing.
 Readers keep tolerating the previous shape (`files: ["name"]` still folds into
 `{name}`), because not every path migrates: `slack-browser read` is live-only, and
 an already-running MCP server can outlive an upgrade. `directory.json` is a cache
-with its own `version`; on a mismatch it is simply fetched again.
+with its own `version`; on a mismatch it is simply fetched again. Within a
+version, fields added later are optional and read as absent: a directory with no
+`dm_count` was written before DMs were indexed, so it counts as stale and gets
+refreshed on the next load instead of after the daily interval.
 
 `slack-browser archive migrate` runs the same step by hand and prints the version.
 

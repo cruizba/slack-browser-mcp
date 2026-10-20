@@ -4,6 +4,8 @@
  */
 
 import type { SlackChannel, SlackFile, SlackMessage } from './client.ts'
+import { slackChannelLabel } from './conversations.ts'
+import type { Directory } from './directory.ts'
 import { resolveReferences, type ReferenceScope } from './references.ts'
 
 const MAX_MESSAGE_CHARS = 2000
@@ -14,10 +16,13 @@ export function formatTs(ts: string): string {
   return new Date(seconds * 1000).toISOString().replace('T', ' ').slice(0, 19)
 }
 
-export function channelLabel(channel: SlackChannel): string {
-  if (channel.is_im) return `dm:${channel.user ?? channel.id}`
-  if (channel.is_mpim) return `group:${channel.name ?? channel.id}`
-  return `${channel.is_private ? 'private:' : '#'}${channel.name ?? channel.id}`
+/**
+ * `#random`, `private:leads`, `dm:Ana Ruiz`. A DM has no name of its own, so the
+ * directory supplies the person on the other side; without one, its id is shown
+ * rather than a name guessed from nothing.
+ */
+export function channelLabel(channel: SlackChannel, directory?: Directory): string {
+  return slackChannelLabel(channel, directory)
 }
 
 /**

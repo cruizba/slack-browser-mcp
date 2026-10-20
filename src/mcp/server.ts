@@ -37,10 +37,17 @@ import { SlackClient, type SlackFile } from '../slack/client.ts'
 import {
   directoryScope,
   directoryUser,
+  directoryUserByReference,
   loadDirectory,
+  memoizedDirectory,
   DirectoryStore,
   type Directory,
 } from '../slack/directory.ts'
+import {
+  conversationFilter,
+  conversationLabel,
+  type ConversationFilter,
+} from '../slack/conversations.ts'
 import { channelLabel, renderMessages } from '../slack/format.ts'
 import { resolveReferences } from '../slack/references.ts'
 
@@ -62,10 +69,13 @@ different one, and call auth_status to learn which ones are stored.
 
 Start with auth_status when a call fails with a session error, then
 list_conversations to learn the channel names, because Slack channel ids and
-names differ per workspace. Message output keeps the raw Slack \`ts\` values: use
-them as thread_ts in get_thread and as oldest/latest in read_messages. Mentions,
-channel references and user groups are printed as names, resolved through a
-local directory that refreshes once a day; the raw ids stay in the archive.
+names differ per workspace. A conversation is labelled \`#channel\`,
+\`private:channel\`, \`dm:<person>\` or \`group:<people>\`; a DM has no name of its
+own, so address it by the person it is with (\`dm:Ana Ruiz\`) or by its id.
+Message output keeps the raw Slack \`ts\` values: use them as thread_ts in
+get_thread and as oldest/latest in read_messages. Mentions, channel references,
+user groups and DMs are printed as names, resolved through a local directory that
+refreshes once a day; the raw ids stay in the archive.
 
 Attachments appear as \`[file: <name> id=<file id>]\`. \`read_file\` downloads that
 id into the local archive and returns images as an image block, so a screenshot
@@ -141,6 +151,11 @@ async function openSession(workspace?: string): Promise<Session> {
 
 async function openDirectory(account: SlackAccount, client: SlackClient): Promise<Directory | undefined> {
   return loadDirectory({ client, teamId: account.team_id })
+}
+
+/** The directory for one tool call, fetched only if the call needs a name. */
+function callDirectory(account: SlackAccount, client: SlackClient) {
+  return memoizedDirectory(() => openDirectory(account, client))
 }
 
 function humanSize(bytes: number): string {
@@ -525,19 +540,24 @@ export function buildServer(): McpServer {
     async ({ workspace: reference, query, kind, limit }) => {
       try {
         const { account, client } = await openSession(reference)
+        const directory = await callDirectory(account, client).get()
         let channels = await client.listMyChannels()
 
         if (kind === 'channel') channels = channels.filter((c) => !c.is_private && !c.is_im && !c.is_mpim)
         if (kind === 'private') channels = channels.filter((c) => c.is_private)
         if (kind === 'dm') channels = channels.filter((c) => c.is_im || c.is_mpim)
 
-        if (query) {
-          const needle = query.toLowerCase()
-          channels = channels.filter((c) => (c.name ?? '').toLowerCase().includes(needle))
-        }
+        // A DM has no name, so filtering and sorting on the label is what lets
+        // `query` find a person at all.
+        const labelled = channels
+          .map((channel) => ({ channel, label: channelLabel(channel, directory) }))
+          .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }))
 
-        channels.sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id))
-        const shown = channels.slice(0, limit)
+        const needle = query?.toLowerCase()
+        const matching = needle
+          ? labelled.filter((entry) => entry.label.toLowerCase().includes(needle))
+          : labelled
+        const shown = matching.slice(0, limit)
         if (shown.length === 0) {
           return {
             content: [
@@ -549,13 +569,13 @@ export function buildServer(): McpServer {
           }
         }
 
-        const lines = shown.map((channel) => {
+        const lines = shown.map(({ channel, label }) => {
           const members = channel.num_members ? ` ${channel.num_members} members` : ''
-          return `${channelLabel(channel)} (${channel.id})${members}`
+          return `${label} (${channel.id})${members}`
         })
         const footer =
-          channels.length > shown.length
-            ? `\n\nshowing ${shown.length} of ${channels.length}; raise limit or narrow query`
+          matching.length > shown.length
+            ? `\n\nshowing ${shown.length} of ${matching.length}; raise limit or narrow query`
             : ''
         return {
           content: [
@@ -576,7 +596,11 @@ export function buildServer(): McpServer {
         'Read messages from a channel or DM. Returns them oldest first with their raw Slack ts values. Use oldest/latest to page back in time. Attachments show up as [file: name id=F0ABC]; read_file fetches them.',
       inputSchema: {
         workspace,
-        channel: z.string().describe('Channel name (with or without #), DM id, or Slack channel id.'),
+        channel: z
+          .string()
+          .describe(
+            'Channel name (with or without #), Slack channel id, DM id, or the person a DM is with (dm:Ana Ruiz, @ana).',
+          ),
         limit: z.number().int().min(1).max(200).default(20),
         oldest: z.string().optional().describe('Slack ts; only messages after it.'),
         latest: z.string().optional().describe('Slack ts; only messages before it.'),
@@ -586,26 +610,27 @@ export function buildServer(): McpServer {
     async ({ workspace: reference, channel, limit, oldest, latest }) => {
       try {
         const { account, client } = await openSession(reference)
-        const target = await client.resolveChannel(channel)
+        const directory = callDirectory(account, client)
+        const target = await client.resolveChannel(channel, { person: directory.person })
         const page = await client.history({
           channel: target.id,
           limit,
           ...(oldest ? { oldest } : {}),
           ...(latest ? { latest } : {}),
         })
+        const dir = await directory.get()
 
         if (page.messages.length === 0) {
           return {
             content: [
-              { type: 'text' as const, text: `${account.team_name} · ${channelLabel(target)}: no messages in that range.` },
+              { type: 'text' as const, text: `${account.team_name} · ${channelLabel(target, dir)}: no messages in that range.` },
             ],
           }
         }
 
         const chronological = [...page.messages].reverse()
-        const directory = await openDirectory(account, client)
-        const names = await client.namesFor(chronological, (id) => directoryUser(directory, id))
-        const header = `${account.team_name} · ${channelLabel(target)} (${target.id}) — ${chronological.length} messages, oldest first`
+        const names = await client.namesFor(chronological, (id) => directoryUser(dir, id))
+        const header = `${account.team_name} · ${channelLabel(target, dir)} (${target.id}) — ${chronological.length} messages, oldest first`
         const footer = page.has_more
           ? `\n\nmore history exists; call again with oldest=${chronological[0]!.ts}`
           : ''
@@ -614,7 +639,7 @@ export function buildServer(): McpServer {
           content: [
             {
               type: 'text' as const,
-              text: `${header}\n${renderMessages(chronological, { names, scope: directoryScope(directory) })}${footer}`,
+              text: `${header}\n${renderMessages(chronological, { names, scope: directoryScope(dir) })}${footer}`,
             },
           ],
         }
@@ -641,14 +666,15 @@ export function buildServer(): McpServer {
     async ({ workspace: reference, channel, thread_ts, limit }) => {
       try {
         const { account, client } = await openSession(reference)
-        const target = await client.resolveChannel(channel)
+        const directory = callDirectory(account, client)
+        const target = await client.resolveChannel(channel, { person: directory.person })
         const messages = await client.replies({ channel: target.id, thread_ts, limit })
-        const directory = await openDirectory(account, client)
-        const names = await client.namesFor(messages, (id) => directoryUser(directory, id))
-        const header = `${account.team_name} · thread in ${channelLabel(target)} (${target.id}) — ${messages.length} messages`
+        const dir = await directory.get()
+        const names = await client.namesFor(messages, (id) => directoryUser(dir, id))
+        const header = `${account.team_name} · thread in ${channelLabel(target, dir)} (${target.id}) — ${messages.length} messages`
         return {
           content: [
-            { type: 'text' as const, text: `${header}\n${renderMessages(messages, { names, scope: directoryScope(directory) })}` },
+            { type: 'text' as const, text: `${header}\n${renderMessages(messages, { names, scope: directoryScope(dir) })}` },
           ],
         }
       } catch (error) {
@@ -732,7 +758,9 @@ export function buildServer(): McpServer {
         workspace,
         channel: z
           .string()
-          .describe('Channel name or id. Use "me" for your own direct messages.'),
+          .describe(
+            'Channel name or id, the person a DM is with (dm:Ana Ruiz), or "me" for your own direct messages.',
+          ),
         text: z.string().min(1).max(4000),
         thread_ts: z
           .string()
@@ -748,8 +776,14 @@ export function buildServer(): McpServer {
     async ({ workspace: reference, channel, text, thread_ts, confirm }) => {
       try {
         const { account, client } = await openSession(reference)
-        const target = await client.resolveChannel(channel)
-        const where = `${account.team_name} · ${channelLabel(target)} (${target.id})`
+        // Naming the target must not cost a network round trip: a write only reads
+        // the directory it already has.
+        const directory = await new DirectoryStore(archive.root).read(account.team_id)
+        const target = await client.resolveChannel(channel, {
+          person: (name) => directoryUserByReference(directory, name)?.id,
+        })
+        const label = channelLabel(target, directory)
+        const where = `${account.team_name} · ${label} (${target.id})`
         const thread = thread_ts ? ` in thread ${thread_ts}` : ''
 
         if (!confirm) {
@@ -770,7 +804,7 @@ export function buildServer(): McpServer {
         })
         const audit = await recordSend({
           workspace: account.team_name,
-          channel: channelLabel(target),
+          channel: label,
           channel_id: target.id,
           ...(thread_ts ? { thread_ts } : {}),
           message_ts: posted.ts,
@@ -819,18 +853,28 @@ export function buildServer(): McpServer {
           const state = await archive.loadState()
           const ageMs = oldestAge(state, new Date())
           const note = await nudgeSync(ageMs)
-          const isId = channel !== undefined && /^[CGD][A-Z0-9]{6,}$/.test(channel.trim())
           const team = reference ? await teamIdFor(reference) : undefined
+          const directories = new Map<string, Directory | undefined>()
+          const directoryFor = async (teamId: string): Promise<Directory | undefined> => {
+            if (!directories.has(teamId)) {
+              directories.set(teamId, await new DirectoryStore(archive.root).read(teamId))
+            }
+            return directories.get(teamId)
+          }
+          // Without a named workspace the filter looks at every stored directory:
+          // a person belongs to one of them and ids do not collide.
+          let filter: ConversationFilter = {}
+          if (channel) {
+            const teams = team ? [team] : (await store.list()).map((summary) => summary.team_id)
+            const available = await Promise.all(teams.map(directoryFor))
+            filter = conversationFilter(channel, available)
+          }
           const hits = index.search({
             query,
             limit,
             includeDeleted: include_deleted,
             ...(team ? { team } : {}),
-            ...(channel
-              ? isId
-                ? { channel: channel.trim() }
-                : { channelName: channel.trim().replace(/^#/, '') }
-              : {}),
+            ...filter,
           })
 
           const freshness = `archive: ${formatAge(ageMs)}${note}`
@@ -846,14 +890,10 @@ export function buildServer(): McpServer {
           }
 
           const labels = team ? new Map<string, string>() : await workspaceLabels(store)
-          const directories = new Map<string, Directory | undefined>()
-          for (const hit of hits) {
-            if (directories.has(hit.team)) continue
-            directories.set(hit.team, await new DirectoryStore(archive.root).read(hit.team))
-          }
+          for (const hit of hits) await directoryFor(hit.team)
           const lines = hits.map((hit) => {
-            const label = hit.channel_name ? `#${hit.channel_name}` : hit.channel
             const directory = directories.get(hit.team)
+            const label = conversationLabel({ id: hit.channel, name: hit.channel_name }, directory)
             const author =
               hit.username ??
               directoryUser(directory, hit.user ?? '') ??

@@ -270,21 +270,30 @@ see [Several workspaces](#several-workspaces) for how the default is chosen.
 | `search_messages` | `query`, `workspace?`, `channel?`, `limit?`, `include_deleted?` | Full-text over the local archive. No network; covers what `sync` has fetched. |
 | `archive_status` | `workspace?` | Age of the archive, channels, thread backlog, per-channel errors, whether a sync is running now. |
 
-`channel` accepts `#name`, `name`, a DM id (`D…`), a channel id (`C…`), or `me`
-for your own DM. Names are per workspace; when a name is ambiguous the error
-lists the candidates. Every `workspace` argument accepts a name, domain or team
-id and falls back to the default described in
-[Several workspaces](#several-workspaces); `auth_status` prints which one that is
-and why, and an unfiltered `search_messages` labels each hit with its workspace.
+`channel` accepts `#name`, `name`, a DM id (`D…`), a channel id (`C…`), `me`
+for your own DM, or the person a DM is with (`dm:Ana Ruiz`, `@ana`). Names are
+per workspace; when a name is ambiguous the error lists the candidates. Every
+`workspace` argument accepts a name, domain or team id and falls back to the
+default described in [Several workspaces](#several-workspaces); `auth_status`
+prints which one that is and why, and an unfiltered `search_messages` labels each
+hit with its workspace. `search_messages` takes the same forms in `channel`, and
+`list_conversations` filters and sorts on the label, so `query=ana` finds a DM.
+
+**How a conversation is labelled.** `#random`, `private:leads`, `dm:Ana Ruiz`,
+`group:Ana, Michel`. Slack names channels, not DMs: a DM is whoever is on the
+other side, so its label comes from the directory, and a group DM is named after
+its members. A person the directory does not know falls back to the raw id rather
+than a guessed name.
 
 **Names instead of ids.** Slack stores a mention as `<@U02ANA>`, a channel as
 `<#C01RANDOM>` and a user group as `<!subteam^S0123|@team>`. Message output
 resolves all of them, plus links and HTML entities, through
 `archive/<team>/directory.json`: a registry built from `users.list`,
-`conversations.list` and `usergroups.list`, refreshed once a day. Unknown ids fall
-back to the raw id instead of guessing. The archive keeps the markup, so a later
-directory refresh also improves old messages and `search_messages` resolves names
-without network.
+`conversations.list` (channels and private channels) and `users.conversations`
+(DMs and group DMs), plus `usergroups.list`, refreshed once a day. Unknown ids
+fall back to the raw id instead of guessing. The archive keeps the markup, so a
+later directory refresh also improves old messages and `search_messages` resolves
+names without network.
 
 **Attachments.** In `read_messages` and `get_thread`, every file shows as
 `[file: name id=F0ABC]`. The id is what `read_file` takes: it downloads the

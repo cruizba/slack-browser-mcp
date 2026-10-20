@@ -7,8 +7,11 @@ import { describe, it } from 'node:test'
 import {
   DIRECTORY_MAX_AGE_MS,
   DirectoryStore,
+  directoryChannel,
   directoryScope,
   directoryUser,
+  directoryUserByHandle,
+  directoryUserByReference,
   fetchDirectory,
   loadDirectory,
   type Directory,
@@ -21,8 +24,9 @@ function directory(overrides: Partial<Directory> = {}): Directory {
     team_id: 'T01ACME',
     saved_at: '2026-10-20T18:00:00.000Z',
     users: [{ id: 'U02ANA', name: 'ana', display_name: 'ana' }],
-    channels: [{ id: 'C01RANDOM', name: 'random' }],
+    channels: [{ id: 'C01RANDOM', name: 'random', kind: 'channel' }],
     usergroups: [{ id: 'S01TEACH', handle: 'profesores' }],
+    dm_count: 0,
     ...overrides,
   }
 }
@@ -30,6 +34,7 @@ function directory(overrides: Partial<Directory> = {}): Directory {
 const clients: DirectoryClient = {
   listUsers: async () => [{ id: 'U02ANA', display_name: 'ana' }],
   listAllChannels: async () => [{ id: 'C01RANDOM', name: 'random' }],
+  listDmChannels: async () => [{ id: 'D01ANA', is_im: true, user: 'U02ANA' }],
   listUsergroups: async () => [{ id: 'S01TEACH', handle: 'profesores' }],
 }
 
@@ -54,14 +59,49 @@ describe('directory helpers', () => {
     assert.equal(directoryScope(undefined), undefined)
     assert.equal(directoryUser(undefined, 'U1'), undefined)
   })
+
+  it('knows which person a DM is with, and who a handle is', () => {
+    const dir = directory({
+      channels: [{ id: 'D01ANA', kind: 'dm', user: 'U02ANA' }],
+      users: [{ id: 'U02ANA', name: 'ana.ruiz', display_name: 'Ana Ruiz' }],
+      dm_count: 1,
+    })
+    assert.equal(directoryChannel(dir, 'D01ANA')?.user, 'U02ANA')
+    assert.equal(directoryUserByHandle(dir, 'ana.ruiz')?.id, 'U02ANA')
+    assert.equal(directoryUserByHandle(dir, 'nobody'), undefined)
+  })
+
+  it('resolves a person by display name, handle or real name', () => {
+    const dir = directory({
+      users: [{ id: 'U02ANA', name: 'ana.ruiz', real_name: 'Ana Ruiz', display_name: 'Ana' }],
+    })
+    assert.equal(directoryUserByReference(dir, 'ana')?.id, 'U02ANA')
+    assert.equal(directoryUserByReference(dir, '@Ana Ruiz')?.id, 'U02ANA')
+    assert.equal(directoryUserByReference(dir, 'ana.ruiz')?.id, 'U02ANA')
+    assert.equal(directoryUserByReference(dir, 'luis'), undefined)
+  })
+
+  it('refuses to pick one of two people who share a name', () => {
+    const dir = directory({
+      users: [
+        { id: 'U1', real_name: 'Ana Ruiz' },
+        { id: 'U2', real_name: 'Ana Ruiz' },
+      ],
+    })
+    assert.equal(directoryUserByReference(dir, 'Ana Ruiz'), undefined)
+  })
 })
 
 describe('fetchDirectory', () => {
-  it('collects users, channels and groups', async () => {
+  it('collects users, channels, DMs and groups', async () => {
     const fetched = await fetchDirectory(clients, 'T01ACME', new Date('2026-10-20T18:30:00Z'))
     assert.equal(fetched.saved_at, '2026-10-20T18:30:00.000Z')
-    assert.deepEqual(fetched.channels, [{ id: 'C01RANDOM', name: 'random' }])
+    assert.deepEqual(fetched.channels, [
+      { id: 'C01RANDOM', kind: 'channel', name: 'random' },
+      { id: 'D01ANA', kind: 'dm', user: 'U02ANA' },
+    ])
     assert.equal(fetched.usergroups[0]?.handle, 'profesores')
+    assert.equal(fetched.dm_count, 1)
   })
 
   it('keeps the users when only the optional lookups fail', async () => {
@@ -69,6 +109,9 @@ describe('fetchDirectory', () => {
       {
         ...clients,
         listAllChannels: async () => {
+          throw new Error('missing_scope')
+        },
+        listDmChannels: async () => {
           throw new Error('missing_scope')
         },
         listUsergroups: async () => {
@@ -80,6 +123,7 @@ describe('fetchDirectory', () => {
     assert.equal(fetched.users.length, 1)
     assert.deepEqual(fetched.channels, [])
     assert.deepEqual(fetched.usergroups, [])
+    assert.equal(fetched.dm_count, 0)
   })
 
   it('fails when Slack answers nothing at all', async () => {
@@ -91,6 +135,9 @@ describe('fetchDirectory', () => {
               throw new Error('ratelimited')
             },
             listAllChannels: async () => {
+              throw new Error('ratelimited')
+            },
+            listDmChannels: async () => {
               throw new Error('ratelimited')
             },
             listUsergroups: async () => [],
@@ -129,7 +176,53 @@ describe('DirectoryStore', () => {
   })
 })
 
+  it('folds a channel entry written before DMs were indexed', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'slack-browser-mcp-directory-'))
+    try {
+      const store = new DirectoryStore(root)
+      await mkdir(join(root, 'T01ACME'), { recursive: true })
+      await writeFile(
+        join(root, 'T01ACME', 'directory.json'),
+        JSON.stringify({
+          version: 1,
+          team_id: 'T01ACME',
+          saved_at: '2026-10-19T00:00:00.000Z',
+          users: [{ id: 'U02ANA', display_name: 'ana' }],
+          channels: [{ id: 'C01RANDOM', name: 'random' }],
+          usergroups: [],
+        }),
+        'utf8',
+      )
+      const read = await store.read('T01ACME')
+      assert.deepEqual(read?.channels, [{ id: 'C01RANDOM', name: 'random', kind: 'channel' }])
+      assert.equal(read?.dm_count, undefined)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
 describe('loadDirectory', () => {
+  it('refreshes a recent copy that predates DMs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'slack-browser-mcp-directory-'))
+    try {
+      const store = new DirectoryStore(root)
+      const legacy = directory({ saved_at: '2026-10-20T18:00:00.000Z' })
+      delete (legacy as { dm_count?: number }).dm_count
+      await store.write(legacy)
+
+      const loaded = await loadDirectory({
+        client: clients,
+        teamId: 'T01ACME',
+        store,
+        now: new Date('2026-10-20T18:05:00.000Z'),
+      })
+      assert.equal(loaded?.dm_count, 1)
+      assert.equal(directoryChannel(loaded, 'D01ANA')?.user, 'U02ANA')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('writes a fresh directory when none is stored', async () => {
     const root = await mkdtemp(join(tmpdir(), 'slack-browser-mcp-directory-'))
     try {
@@ -182,6 +275,9 @@ describe('loadDirectory', () => {
             throw new Error('offline')
           },
           listAllChannels: async () => {
+            throw new Error('offline')
+          },
+          listDmChannels: async () => {
             throw new Error('offline')
           },
         },

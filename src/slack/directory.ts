@@ -29,20 +29,44 @@ export interface DirectoryGroup {
   name?: string
 }
 
+export type ConversationKind = 'channel' | 'private' | 'dm' | 'mpim'
+
+export interface DirectoryChannel {
+  id: string
+  kind: ConversationKind
+  name?: string
+  /** The other side of a DM: the only handle that says who it is with. */
+  user?: string
+}
+
 export interface Directory {
   version: 1
   team_id: string
   saved_at: string
   users: DirectoryUser[]
-  channels: Array<{ id: string; name: string }>
+  channels: DirectoryChannel[]
   usergroups: DirectoryGroup[]
+  /**
+   * Number of DMs and group DMs held. A directory written before DMs were
+   * indexed lacks it, and `loadDirectory` treats that as stale so the upgrade
+   * lands at once instead of at the next daily refresh.
+   */
+  dm_count?: number
 }
 
 /** The slice of the Slack client the directory needs; keeps tests off the network. */
 export interface DirectoryClient {
   listUsers(): Promise<DirectoryUser[]>
   listAllChannels(): Promise<SlackChannel[]>
+  /** IMs and group DMs, which `listAllChannels` never returns. */
+  listDmChannels(): Promise<SlackChannel[]>
   listUsergroups(): Promise<DirectoryGroup[]>
+}
+
+export function conversationKind(channel: SlackChannel): ConversationKind {
+  if (channel.is_im) return 'dm'
+  if (channel.is_mpim) return 'mpim'
+  return channel.is_private ? 'private' : 'channel'
 }
 
 export const DIRECTORY_MAX_AGE_MS = 24 * 60 * 60_000
@@ -59,7 +83,11 @@ function groupLabel(group: DirectoryGroup): string {
 export function directoryScope(directory: Directory | undefined): ReferenceScope | undefined {
   if (!directory) return undefined
   const users = new Map(directory.users.map((user) => [user.id, userLabel(user) ?? user.id]))
-  const channels = new Map(directory.channels.map((channel) => [channel.id, channel.name]))
+  const channels = new Map(
+    directory.channels
+      .filter((channel): channel is DirectoryChannel & { name: string } => Boolean(channel.name))
+      .map((channel) => [channel.id, channel.name]),
+  )
   const groups = new Map(directory.usergroups.map((group) => [group.id, groupLabel(group)]))
   return {
     user: (id) => users.get(id),
@@ -71,6 +99,53 @@ export function directoryScope(directory: Directory | undefined): ReferenceScope
 export function directoryUser(directory: Directory | undefined, userId: string): string | undefined {
   if (!directory) return undefined
   return userLabel(directory.users.find((user) => user.id === userId))
+}
+
+export function directoryChannel(
+  directory: Directory | undefined,
+  channelId: string,
+): DirectoryChannel | undefined {
+  return directory?.channels.find((channel) => channel.id === channelId)
+}
+
+/** Resolves the handle Slack builds a group DM's name from (`mpdm-<handles>-<n>`). */
+export function directoryUserByHandle(
+  directory: Directory | undefined,
+  handle: string,
+): DirectoryUser | undefined {
+  const needle = handle.toLowerCase()
+  return directory?.users.find((user) => user.name?.toLowerCase() === needle)
+}
+
+/**
+ * Matches what a person is called around here, so `dm:Ana Ruiz` works. A name two
+ * people share resolves to nobody: picking one would address the wrong person.
+ */
+export function directoryUserByReference(
+  directory: Directory | undefined,
+  reference: string,
+): DirectoryUser | undefined {
+  const needle = reference.trim().replace(/^@/, '').toLowerCase()
+  if (!needle || !directory) return undefined
+  const matches = directory.users.filter((user) =>
+    [user.display_name, user.name, user.real_name].some(
+      (field) => field !== undefined && field.toLowerCase() === needle,
+    ),
+  )
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function toDirectoryChannel(channel: SlackChannel): DirectoryChannel {
+  return {
+    id: channel.id,
+    kind: conversationKind(channel),
+    ...(channel.name ? { name: channel.name } : {}),
+    ...(channel.user ? { user: channel.user } : {}),
+  }
+}
+
+function settled<T>(result: PromiseSettledResult<T[]>): T[] {
+  return result.status === 'fulfilled' ? result.value : []
 }
 
 /**
@@ -86,25 +161,52 @@ export async function fetchDirectory(
   const results = await Promise.allSettled([
     client.listUsers(),
     client.listAllChannels(),
+    client.listDmChannels(),
     client.listUsergroups(),
   ])
-  const users = results[0].status === 'fulfilled' ? results[0].value : []
-  const channels = results[1].status === 'fulfilled' ? results[1].value : []
-  const groups = results[2].status === 'fulfilled' ? results[2].value : []
+  const users = settled(results[0]!)
+  const channels = [...settled(results[1]!), ...settled(results[2]!)]
+  const groups = settled(results[3]!)
   if (users.length === 0 && channels.length === 0) {
-    const reason = results[0].status === 'rejected' ? results[0].reason : results[1]
+    const reason = results[0]!.status === 'rejected' ? results[0]!.reason : results[1]!
     throw reason instanceof Error ? reason : new Error('Slack returned an empty directory')
   }
+  // A DM shows up in both lists once Slack adds it to the channel list too, so the
+  // id, not the call, decides what the registry keeps.
+  const byId = new Map<string, DirectoryChannel>()
+  for (const channel of channels) byId.set(channel.id, toDirectoryChannel(channel))
+  const entries = [...byId.values()]
   return {
     version: 1,
     team_id: teamId,
     saved_at: now.toISOString(),
     users,
-    channels: channels
-      .filter((channel): channel is SlackChannel & { name: string } => Boolean(channel.name))
-      .map((channel) => ({ id: channel.id, name: channel.name })),
+    channels: entries,
     usergroups: groups,
+    dm_count: entries.filter((channel) => channel.kind === 'dm' || channel.kind === 'mpim').length,
   }
+}
+
+/**
+ * Directories written before DMs were indexed hold channels as `{id, name}`.
+ * Reading folds them into the current shape instead of failing on them.
+ */
+function normalizeChannels(value: unknown): DirectoryChannel[] {
+  if (!Array.isArray(value)) return []
+  const channels: DirectoryChannel[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const raw = entry as { id?: unknown; kind?: unknown; name?: unknown; user?: unknown }
+    if (typeof raw.id !== 'string') continue
+    channels.push({
+      id: raw.id,
+      kind:
+        raw.kind === 'dm' || raw.kind === 'mpim' || raw.kind === 'private' ? raw.kind : 'channel',
+      ...(typeof raw.name === 'string' ? { name: raw.name } : {}),
+      ...(typeof raw.user === 'string' ? { user: raw.user } : {}),
+    })
+  }
+  return channels
 }
 
 export class DirectoryStore {
@@ -128,9 +230,18 @@ export class DirectoryStore {
       throw error
     }
     try {
-      const parsed = JSON.parse(raw) as Directory
+      const parsed = JSON.parse(raw) as {
+        version?: unknown
+        users?: unknown
+        channels?: unknown
+        dm_count?: unknown
+      } & Directory
       if (parsed.version !== 1 || !Array.isArray(parsed.users)) return undefined
-      return parsed
+      return {
+        ...parsed,
+        channels: normalizeChannels(parsed.channels),
+        ...(typeof parsed.dm_count === 'number' ? { dm_count: parsed.dm_count } : {}),
+      }
     } catch {
       return undefined
     }
@@ -171,7 +282,10 @@ export async function loadDirectory(args: {
   if (!args.force) {
     if (cached) {
       const savedAt = Date.parse(cached.saved_at)
-      if (Number.isFinite(savedAt) && now.getTime() - savedAt <= maxAgeMs) return cached
+      const fresh = Number.isFinite(savedAt) && now.getTime() - savedAt <= maxAgeMs
+      // `dm_count` says the directory knows DMs; without it, `dm:<name>` labels
+      // would keep showing raw user ids for a day after an upgrade.
+      if (fresh && cached.dm_count !== undefined) return cached
     }
   }
 
@@ -181,5 +295,22 @@ export async function loadDirectory(args: {
     return directory
   } catch {
     return cached
+  }
+}
+
+/**
+ * Loads the directory at most once per call site, because naming a person is the
+ * only thing that needs it and most calls name a channel. A failed load is not
+ * retried: the caller gets `undefined` and falls back to raw ids.
+ */
+export function memoizedDirectory(load: () => Promise<Directory | undefined>): {
+  get(): Promise<Directory | undefined>
+  person(reference: string): Promise<string | undefined>
+} {
+  let pending: Promise<Directory | undefined> | undefined
+  const get = () => (pending ??= load())
+  return {
+    get,
+    person: async (reference) => directoryUserByReference(await get(), reference)?.id,
   }
 }
