@@ -106,6 +106,21 @@ export interface HistoryPage {
   next_cursor?: string
 }
 
+export interface SlackSearchMatch {
+  ts: string
+  text?: string
+  user?: string
+  username?: string
+  thread_ts?: string
+  permalink?: string
+  channel?: { id?: string; name?: string }
+}
+
+export interface SearchPage {
+  total: number
+  matches: SlackSearchMatch[]
+}
+
 export interface PostedMessage {
   ts: string
   channel: string
@@ -116,6 +131,30 @@ export interface ApiClientOptions {
   fetch?: typeof fetch
   sleep?: (ms: number) => Promise<void>
   maxRetries?: number
+  /**
+   * Sustained gap between requests. The first `burst` calls go out immediately and
+   * one token comes back every `paceMs`, so a bulk sync spreads over a minute
+   * instead of emptying itself in seconds. 0 disables pacing.
+   */
+  paceMs?: number
+  /** Calls allowed back-to-back before `paceMs` applies, so interactive tools stay fast. */
+  burst?: number
+}
+
+const DEFAULT_PACE_MS = 500
+const DEFAULT_BURST = 4
+const MAX_NAME_LOOKUPS = 25
+
+function defaultPaceMs(): number {
+  const raw = process.env.SLACK_BROWSER_PACE_MS
+  if (raw === undefined || raw === '') return DEFAULT_PACE_MS
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_PACE_MS
+}
+
+/** ±20%, so two machines syncing on the same schedule do not stay in lockstep. */
+function paceJitter(intervalMs: number): number {
+  return Math.round((Math.random() * 2 - 1) * intervalMs * 0.2)
 }
 
 function backoffMs(attempt: number): number {
@@ -134,6 +173,10 @@ export class SlackClient {
   private readonly fetchImpl: typeof fetch
   private readonly sleep: (ms: number) => Promise<void>
   private readonly maxRetries: number
+  private readonly paceMs: number
+  private readonly burst: number
+  private tokens: number
+  private refilledAt = Date.now()
   private readonly userNames = new Map<string, string>()
   private channels?: SlackChannel[]
 
@@ -142,6 +185,33 @@ export class SlackClient {
     this.fetchImpl = options.fetch ?? globalThis.fetch
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
     this.maxRetries = options.maxRetries ?? 3
+    this.paceMs = options.paceMs ?? defaultPaceMs()
+    this.burst = Math.max(1, options.burst ?? DEFAULT_BURST)
+    this.tokens = this.burst
+  }
+
+  /**
+   * Token bucket in front of every request. Slack documents its read limits as
+   * "50+ per minute", so a bulk sync pacing at one call every 500 ms stays under
+   * that while the bucket's burst keeps single-call tools instant.
+   */
+  private async pace(): Promise<void> {
+    if (this.paceMs <= 0) return
+    const now = Date.now()
+    const gained = Math.floor((now - this.refilledAt) / this.paceMs)
+    if (gained > 0) {
+      this.tokens = Math.min(this.burst, this.tokens + gained)
+      this.refilledAt = this.tokens >= this.burst ? now : this.refilledAt + gained * this.paceMs
+    }
+    if (this.tokens > 0) {
+      this.tokens -= 1
+      return
+    }
+    const waitMs = Math.max(0, this.refilledAt + this.paceMs - now) + paceJitter(this.paceMs)
+    // Clamped: a backward clock jump would otherwise turn the wait into a hang.
+    await this.sleep(Math.max(0, Math.min(waitMs, this.paceMs * 4)))
+    this.refilledAt = Date.now()
+    this.tokens = 0
   }
 
   get workspaceName(): string {
@@ -159,6 +229,7 @@ export class SlackClient {
     const cookieName = this.account.d_cookie_name ?? 'd'
 
     for (let attempt = 0; ; attempt += 1) {
+      await this.pace()
       const response = await this.fetchImpl(`${API_BASE}${method}`, {
         method: 'POST',
         headers: {
@@ -348,6 +419,28 @@ export class SlackClient {
     return payload.messages ?? []
   }
 
+  /**
+   * Slack's own search, for what the local index cannot hold: a message older
+   * than the backfill window, or a channel this machine never synced.
+   */
+  async searchMessages(params: {
+    query: string
+    count?: number
+    page?: number
+  }): Promise<SearchPage> {
+    const payload = await this.call<
+      SlackEnvelope & { messages?: { total?: number; matches?: SlackSearchMatch[] } }
+    >('search.messages', {
+      query: params.query,
+      count: params.count ?? 20,
+      ...(params.page && params.page > 1 ? { page: params.page } : {}),
+    })
+    return {
+      total: payload.messages?.total ?? 0,
+      matches: payload.messages?.matches ?? [],
+    }
+  }
+
   async postMessage(params: {
     channel: string
     text: string
@@ -471,9 +564,19 @@ export class SlackClient {
     known?: (userId: string) => string | undefined,
   ): Promise<Map<string, string>> {
     const names = new Map<string, string>()
+    let lookups = 0
     for (const message of messages) {
       if (!message.user || names.has(message.user)) continue
-      names.set(message.user, known?.(message.user) ?? (await this.displayName(message.user)))
+      const resolved = known?.(message.user)
+      if (resolved) {
+        names.set(message.user, resolved)
+        continue
+      }
+      // Without a directory every author costs a `users.info`, and a 200-message
+      // page would turn one read into 200 requests. Past the cap the id is shown.
+      if (lookups >= MAX_NAME_LOOKUPS) continue
+      lookups += 1
+      names.set(message.user, await this.displayName(message.user))
     }
     return names
   }

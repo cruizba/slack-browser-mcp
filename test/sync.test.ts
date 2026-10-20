@@ -222,3 +222,46 @@ test('the channel file stays one line per state change, not per run', async (t) 
   const raw = await readFile(store.channelFile(account.team_id, channel.id), 'utf8')
   assert.equal(raw.trim().split('\n').length, 2, 'no rewrite when nothing changed')
 })
+
+test('a channel fetch turns a search hit into real history', async (t) => {
+  const { store, index } = await scratch(t)
+  await store.append(account.team_id, channel.id, [
+    {
+      ts: parent.ts,
+      channel: channel.id,
+      channel_name: 'ci-notifications',
+      user: 'U0AUTHOR',
+      text: 'despliegue terminado',
+      reply_count: 2,
+      source: 'search',
+      synced_at: '2026-10-20T12:00:00.000Z',
+    },
+  ])
+  const client = new FakeClient([parent], { [parent.ts]: [] })
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+
+  const [stored] = await store.read(account.team_id, channel.id)
+  assert.equal(stored?.source, undefined, 'history must replace the search marker')
+})
+
+test('the index covers everything the run saw, even records a read tool already wrote', async (t) => {
+  const { store, index } = await scratch(t)
+  // A read tool already cached the message: it is in the JSONL but not in the index.
+  await store.append(account.team_id, channel.id, [
+    {
+      ts: parent.ts,
+      channel: channel.id,
+      channel_name: 'ci-notifications',
+      user: 'U0AUTHOR',
+      text: 'despliegue terminado',
+      reply_count: 2,
+      synced_at: '2026-10-20T12:00:00.000Z',
+    },
+  ])
+  // Sync fetches the same message again — unchanged compared to the cached copy.
+  const client = new FakeClient([parent], { [parent.ts]: [] })
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+
+  const hits = index.search({ query: 'despliegue' })
+  assert.equal(hits.length, 1, 'the index must cover it even though sync did not rewrite the file')
+})

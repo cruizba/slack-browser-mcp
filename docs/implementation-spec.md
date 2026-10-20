@@ -287,8 +287,8 @@ footer tells the model how to page rather than dumping history.
 `send`, `sync`, `archive search|stats|reindex|migrate`, `serve`. Same core, no duplicated
 logic. Diagnostics go to stderr; in `serve` mode stdout belongs to the MCP
 protocol. `sync` is the only command that ignores the default on purpose: without
-`--workspace` it walks every stored workspace under one shared deadline, so one
-timer keeps the whole archive current and a slow workspace cannot push the rest
+`--workspace` it walks every stored workspace under one shared deadline, so the
+run at session start covers them all and a slow workspace cannot push the rest
 past the budget.
 
 ## 9. Archive
@@ -364,7 +364,7 @@ session died fails alone; the others still sync.
 
 Two syncs at once would lose cursors: `state.json` is read-modify-write, the JSONL
 appends interleave and SQLite would answer `SQLITE_BUSY`. Every entry point
-(timer, CLI, catch-up) therefore takes a lock directory, `archive/.sync.lock`,
+(boot unit, CLI, catch-up) therefore takes a lock directory, `archive/.sync.lock`,
 before touching anything. Node has no `flock` binding and re-execing the whole run
 under `flock(1)` only to hold a lock is worse, so `mkdir` — atomic on every
 filesystem we care about — plus an owner file with pid, host and start time. A
@@ -378,24 +378,63 @@ than stylistic:
   server at session start and kills it at the end; Claude Code does the same. "The
   server syncs" would mean "the archive syncs only when an agent is open", and days
   without sessions would slide the 7-day reconcile window past deletions that can
-  never be recovered. A timer with `Persistent=true` is the only structure that
-  guarantees coverage.
-- Requests have a 60-second budget in pi. An incremental run takes ~19 s today but
-  minutes after an idle week; a full backfill took 63 s. Doing that inside a tool
-  call either blows the budget or makes a search feel hung.
+  never be recovered.
+- Requests have a 60-second budget in pi. An incremental run takes ~50 s with
+  pacing, minutes after an idle week; a full backfill took 63 s. Doing that inside
+  a tool call either blows the budget or makes a search feel hung.
 - N agent sessions would mean N servers racing for the same files.
 
-What the server does instead is be honest about time and nudge the work out of
-band: reads report the archive's age, and when it is older than 15 minutes the
-server spawns a detached `sync --quiet --deadline 60` after checking that the lock
-is free, then answers from the current index. The nudge writes to local disk only,
+So the archive is refreshed by two things that are not the request path: a
+systemd unit that runs once per session (`OnBootSec=`), and a detached nudge a
+read may start. The nudge only covers the case the unit cannot: time passing
+while a session stays open. Reads report the archive's age and, when it is older
+than 15 minutes, spawn `sync --quiet --deadline 180` after checking that the lock
+is free, then answer from the current index. The nudge writes to local disk only,
 never to Slack, so it does not violate R6. `SLACK_BROWSER_MCP_NO_AUTOSYNC=1`
 disables it for machines where background work is unwelcome.
+
+Dropping the periodic timer is a deliberate trade. Between two sessions the
+archive is not refreshed, so a gap longer than the 7-day reconcile window loses
+deletions inside it for good; that limit used to be theoretical and is now real.
+Every read still answers from disk, which is what the cost model optimises: idle
+machines spend nothing, and a session pays for what it actually reads.
+
+### 9.3.1 Reads are local first
+
+`read_messages`, `get_thread`, `list_conversations` and `search_messages` answer
+from the archive, and only ask Slack when the archive cannot answer: a channel it
+never saw, a window outside its coverage, a thread with replies still missing, or a
+query with no FTS hit (which falls back to `search.messages`). Every answer says
+where it came from, `archive: 4 min ago` or `from Slack`.
+
+A search hit is not a channel window, so it is stored with `source: 'search'`:
+searchable, but excluded from `localHistory` and `localThread` until a real fetch
+rewrites it as history. `changed()` compares `source` as well, or that upgrade
+would never happen.
+
+A fallback writes back what Slack returned (`rememberMessages`): JSONL append plus
+index upsert, with no touching of `state.json` — a read that moved `newest_ts`
+would make a running backfill skip the gap it has not reached. That write made the
+index concurrent with a sync process, so it runs in WAL with `busy_timeout=5000`
+instead of failing on `SQLITE_BUSY`. And because `sync` compares each fetched
+record against the JSONL, a record a read already appended would look unchanged and
+never be indexed; `sync` therefore upserts everything it fetched, not only what
+changed in the file. It costs one prepared statement per fetched message inside a
+single transaction, and it makes the index self-healing.
+
+Requests are paced by a token bucket in `SlackClient`: burst of 4, then one token
+every 500 ms with ±20% jitter, which is ~2 req/s against Slack's documented
+"50+ per minute" for `conversations.history` and `conversations.replies`. The burst
+is what keeps an interactive `read_messages` instant; the sustained rate is what
+keeps a 91-channel pass from looking like a scrape. Before pacing a full pass took
+15-35 s; it now takes ~50 s.
 
 ### 9.4 Known limits
 
 - Edits and deletions are only visible inside the reconcile window. Anything that
-  happened before the first sync, or older than 7 days, can be stale forever.
+  happened before the first sync, or older than 7 days, can be stale forever. With
+  no periodic timer, a gap of more than 7 days between runs (machine off, or no
+  session for a week) makes the deletions in that gap unrecoverable.
 - Thread updates on parents older than the newest channel message are noticed by
   the daily reconcile, so they can lag up to 24 hours.
 - Deleted messages stay in the archive with their text. That is deliberate, and it
@@ -406,7 +445,7 @@ disables it for machines where background work is unwelcome.
 
 ### 9.5 Schema and migrations
 
-The archive outlives a single build: a systemd timer, an MCP server and a shell
+The archive outlives a single build: a systemd unit, an MCP server and a shell
 can be running different versions against the same files. So the layout carries a
 version in `archive/schema.json` (`{"version": 2, …}`), and data written before
 that marker existed counts as version 1, because the layout has not changed since.
@@ -561,7 +600,7 @@ Manual checklist for the login path (cannot be automated without a real account)
 - [x] JSONL archive per channel with tombstones and a rebuildable FTS5 index
 - [x] Incremental sync with a daily reconcile window and a persisted thread backlog
 - [x] CLI `sync`, `archive search|stats|reindex`; MCP `search_messages`
-- [x] systemd user timer every 15 minutes with `Persistent=true`
+- [x] systemd user unit that syncs once per session (`OnBootSec=2min`)
 - [x] Tests without network, plus a real run over 91 conversations
 - [x] Single-writer lock, freshness reporting, and a detached catch-up nudge
 

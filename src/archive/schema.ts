@@ -1,5 +1,5 @@
 /**
- * The archive outlives any single build of this tool: a systemd timer, an MCP
+ * The archive outlives any single build of this tool: a systemd unit, an MCP
  * server and a shell can all be running different versions against the same
  * files. So the layout carries a version, every release that changes it ships a
  * migration, and an upgrade rewrites what it must instead of asking the user to

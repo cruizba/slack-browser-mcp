@@ -7,8 +7,8 @@
 
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
-import { mkdir, readFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -22,6 +22,8 @@ import {
   type SlackAccount,
 } from '../auth/store.ts'
 import { ArchiveIndex } from '../archive/index.ts'
+import { localHistory, localThread } from '../archive/local.ts'
+import { rememberMessages } from '../archive/remember.ts'
 import { ArchiveFileStore } from '../archive/files.ts'
 import { ensureArchiveSchema } from '../archive/schema.ts'
 import { Lock, SyncLock, type LockOwner } from '../archive/lock.ts'
@@ -29,12 +31,12 @@ import { formatAge, oldestAge, teamStatus } from '../archive/status.ts'
 import { ArchiveStore } from '../archive/store.ts'
 import { loginLockPath, loginLogPath } from '../config/paths.ts'
 import { FileSettingsStore } from '../config/settings.ts'
-import { syncAccount } from '../archive/sync.ts'
 import { AuthError, SchemaError } from '../errors.ts'
 import { redact } from '../log/redact.ts'
 import { recordSend } from '../slack/audit.ts'
-import { SlackClient, type SlackFile } from '../slack/client.ts'
+import { SlackClient, type SlackChannel, type SlackFile, type SlackMessage } from '../slack/client.ts'
 import {
+  directoryChannel,
   directoryScope,
   directoryUser,
   directoryUserByReference,
@@ -46,9 +48,10 @@ import {
 import {
   conversationFilter,
   conversationLabel,
+  directoryConversation,
   type ConversationFilter,
 } from '../slack/conversations.ts'
-import { channelLabel, renderMessages } from '../slack/format.ts'
+import { channelLabel, formatTs, renderMessages } from '../slack/format.ts'
 import { resolveReferences } from '../slack/references.ts'
 
 const VERSION = '0.1.0'
@@ -77,6 +80,12 @@ get_thread and as oldest/latest in read_messages. Mentions, channel references,
 user groups and DMs are printed as names, resolved through a local directory that
 refreshes once a day; the raw ids stay in the archive.
 
+Reads answer from a local archive whenever it can, and say how old the answer is
+(\`archive: 4 min ago\`) or that it came \`from Slack\`. Only a miss asks Slack, and
+what Slack returned is kept, so asking twice is cheap. search_messages falls back
+to Slack's own search when the archive has no hit. Treat the age line as part of
+the answer: a message sent a minute ago may not be in the archive yet.
+
 Attachments appear as \`[file: <name> id=<file id>]\`. \`read_file\` downloads that
 id into the local archive and returns images as an image block, so a screenshot
 or a photo can be part of the conversation instead of a filename. Downloads are
@@ -92,6 +101,7 @@ const store = new FileCredentialStore()
 const archive = new ArchiveStore()
 
 const STALE_MS = 15 * 60_000
+const NUDGE_COOLDOWN_MS = 5 * 60_000
 
 function cliEntrypoint(): string | undefined {
   const candidate = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'cli.js')
@@ -100,8 +110,8 @@ function cliEntrypoint(): string | undefined {
 
 /**
  * A read must not turn into a 60-second tool call, so catching up is a detached
- * child with its own budget. The timer is still the guarantee; this only closes
- * the gap after a suspension or a long idle period.
+ * child with its own budget. It runs at login and whenever a read finds the
+ * archive stale; nothing here makes the read itself wait.
  */
 async function nudgeSync(ageMs: number | null): Promise<string> {
   if (process.env.SLACK_BROWSER_MCP_NO_AUTOSYNC === '1') return ''
@@ -110,7 +120,18 @@ async function nudgeSync(ageMs: number | null): Promise<string> {
   if (!entry) return ''
   if (await new SyncLock(archive.root).holder()) return ' (a sync is already running)'
 
-  spawn(process.execPath, [entry, 'sync', '--quiet', '--deadline', '60'], {
+  // A sync that keeps failing (revoked session, Slack down) leaves the archive
+  // stale, and without this stamp every read would start another one.
+  const stamp = join(archive.root, '.nudge')
+  const last = await stat(stamp).then(
+    (value) => value.mtimeMs,
+    () => 0,
+  )
+  if (Date.now() - last < NUDGE_COOLDOWN_MS) return ''
+  await mkdir(archive.root, { recursive: true, mode: 0o700 })
+  await writeFile(stamp, new Date().toISOString(), { mode: 0o600 })
+
+  spawn(process.execPath, [entry, 'sync', '--quiet', '--deadline', '180'], {
     detached: true,
     stdio: 'ignore',
   }).unref()
@@ -210,6 +231,57 @@ export function buildServer(): McpServer {
 
   const loginLock = new Lock(loginLockPath())
   const settings = new FileSettingsStore()
+
+  /**
+   * Age of what a read is about to serve, plus the background sync it may start
+   * when that number is large. A read never waits for the sync: it reports the
+   * age and answers from what it has.
+   */
+  const freshness = async (teamId: string, channelId?: string) => {
+    const state = await archive.loadState()
+    const team = state.teams[teamId]
+    const stamp = (channelId ? team?.channels[channelId]?.last_sync : undefined) ?? team?.last_run
+    const ageMs = stamp ? Math.max(0, Date.now() - Date.parse(stamp)) : null
+    return {
+      ageMs,
+      note: await nudgeSync(ageMs),
+      entry: channelId ? team?.channels[channelId] : undefined,
+    }
+  }
+
+  const remember = async (
+    teamId: string,
+    channel: SlackChannel,
+    messages: SlackMessage[],
+    source?: 'search',
+  ) => {
+    if (messages.length === 0) return
+    const index = new ArchiveIndex()
+    try {
+      await rememberMessages({ store: archive, index, teamId, channel, messages, ...(source ? { source } : {}) })
+    } catch {
+      // The read already has its answer; a failed write must not lose it.
+    } finally {
+      index.close()
+    }
+  }
+
+  /**
+   * The channel as the archive names it. Slack lists a DM under the peer's user
+   * id, and an id passed as a name is not a name: storing it would relabel the
+   * channel file.
+   */
+  const archiveChannel = (target: SlackChannel, dir: Directory | undefined): SlackChannel => {
+    const name =
+      directoryChannel(dir, target.id)?.name ??
+      (target.name && target.name !== target.id ? target.name : undefined)
+    return {
+      id: target.id,
+      ...(name ? { name } : {}),
+      ...(target.user ? { user: target.user } : {}),
+    }
+  }
+
   const loginSummary = async (): Promise<string> => {
     const holder = await loginLock.holder()
     if (holder) return `login: running since ${holder.started_at} (pid ${holder.pid})`
@@ -541,17 +613,50 @@ export function buildServer(): McpServer {
       try {
         const { account, client } = await openSession(reference)
         const directory = await callDirectory(account, client).get()
-        let channels = await client.listMyChannels()
-
-        if (kind === 'channel') channels = channels.filter((c) => !c.is_private && !c.is_im && !c.is_mpim)
-        if (kind === 'private') channels = channels.filter((c) => c.is_private)
-        if (kind === 'dm') channels = channels.filter((c) => c.is_im || c.is_mpim)
+        const named = directory?.channels ?? []
+        // The directory already holds every conversation with its label and size,
+        // so the usual call answers without asking Slack anything.
+        const entries =
+          named.length > 0
+            ? named
+                .filter((entry) =>
+                  kind === 'all'
+                    ? true
+                    : kind === 'channel'
+                      ? entry.kind === 'channel'
+                      : kind === 'private'
+                        ? entry.kind === 'private'
+                        : entry.kind === 'dm' || entry.kind === 'mpim',
+                )
+                .map((entry) => ({
+                  id: entry.id,
+                  label: conversationLabel(
+                    { id: entry.id, name: entry.name, peer: entry.user, kind: entry.kind },
+                    directory,
+                  ),
+                  members: entry.num_members,
+                }))
+            : (await client.listMyChannels())
+                .filter((channel) =>
+                  kind === 'channel'
+                    ? !channel.is_private && !channel.is_im && !channel.is_mpim
+                    : kind === 'private'
+                      ? channel.is_private
+                      : kind === 'dm'
+                        ? channel.is_im || channel.is_mpim
+                        : true,
+                )
+                .map((channel) => ({
+                  id: channel.id,
+                  label: channelLabel(channel, directory),
+                  members: channel.num_members,
+                }))
 
         // A DM has no name, so filtering and sorting on the label is what lets
         // `query` find a person at all.
-        const labelled = channels
-          .map((channel) => ({ channel, label: channelLabel(channel, directory) }))
-          .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true }))
+        const labelled = entries.sort((left, right) =>
+          left.label.localeCompare(right.label, undefined, { numeric: true }),
+        )
 
         const needle = query?.toLowerCase()
         const matching = needle
@@ -569,10 +674,9 @@ export function buildServer(): McpServer {
           }
         }
 
-        const lines = shown.map(({ channel, label }) => {
-          const members = channel.num_members ? ` ${channel.num_members} members` : ''
-          return `${label} (${channel.id})${members}`
-        })
+        const lines = shown.map(({ id, label, members }) =>
+          `${label} (${id})${members ? ` ${members} members` : ''}`,
+        )
         const footer =
           matching.length > shown.length
             ? `\n\nshowing ${shown.length} of ${matching.length}; raise limit or narrow query`
@@ -593,7 +697,7 @@ export function buildServer(): McpServer {
     {
       title: 'Read Slack messages',
       description:
-        'Read messages from a channel or DM. Returns them oldest first with their raw Slack ts values. Use oldest/latest to page back in time. Attachments show up as [file: name id=F0ABC]; read_file fetches them.',
+        'Read messages from a channel or DM. Answers from the local archive when it can and says how old that is; a miss asks Slack and keeps the result. Returns them oldest first with their raw Slack ts values. Use oldest/latest to page back in time. Attachments show up as [file: name id=F0ABC]; read_file fetches them.',
       inputSchema: {
         workspace,
         channel: z
@@ -609,28 +713,73 @@ export function buildServer(): McpServer {
     },
     async ({ workspace: reference, channel, limit, oldest, latest }) => {
       try {
+        await ensureArchiveSchema()
         const { account, client } = await openSession(reference)
         const directory = callDirectory(account, client)
-        const target = await client.resolveChannel(channel, { person: directory.person })
+        const dir = await directory.get()
+        const target =
+          directoryConversation(dir, channel) ??
+          (await client.resolveChannel(channel, { person: directory.person }))
+        const fresh = await freshness(account.team_id, target.id)
+        const origin = `archive: ${formatAge(fresh.ageMs)}${fresh.note}`
+        const label = channelLabel(target, dir)
+
+        const cached = await localHistory({
+          store: archive,
+          teamId: account.team_id,
+          channelId: target.id,
+          limit,
+          ...(oldest ? { oldest } : {}),
+          ...(latest ? { latest } : {}),
+        })
+
+        if (cached) {
+          if (cached.length === 0) {
+            return {
+              content: [
+                { type: 'text' as const, text: `${account.team_name} · ${label}: no messages in that range (${origin}).` },
+              ],
+            }
+          }
+          const names = await client.namesFor(cached, (id) => directoryUser(dir, id))
+          const floor = fresh.entry?.oldest_ts
+          const coverage =
+            floor && cached.length < limit
+              ? `\n\nthis is everything the archive holds for the channel, from ${formatTs(floor)}`
+              : ''
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  `${account.team_name} · ${label} (${target.id}) — ${cached.length} messages, oldest first · ${origin}\n` +
+                  `${renderMessages(cached, { names, scope: directoryScope(dir) })}${coverage}`,
+              },
+            ],
+          }
+        }
+
         const page = await client.history({
           channel: target.id,
           limit,
           ...(oldest ? { oldest } : {}),
           ...(latest ? { latest } : {}),
         })
-        const dir = await directory.get()
+        await remember(account.team_id, archiveChannel(target, dir), page.messages)
 
         if (page.messages.length === 0) {
           return {
             content: [
-              { type: 'text' as const, text: `${account.team_name} · ${channelLabel(target, dir)}: no messages in that range.` },
+              {
+                type: 'text' as const,
+                text: `${account.team_name} · ${label}: no messages in that range (from Slack).`,
+              },
             ],
           }
         }
 
         const chronological = [...page.messages].reverse()
         const names = await client.namesFor(chronological, (id) => directoryUser(dir, id))
-        const header = `${account.team_name} · ${channelLabel(target, dir)} (${target.id}) — ${chronological.length} messages, oldest first`
         const footer = page.has_more
           ? `\n\nmore history exists; call again with oldest=${chronological[0]!.ts}`
           : ''
@@ -639,7 +788,9 @@ export function buildServer(): McpServer {
           content: [
             {
               type: 'text' as const,
-              text: `${header}\n${renderMessages(chronological, { names, scope: directoryScope(dir) })}${footer}`,
+              text:
+                `${account.team_name} · ${label} (${target.id}) — ${chronological.length} messages, oldest first · from Slack\n` +
+                `${renderMessages(chronological, { names, scope: directoryScope(dir) })}${footer}`,
             },
           ],
         }
@@ -654,7 +805,7 @@ export function buildServer(): McpServer {
     {
       title: 'Read a Slack thread',
       description:
-        'Read every reply of a thread. Pass the ts of the parent message as thread_ts; read_messages prints it next to messages that have replies.',
+        'Read every reply of a thread. Pass the ts of the parent message as thread_ts; read_messages prints it next to messages that have replies. Served from the archive when the whole thread is there, otherwise from Slack (and kept).',
       inputSchema: {
         workspace,
         channel: z.string().describe('Channel name or id where the thread lives.'),
@@ -665,13 +816,27 @@ export function buildServer(): McpServer {
     },
     async ({ workspace: reference, channel, thread_ts, limit }) => {
       try {
+        await ensureArchiveSchema()
         const { account, client } = await openSession(reference)
         const directory = callDirectory(account, client)
-        const target = await client.resolveChannel(channel, { person: directory.person })
-        const messages = await client.replies({ channel: target.id, thread_ts, limit })
         const dir = await directory.get()
+        const target =
+          directoryConversation(dir, channel) ??
+          (await client.resolveChannel(channel, { person: directory.person }))
+        const fresh = await freshness(account.team_id, target.id)
+        const cached = await localThread({
+          store: archive,
+          teamId: account.team_id,
+          channelId: target.id,
+          threadTs: thread_ts,
+          limit,
+        })
+        const messages = cached ?? (await client.replies({ channel: target.id, thread_ts, limit }))
+        if (!cached) await remember(account.team_id, archiveChannel(target, dir), messages)
+
+        const origin = cached ? `archive: ${formatAge(fresh.ageMs)}${fresh.note}` : 'from Slack'
         const names = await client.namesFor(messages, (id) => directoryUser(dir, id))
-        const header = `${account.team_name} · thread in ${channelLabel(target, dir)} (${target.id}) — ${messages.length} messages`
+        const header = `${account.team_name} · thread in ${channelLabel(target, dir)} (${target.id}) — ${messages.length} messages · ${origin}`
         return {
           content: [
             { type: 'text' as const, text: `${header}\n${renderMessages(messages, { names, scope: directoryScope(dir) })}` },
@@ -829,7 +994,7 @@ export function buildServer(): McpServer {
     {
       title: 'Search archived Slack messages',
       description:
-        'Full-text search over the local archive built by `slack-browser sync`. Works without network access and covers history older than what Slack returns cheaply. read_messages still asks Slack directly for the live view.',
+        'Full-text search over the local archive built by `slack-browser sync`. Works without network access and covers history older than what Slack returns cheaply. When nothing local matches, it asks Slack search instead and keeps what it finds, marked so it never passes for channel history.',
       inputSchema: {
         query: z.string().min(1).describe('Words to look for; all of them must appear.'),
         workspace: z
@@ -877,13 +1042,81 @@ export function buildServer(): McpServer {
             ...filter,
           })
 
-          const freshness = `archive: ${formatAge(ageMs)}${note}`
+          const freshnessLine = `archive: ${formatAge(ageMs)}${note}`
           if (hits.length === 0) {
+            const session = await openSession(reference)
+            const remote = await session.client.searchMessages({ query, count: limit })
+            const wanted = channel?.toLowerCase()
+            const matches = wanted
+              ? remote.matches.filter(
+                  (match) =>
+                    match.channel?.name?.toLowerCase() === wanted.replace(/^#/, '') ||
+                    match.channel?.id === channel,
+                )
+              : remote.matches
+
+            if (matches.length === 0 && remote.matches.length > 0) {
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text:
+                      `${freshnessLine}\nNo local hit, and none of the ${remote.total} Slack search hits ` +
+                      `are in "${channel}". Search again without channel to see them.`,
+                  },
+                ],
+              }
+            }
+
+            if (matches.length > 0) {
+              const buckets = new Map<string, { channel: SlackChannel; messages: SlackMessage[] }>()
+              const lines: string[] = []
+              for (const match of matches) {
+                const channelId = match.channel?.id
+                if (!channelId) continue
+                const name = match.channel?.name
+                lines.push(
+                  `[${match.ts}] ${name ? `#${name}` : channelId} ${match.username ?? match.user ?? 'unknown'}: ${match.text ?? ''}`,
+                )
+                const bucket = buckets.get(channelId) ?? {
+                  channel: {
+                    id: channelId,
+                    // A DM is filed under the peer's user id, never under Slack's
+                    // placeholder name for it.
+                    ...(name && !channelId.startsWith('D') ? { name } : {}),
+                  },
+                  messages: [],
+                }
+                bucket.messages.push({
+                  ts: match.ts,
+                  ...(match.text !== undefined ? { text: match.text } : {}),
+                  ...(match.user ? { user: match.user } : {}),
+                  ...(match.username ? { username: match.username } : {}),
+                  ...(match.thread_ts ? { thread_ts: match.thread_ts } : {}),
+                })
+                buckets.set(channelId, bucket)
+              }
+              for (const bucket of buckets.values()) {
+                await remember(session.account.team_id, bucket.channel, bucket.messages, 'search')
+              }
+
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text:
+                      `${freshnessLine}\n${matches.length} of ${remote.total} hits from Slack search, now archived\n` +
+                      lines.join('\n'),
+                  },
+                ],
+              }
+            }
+
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: `${freshness}\nNo archived message matches "${query}". The archive covers what \`slack-browser sync\` has fetched so far.`,
+                  text: `${freshnessLine}\nNo archived message matches "${query}", and Slack search returned nothing either.`,
                 },
               ],
             }
@@ -910,7 +1143,7 @@ export function buildServer(): McpServer {
             content: [
               {
                 type: 'text' as const,
-                text: `${freshness}\n${hits.length} hits (best first)\n${lines.join('\n')}`,
+                text: `${freshnessLine}\n${hits.length} hits (best first)\n${lines.join('\n')}`,
               },
             ],
           }
@@ -945,7 +1178,7 @@ export function buildServer(): McpServer {
             content: [
               {
                 type: 'text' as const,
-                text: 'No archive yet. Run `slack-browser sync`, or start the sync timer.',
+                text: 'No archive yet. Run `slack-browser sync`, or read a channel: the first read fetches and files it.',
               },
             ],
           }

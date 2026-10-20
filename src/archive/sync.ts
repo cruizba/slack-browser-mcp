@@ -15,6 +15,7 @@ import type { SlackAccount } from '../auth/store.ts'
 import type { HistoryPage, SlackChannel, SlackMessage } from '../slack/client.ts'
 import { ArchiveIndex } from './index.ts'
 import { SyncLock } from './lock.ts'
+import { changed, channelName, toRecord } from './record.ts'
 import { ArchiveStore, type ArchivedMessage, type ChannelState } from './store.ts'
 
 const PAGE_SIZE = 200
@@ -72,49 +73,6 @@ function slackTs(date: Date): string {
 
 function daysAgo(now: Date, days: number): string {
   return slackTs(new Date(now.getTime() - days * 86_400_000))
-}
-
-function channelName(channel: SlackChannel): string | undefined {
-  return channel.name ?? channel.user ?? undefined
-}
-
-function toRecord(channel: SlackChannel, message: SlackMessage, now: Date): ArchivedMessage {
-  const name = channelName(channel)
-  const files = (message.files ?? [])
-    .map((file) => ({
-      ...(file.id ? { id: file.id } : {}),
-      ...(file.name ? { name: file.name } : {}),
-      ...(file.title ? { title: file.title } : {}),
-      ...(file.mimetype ? { mimetype: file.mimetype } : {}),
-      ...(file.size !== undefined ? { size: file.size } : {}),
-    }))
-    .filter((file) => Object.keys(file).length > 0)
-  return {
-    ts: message.ts,
-    channel: channel.id,
-    ...(name ? { channel_name: name } : {}),
-    ...(message.user ? { user: message.user } : {}),
-    ...(message.username ? { username: message.username } : {}),
-    ...(message.bot_id ? { bot_id: message.bot_id } : {}),
-    ...(message.text !== undefined ? { text: message.text } : {}),
-    ...(message.thread_ts ? { thread_ts: message.thread_ts } : {}),
-    ...(message.subtype ? { subtype: message.subtype } : {}),
-    ...(message.edited?.ts ? { edited_ts: message.edited.ts } : {}),
-    ...(message.reply_count !== undefined ? { reply_count: message.reply_count } : {}),
-    ...(files.length > 0 ? { files } : {}),
-    synced_at: now.toISOString(),
-  }
-}
-
-function changed(cached: ArchivedMessage | undefined, record: ArchivedMessage): boolean {
-  if (!cached) return true
-  if (cached.deleted_at) return true
-  return (
-    cached.text !== record.text ||
-    cached.edited_ts !== record.edited_ts ||
-    cached.reply_count !== record.reply_count ||
-    JSON.stringify(cached.files ?? []) !== JSON.stringify(record.files ?? [])
-  )
 }
 
 export async function syncAccount(args: {
@@ -316,8 +274,15 @@ async function syncChannel(args: {
 
   if (records.length > 0) {
     await store.append(teamId, channel.id, records)
-    index.upsert(teamId, records)
   }
+  // Everything the run saw goes to the index, not only what changed: a read tool
+  // can have appended a record whose text already matched, and comparing against
+  // the JSONL alone would leave that record unsearchable forever.
+  const indexable = new Map(records.map((record) => [record.ts, record]))
+  for (const message of fetched.values()) {
+    if (!indexable.has(message.ts)) indexable.set(message.ts, toRecord(channel, message, options.now))
+  }
+  if (indexable.size > 0) index.upsert(teamId, [...indexable.values()])
 
   const timestamps = [
     ...cached.map((record) => record.ts),

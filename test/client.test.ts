@@ -204,4 +204,109 @@ describe('SlackClient', () => {
       (error: unknown) => error instanceof SlackApiError && error.code === 'http_403',
     )
   })
+
+  it('spends the burst at once and then paces one request per interval', async () => {
+    const waits: number[] = []
+    const { fetchImpl, calls } = recordingFetch(
+      Array.from({ length: 5 }, () => () =>
+        respond({ ok: true, team: 'Acme', team_id: 'T01', user: 'ana', user_id: 'U01' }),
+      ),
+    )
+    const client = new SlackClient(account, {
+      fetch: fetchImpl,
+      paceMs: 100,
+      burst: 2,
+      sleep: async (ms) => {
+        waits.push(ms)
+      },
+    })
+    for (let index = 0; index < 5; index += 1) await client.authTest()
+
+    assert.equal(calls.length, 5)
+    assert.equal(waits.length, 3)
+    for (const wait of waits) assert.ok(wait > 0 && wait <= 120, `paced ${wait} ms`)
+  })
+
+  it('sends requests back to back when pacing is off', async () => {
+    const waits: number[] = []
+    const { fetchImpl, calls } = recordingFetch(
+      Array.from({ length: 4 }, () => () =>
+        respond({ ok: true, team: 'Acme', team_id: 'T01', user: 'ana', user_id: 'U01' }),
+      ),
+    )
+    const client = new SlackClient(account, {
+      fetch: fetchImpl,
+      paceMs: 0,
+      sleep: async (ms) => {
+        waits.push(ms)
+      },
+    })
+    for (let index = 0; index < 4; index += 1) await client.authTest()
+
+    assert.equal(calls.length, 4)
+    assert.deepEqual(waits, [])
+  })
+
+  it('stops asking users.info after a bounded number of authors', async () => {
+    const { fetchImpl, calls } = recordingFetch(
+      Array.from({ length: 40 }, (_, index) => () =>
+        respond({ ok: true, user: { id: `U${index}`, name: `user${index}` } }),
+      ),
+    )
+    const client = new SlackClient(account, { fetch: fetchImpl })
+    const messages = Array.from({ length: 30 }, (_, index) => ({
+      ts: `17925000${index}.000100`,
+      user: `U${index}`,
+    }))
+
+    const names = await client.namesFor(messages)
+
+    assert.equal(calls.length, 25, 'one page of messages must not cost one request per author')
+    assert.equal(names.size, 25)
+  })
+
+  it('costs nothing when the directory already knows the authors', async () => {
+    const { fetchImpl, calls } = recordingFetch([])
+    const client = new SlackClient(account, { fetch: fetchImpl })
+    const messages = Array.from({ length: 30 }, (_, index) => ({
+      ts: `17925000${index}.000100`,
+      user: `U${index}`,
+    }))
+
+    const names = await client.namesFor(messages, (id) => `name-${id}`)
+
+    assert.equal(calls.length, 0)
+    assert.equal(names.size, 30)
+  })
+
+  it('parses search.messages into a page of matches', async () => {
+    const { fetchImpl, calls } = recordingFetch([
+      () =>
+        respond({
+          ok: true,
+          messages: {
+            total: 42,
+            matches: [
+              {
+                ts: '1792500000.000100',
+                text: 'el mtu del vxlan',
+                user: 'U0AUTHOR',
+                username: 'Ana',
+                channel: { id: 'C0OPS', name: 'operations' },
+              },
+            ],
+          },
+        }),
+    ])
+    const client = new SlackClient(account, { fetch: fetchImpl })
+    const page = await client.searchMessages({ query: 'vxlan', count: 5 })
+
+    assert.equal(page.total, 42)
+    assert.equal(page.matches.length, 1)
+    assert.equal(page.matches[0]!.text, 'el mtu del vxlan')
+    assert.equal(page.matches[0]!.channel?.name, 'operations')
+    const body = new URLSearchParams(String(calls[0]?.init.body))
+    assert.equal(body.get('query'), 'vxlan')
+    assert.equal(body.get('count'), '5')
+  })
 })

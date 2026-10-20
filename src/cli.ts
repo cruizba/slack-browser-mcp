@@ -362,8 +362,8 @@ async function commandSync(args: ParsedArgs): Promise<number> {
     ? [await store.resolve(reference)]
     : await Promise.all((await store.list()).map((summary) => store.get(summary.team_id)))
   if (accounts.length === 0) {
-    // Not an error: the timer runs before anyone signs in, and a red unit every
-    // fifteen minutes says nothing useful.
+    // Not an error: the boot sync runs before anyone signs in, and a red unit on
+    // every session start says nothing useful.
     console.error('No Slack session stored yet. Run `slack-browser login`.')
     return 0
   }
@@ -379,7 +379,7 @@ async function commandSync(args: ParsedArgs): Promise<number> {
     console.error(`archive schema migrated ${schema.from} -> ${schema.to}`)
   }
 
-  // One budget for the whole run: a timer asks for a deadline, not one per workspace.
+  // One budget for the whole run: the timer asks for a deadline, not one per workspace.
   const deadline = Date.now() + numberFlag(args, 'deadline', 600) * 1000
   const options = (remainingMs: number) => ({
     full: args.flags.get('full') === true,

@@ -2,7 +2,7 @@
 
 Slack read and write for pi, Claude Code and opencode, from a normal browser login.
 
-**Linux only.** The archive timer is a systemd user unit; there is no fallback for
+**Linux only.** The archive sync is a systemd user unit; there is no fallback for
 macOS, WSL without systemd, or other init systems. Needs Node.js 22 or newer and
 Google Chrome.
 
@@ -17,7 +17,7 @@ does the rest for every agent it finds — `pi`, `claude`, `opencode`:
 
 - registers the MCP server `slack`
 - links the `/slack*` commands, sign-in included
-- installs `slack-browser-sync.timer`, which refreshes the archive every 15 minutes
+- installs `slack-browser-sync.timer`, which syncs the archive once at session start
 
 It never opens a browser. Sign in from the agent with `/slack-login`; the first
 workspace you sign in to becomes the default, and `/slack-workspaces` changes it.
@@ -48,7 +48,7 @@ version and is migrated in place, with the index rebuilt from the JSONL.
 /slack-sync                               # refresh the archive now
 ```
 
-Everything else — CLI, workspaces, the archive, the sync timer, security,
+Everything else — CLI, workspaces, the archive, the sync unit, security,
 troubleshooting — is in [docs/reference.md](docs/reference.md).
 
 Messages come out with names, not ids: mentions like `<@U02ANA>`, channel

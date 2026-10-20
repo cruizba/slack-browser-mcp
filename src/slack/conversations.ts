@@ -112,6 +112,52 @@ export function slackChannelLabel(channel: SlackChannel, directory?: Directory):
   )
 }
 
+function asSlackChannel(entry: DirectoryChannel): SlackChannel {
+  return {
+    id: entry.id,
+    ...(entry.name ? { name: entry.name } : {}),
+    ...(entry.user ? { user: entry.user } : {}),
+    ...(entry.num_members !== undefined ? { num_members: entry.num_members } : {}),
+    is_private: entry.kind === 'private',
+    is_im: entry.kind === 'dm',
+    is_mpim: entry.kind === 'mpim',
+  }
+}
+
+/**
+ * `SlackClient.resolveChannel` answered from the cached directory, so naming a
+ * channel does not cost a `users.conversations` call. `undefined` means the
+ * directory cannot decide (missing, ambiguous or unknown name) and the caller
+ * has to ask Slack.
+ */
+export function directoryConversation(
+  directory: Directory | undefined,
+  reference: string,
+): SlackChannel | undefined {
+  if (!directory) return undefined
+  const raw = reference.trim().replace(/^#/, '')
+  if (!raw) return undefined
+
+  const byId = directory.channels.find((entry) => entry.id === raw)
+  if (byId) return asSlackChannel(byId)
+  if (CONVERSATION_ID.test(raw)) return { id: raw, name: raw }
+
+  const lowered = raw.toLowerCase()
+  const named = directory.channels.filter((entry) => entry.name)
+  const exact = named.filter((entry) => entry.name!.toLowerCase() === lowered)
+  if (exact.length === 1) return asSlackChannel(exact[0]!)
+  if (exact.length > 1) return undefined
+
+  const partial = named.filter((entry) => entry.name!.toLowerCase().includes(lowered))
+  if (partial.length === 1) return asSlackChannel(partial[0]!)
+  if (partial.length > 1) return undefined
+
+  const person = directoryUserByReference(directory, raw.replace(/^(dm:|@)/i, ''))
+  if (!person) return undefined
+  const dm = directory.channels.find((entry) => entry.kind === 'dm' && entry.user === person.id)
+  return dm ? asSlackChannel(dm) : undefined
+}
+
 /**
  * Turns what a person typed into what the archive index can filter on. A DM is
  * stored under the peer's user id, so naming the person resolves to that id.

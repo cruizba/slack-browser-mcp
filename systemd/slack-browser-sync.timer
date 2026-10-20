@@ -1,11 +1,12 @@
 [Unit]
-Description=Sync the Slack archive every 15 minutes
+Description=Sync the Slack archive once per session
 
 [Timer]
-# OnCalendar rather than OnUnitActiveSec: only OnCalendar supports Persistent=,
-# which replays the run that was missed while the machine was off.
-OnCalendar=*:0/15
-Persistent=true
+# One run when the user manager starts, not a schedule: every read serves from the
+# archive and files whatever it had to fetch, so the boot run only has to cover the
+# gap while nothing was running. OnBootSec counts from the start of the user
+# manager, which is when this can work at all.
+OnBootSec=2min
 AccuracySec=30s
 RandomizedDelaySec=20s
 

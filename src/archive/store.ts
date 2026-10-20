@@ -24,6 +24,12 @@ export interface ArchivedMessage {
   ts: string
   channel: string
   channel_name?: string
+  /**
+   * `search` marks a message filed from Slack search rather than from a channel
+   * fetch: it is searchable, but it is not a contiguous window, so channel
+   * history must not be served from it.
+   */
+  source?: 'search'
   user?: string
   username?: string
   bot_id?: string
@@ -76,6 +82,9 @@ function fold(records: ArchivedMessage[]): ArchivedMessage[] {
     }
     const merged: ArchivedMessage = { ...existing, ...record }
     if (!record.deleted_at) delete merged.deleted_at
+    // Same rule for the origin: a later line without `source` means a channel
+    // fetch confirmed the message, and the marker must not outlive it.
+    if (!record.source) delete merged.source
     byTs.set(record.ts, merged)
   }
   return [...byTs.values()].sort((left, right) => Number(left.ts) - Number(right.ts))

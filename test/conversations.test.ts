@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { conversationFilter, conversationLabel } from '../src/slack/conversations.ts'
+import { conversationFilter, conversationLabel, directoryConversation } from '../src/slack/conversations.ts'
 import { channelLabel } from '../src/slack/format.ts'
 import type { Directory } from '../src/slack/directory.ts'
 
@@ -90,5 +90,34 @@ describe('conversationFilter', () => {
     assert.deepEqual(conversationFilter('mpdm-ana.ruiz--luis.g-1'), {
       channelName: 'mpdm-ana.ruiz--luis.g-1',
     })
+  })
+})
+
+describe('directoryConversation', () => {
+  it('resolves a channel by name (exact and substring)', () => {
+    const byId = directoryConversation(directory, '#random')
+    assert.equal(byId?.id, 'C01RANDOM')
+    const byPartial = directoryConversation(directory, 'lead')
+    assert.equal(byPartial?.id, 'C02LEADS')
+  })
+
+  it('resolves a DM by person name', () => {
+    const dm = directoryConversation(directory, 'dm:Ana')
+    assert.equal(dm?.id, 'D01ANA')
+    const at = directoryConversation(directory, '@Ana')
+    assert.equal(at?.id, 'D01ANA')
+  })
+
+  it('returns the SlackChannel shape with is_im set for DMs', () => {
+    const dm = directoryConversation(directory, '#random')
+    assert.equal(dm?.is_private, false)
+    assert.equal(dm?.is_im, false)
+    const mpim = directoryConversation(directory, 'mpdm-ana.ruiz--luis.g--michel.maes95-1')
+    assert.equal(mpim?.is_mpim, true)
+  })
+
+  it('returns undefined when no entry matches', () => {
+    assert.equal(directoryConversation(directory, 'invisible'), undefined)
+    assert.equal(directoryConversation(undefined, 'random'), undefined)
   })
 })

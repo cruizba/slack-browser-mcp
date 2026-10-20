@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Linux only: the archive timer is a systemd user unit, with no fallback.
+# Linux only: the archive sync is a systemd user unit, with no fallback.
 # Re-runnable: pulls the branch, rebuilds, rewrites the units and agent entries.
 
 set -euo pipefail
@@ -18,7 +18,7 @@ Usage: install.sh [options]
   --dir <path>      where to install (default: ~/slack-browser-mcp)
   --branch <name>   branch to install (default: main)
   --no-pull         keep the checkout as it is, do not fetch or pull
-  --no-systemd      skip the archive timer
+  --no-systemd      skip the archive sync unit
   -h, --help        show this help
 EOF
 }
@@ -119,7 +119,7 @@ fi
 [ "$AGENTS" = 1 ] || echo "    no pi, claude or opencode in PATH; the server is $DIR/dist/mcp/server.js"
 
 if [ "$SYSTEMD" = 1 ]; then
-  step "Installing the archive timer"
+  step "Installing the archive sync"
   if [ ! -d /run/systemd/system ]; then
     echo "    systemd is not running here; skipped"
   else
@@ -142,8 +142,8 @@ if [ "$SYSTEMD" = 1 ]; then
     systemctl --user daemon-reload
     systemctl --user enable --now slack-browser-sync.timer >/dev/null
     loginctl enable-linger "$USER" >/dev/null 2>&1 \
-      || echo "    could not enable linger; the timer only runs while you are logged in"
-    echo "    slack-browser-sync.timer enabled (every 15 minutes)"
+      || echo "    could not enable linger; the sync only runs while you are logged in"
+    echo "    slack-browser-sync.timer enabled (runs at session start; reads keep it current)"
   fi
 fi
 

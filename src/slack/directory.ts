@@ -37,6 +37,8 @@ export interface DirectoryChannel {
   name?: string
   /** The other side of a DM: the only handle that says who it is with. */
   user?: string
+  /** Kept so listing conversations stays local instead of re-asking Slack. */
+  num_members?: number
 }
 
 export interface Directory {
@@ -141,6 +143,7 @@ function toDirectoryChannel(channel: SlackChannel): DirectoryChannel {
     kind: conversationKind(channel),
     ...(channel.name ? { name: channel.name } : {}),
     ...(channel.user ? { user: channel.user } : {}),
+    ...(channel.num_members !== undefined ? { num_members: channel.num_members } : {}),
   }
 }
 
@@ -196,7 +199,13 @@ function normalizeChannels(value: unknown): DirectoryChannel[] {
   const channels: DirectoryChannel[] = []
   for (const entry of value) {
     if (!entry || typeof entry !== 'object') continue
-    const raw = entry as { id?: unknown; kind?: unknown; name?: unknown; user?: unknown }
+    const raw = entry as {
+      id?: unknown
+      kind?: unknown
+      name?: unknown
+      user?: unknown
+      num_members?: unknown
+    }
     if (typeof raw.id !== 'string') continue
     channels.push({
       id: raw.id,
@@ -204,6 +213,7 @@ function normalizeChannels(value: unknown): DirectoryChannel[] {
         raw.kind === 'dm' || raw.kind === 'mpim' || raw.kind === 'private' ? raw.kind : 'channel',
       ...(typeof raw.name === 'string' ? { name: raw.name } : {}),
       ...(typeof raw.user === 'string' ? { user: raw.user } : {}),
+      ...(typeof raw.num_members === 'number' ? { num_members: raw.num_members } : {}),
     })
   }
   return channels

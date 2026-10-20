@@ -8,8 +8,8 @@ scraping, no bot installation, no admin approval for a workspace app.
 Status: read and write, with a local archive. Channels, DMs, history and threads
 are read-only surface; `post_message` is the single tool with a side effect, it
 refuses to send unless the call carries `confirm=true`, and every send is appended
-to an audit log. A systemd timer keeps a plain-text copy of the conversations on
-disk so history survives and search does not need the API.
+to an audit log. A plain-text copy of the conversations lives on disk, synced once
+per session, so history survives and a read answers from it instead of the API.
 
 ## Requirements
 
@@ -26,7 +26,7 @@ The README installs with it. It pulls `main`, runs `npm ci` and `npm run build`,
 `npm link`, then walks the agents found in `PATH` and, for each, links the
 `commands/` slash commands into that agent's directory and registers the MCP
 server `slack`. Finally it renders `systemd/slack-browser-sync.service.in` into
-`~/.config/systemd/user/`, installs the timer, enables it and turns on linger.
+`~/.config/systemd/user/`, installs the sync timer, enables it and turns on linger.
 It never opens a browser: signing in is a command the agent runs. Re-running it
 is safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left
 on its branch). That re-run is also the update: there is no separate command.
@@ -37,7 +37,7 @@ on its branch). That re-run is also the update: there is no separate command.
   --dir <path>      where to install (default: ~/slack-browser-mcp)
   --branch <name>   branch to install (default: main)
   --no-pull         keep the checkout as it is, do not fetch or pull
-  --no-systemd      skip the archive timer
+  --no-systemd      skip the archive sync unit
 ```
 
 ## Install by hand
@@ -176,9 +176,9 @@ tools take the same reference as their `workspace` argument, so an agent reads
 the default unless the user names another workspace.
 
 `sync` is the exception: without `--workspace` it walks every stored workspace
-under one deadline, so a single timer keeps the whole archive current. `archive
-search` and `archive stats` accept `--workspace` too; an unfiltered search
-prefixes each hit with the workspace it came from.
+under one deadline, so the run at session start covers them all. `archive search`
+and `archive stats` accept `--workspace` too; an unfiltered search prefixes each
+hit with the workspace it came from.
 
 ## Archive: a local copy of your Slack
 
@@ -209,8 +209,8 @@ message to update `slack-browser`, never read with wrong assumptions. A line tha
 cannot be parsed is moved to `<channel>.jsonl.corrupt` instead of blocking the
 upgrade.
 
-Every 15 minutes, through the systemd user units in `systemd/`. `install.sh`
-does this for you; by hand it is:
+Once per session, through the systemd user units in `systemd/`. `install.sh` does
+this for you; by hand it is:
 
 ```bash
 sed -e "s|@NODE@|$(command -v node)|" -e "s|@REPO@|$PWD|" \
@@ -223,20 +223,40 @@ systemctl --user list-timers slack-browser-sync.timer
 systemctl --user start slack-browser-sync.service   # run one now
 ```
 
-The timer uses `OnCalendar=` with `Persistent=true`, so a run missed because the
-machine was off happens once at the next boot instead of being skipped.
+The timer uses `OnBootSec=2min`, counted from the moment the user manager starts,
+so a fresh login or a reboot syncs 2 minutes later. There is no schedule: while you
+use the archive, reads keep it current, and anything they had to fetch from Slack
+is written back.
 
 **One writer at a time.** Every entry point takes a lock directory
 (`archive/.sync.lock`) before touching the archive; a second run exits with
 `another sync is already running` instead of interleaving appends and losing
 cursors. A lock left by a dead process is taken over.
 
-**Freshness, not assumptions.** `search_messages` starts its answer with
-`archive: 3 min ago`, and `archive_status` gives the full picture. When the archive
-is older than 15 minutes, a read also spawns a detached
-`sync --quiet --deadline 60` and returns the cached results immediately — the
-tool call never waits for it. Set `SLACK_BROWSER_MCP_NO_AUTOSYNC=1` to disable
-that nudge.
+**Local first, Slack on a miss.** `read_messages`, `get_thread`,
+`list_conversations` and `search_messages` answer from disk whenever they can, and
+say where the answer came from: `archive: 3 min ago` or `from Slack`. A read that
+finds nothing cached asks Slack and files the answer, so the next call is local:
+`read_messages` for a channel the archive never saw, `get_thread` for a thread with
+replies still missing, and `search_messages` for a query with no local hit, which
+falls back to Slack's own search. Search hits are archived too, but marked
+`source: search`: they are individual messages, not a window, so they never pass
+for channel history until a real fetch confirms them.
+
+**Freshness, not assumptions.** When the archive is older than 15 minutes, a read
+spawns a detached `sync --quiet --deadline 180` and returns what it already has —
+the tool call never waits for it. The nudge stamp is `archive/.nudge` and lives 5
+minutes, so a sync that keeps failing cannot turn every read into another process.
+`archive_status` gives the full picture. Set `SLACK_BROWSER_MCP_NO_AUTOSYNC=1` to
+disable that nudge.
+
+**One request every 500 ms.** The client is a token bucket: the first 4 calls of a
+run go out immediately, so a single interactive tool stays instant, and after that
+one token comes back every 500 ms (plus ±20% jitter), which is about 2 requests per
+second against Slack's documented "50+ per minute". A 91-channel incremental pass
+takes ~50 s instead of ~20 s. A `429` is still honoured through `Retry-After`.
+`SLACK_BROWSER_PACE_MS=0` disables pacing, and the value itself is the interval in
+milliseconds if you want it slower.
 
 What the archive does **not** promise:
 
@@ -318,8 +338,9 @@ so a backfill does not pull every screenshot ever posted.
 
 Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),
 `SLACK_BROWSER_MCP_CONFIG_FILE` (settings file), `SLACK_BROWSER_MCP_TEAM`
-(one-off default workspace, wins over `config.json`), `CHROME_PATH` (Chrome
-binary), `XDG_CONFIG_HOME`, `XDG_DATA_HOME`.
+(one-off default workspace, wins over `config.json`), `SLACK_BROWSER_PACE_MS`
+(milliseconds between requests), `CHROME_PATH` (Chrome binary),
+`XDG_CONFIG_HOME`, `XDG_DATA_HOME`.
 
 ## Security
 

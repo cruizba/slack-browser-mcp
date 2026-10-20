@@ -107,6 +107,11 @@ export class ArchiveIndex {
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 })
     const db = new DatabaseSync(this.file)
     db.exec('PRAGMA foreign_keys = ON')
+    // A read tool now writes back what it had to fetch, and that happens while a
+    // sync process may be indexing: WAL lets both write without the reader's
+    // whole run failing on SQLITE_BUSY.
+    db.exec('PRAGMA journal_mode = WAL')
+    db.exec('PRAGMA busy_timeout = 5000')
     db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
         team TEXT NOT NULL,
