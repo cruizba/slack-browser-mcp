@@ -1,0 +1,9 @@
+[Unit]
+Description=Slack archive sync (slack-browser-mcp)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node --no-warnings %h/DevProjects/Personal/slack-browser-mcp/dist/cli.js sync --quiet
+Nice=10
+IOSchedulingClass=idle

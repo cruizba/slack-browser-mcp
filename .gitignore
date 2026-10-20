@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+
+# Credentials never belong in the repository. The store lives in
+# ~/.config/slack-browser-mcp/accounts, but ignore the shape here as well so a
+# debugging export cannot slip into a commit.
+accounts/
+*.credentials.json
+.env

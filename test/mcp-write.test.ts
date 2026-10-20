@@ -1,0 +1,115 @@
+import assert from 'node:assert/strict'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { test } from 'node:test'
+
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+test('post_message refuses without confirm and posts exactly once with it', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'slack-write-'))
+  process.env.SLACK_BROWSER_MCP_CONFIG_DIR = join(root, 'config')
+  process.env.XDG_DATA_HOME = join(root, 'data')
+  t.after(() => rm(root, { recursive: true, force: true }))
+
+  const { FileCredentialStore } = await import('../src/auth/store.ts')
+  await new FileCredentialStore(join(root, 'config', 'accounts')).save({
+    team_id: 'T0TEST',
+    team_name: 'CodeURJC',
+    team_domain: 'codeurjc',
+    user: 'carlos.ruiz',
+    user_id: 'U0CARLOS',
+    token: 'xoxc-test-token',
+    d_cookie: 'xoxd-test%2Bcookie',
+    d_cookie_name: 'd',
+    saved_at: new Date().toISOString(),
+  })
+
+  const calls: Array<{ method: string; body: URLSearchParams }> = []
+  const originalFetch = globalThis.fetch
+  ;(globalThis as { fetch: typeof fetch }).fetch = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    const method = String(input).split('/api/')[1] ?? ''
+    const body = new URLSearchParams(String(init?.body ?? ''))
+    calls.push({ method, body })
+    if (method === 'users.conversations') {
+      return json({
+        ok: true,
+        channels: [{ id: 'C0CINOTIF', name: 'ci-notifications', is_private: false }],
+      })
+    }
+    if (method === 'chat.postMessage') {
+      return json({
+        ok: true,
+        channel: body.get('channel'),
+        ts: '1792500000.000100',
+        message: { text: body.get('text') },
+      })
+    }
+    return json({ ok: false, error: 'unexpected_method' })
+  }) as typeof fetch
+  t.after(() => {
+    ;(globalThis as { fetch: typeof fetch }).fetch = originalFetch
+  })
+
+  const { buildServer } = await import('../src/mcp/server.ts')
+  const server = buildServer()
+  const client = new Client({ name: 'test-client', version: '0.0.0' })
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
+  t.after(async () => {
+    await client.close()
+    await server.close()
+  })
+
+  const dry = await client.callTool({
+    name: 'post_message',
+    arguments: { channel: 'ci-notifications', text: 'Testing Custom Slack MCP - Forget about this' },
+  })
+  const dryText = (dry.content as Array<{ type: string; text?: string }>)[0]?.text ?? ''
+  assert.match(dryText, /Nothing sent/)
+  assert.match(dryText, /confirm=true/)
+  assert.deepEqual(
+    calls.map((call) => call.method),
+    ['users.conversations'],
+    'a dry run may resolve the channel, but must never post',
+  )
+
+  const sent = await client.callTool({
+    name: 'post_message',
+    arguments: {
+      channel: 'ci-notifications',
+      text: 'Testing Custom Slack MCP - Forget about this',
+      confirm: true,
+    },
+  })
+  const sentText = (sent.content as Array<{ type: string; text?: string }>)[0]?.text ?? ''
+  assert.match(sentText, /Sent to CodeURJC · #ci-notifications \(C0CINOTIF\) at ts 1792500000\.000100/)
+
+  const post = calls.find((call) => call.method === 'chat.postMessage')
+  assert.ok(post, 'chat.postMessage was not called')
+  assert.equal(post.body.get('channel'), 'C0CINOTIF')
+  assert.equal(post.body.get('text'), 'Testing Custom Slack MCP - Forget about this')
+  assert.equal(post.body.get('token'), 'xoxc-test-token')
+  assert.equal(
+    calls.filter((call) => call.method === 'chat.postMessage').length,
+    1,
+    'confirm must post exactly once',
+  )
+
+  const audit = await readFile(join(root, 'data', 'slack-browser-mcp', 'audit.jsonl'), 'utf8')
+  const record = JSON.parse(audit.trim().split('\n')[0]!)
+  assert.equal(record.channel_id, 'C0CINOTIF')
+  assert.equal(record.message_ts, '1792500000.000100')
+  assert.equal(record.text, undefined, 'the audit log must not store the full text')
+})

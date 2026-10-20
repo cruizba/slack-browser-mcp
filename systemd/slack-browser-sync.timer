@@ -1,0 +1,13 @@
+[Unit]
+Description=Sync the Slack archive every 15 minutes
+
+[Timer]
+# OnCalendar rather than OnUnitActiveSec: only OnCalendar supports Persistent=,
+# which replays the run that was missed while the machine was off.
+OnCalendar=*:0/15
+Persistent=true
+AccuracySec=30s
+RandomizedDelaySec=20s
+
+[Install]
+WantedBy=timers.target
