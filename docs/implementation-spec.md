@@ -343,7 +343,8 @@ Per channel, in least-recently-synced order:
 
 1. **Incremental.** `conversations.history` with `oldest=<newest_ts>` and cursors,
    capped at 20 pages of 200. First run (or `--full`) uses `--since <days>`
-   instead, 30 by default.
+   instead, `DEFAULT_BACKFILL_DAYS` (90) by default so a newly added workspace
+   arrives as deep as Slack still serves.
 2. **Reconcile, once per 24 h.** Re-read a 7-day window and compare: messages in
    the archive that are no longer returned are marked deleted. This is the only
    way to see deletions, because Slack has no delta feed without an app.

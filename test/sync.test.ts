@@ -6,7 +6,7 @@ import { test } from 'node:test'
 
 import { ArchiveIndex } from '../src/archive/index.ts'
 import { ArchiveStore } from '../src/archive/store.ts'
-import { syncAccount, type SyncClient } from '../src/archive/sync.ts'
+import { DEFAULT_BACKFILL_DAYS, syncAccount, type SyncClient } from '../src/archive/sync.ts'
 import type { SlackAccount } from '../src/auth/store.ts'
 import type { HistoryPage, SlackChannel, SlackMessage } from '../src/slack/client.ts'
 
@@ -264,4 +264,19 @@ test('the index covers everything the run saw, even records a read tool already 
 
   const hits = index.search({ query: 'despliegue' })
   assert.equal(hits.length, 1, 'the index must cover it even though sync did not rewrite the file')
+})
+
+test('a workspace seen for the first time is read back 90 days by default', async (t) => {
+  const { store, index } = await scratch(t)
+  const client = new FakeClient([parent])
+
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+
+  const oldest = Number(client.historyCalls[0]?.oldest)
+  assert.ok(Number.isFinite(oldest), 'the first run must page from a window, not from nothing')
+  const days = (at(0).getTime() / 1000 - oldest) / 86_400
+  assert.ok(
+    Math.abs(days - DEFAULT_BACKFILL_DAYS) < 0.001,
+    `expected ${DEFAULT_BACKFILL_DAYS} days, got ${days}`,
+  )
 })

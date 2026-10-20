@@ -190,7 +190,7 @@ source of truth: the index can be rebuilt from it at any time.
 slack-browser sync                    # incremental; every workspace by default
 slack-browser sync --workspace acme   # just one
 slack-browser sync --full             # re-fetch the backfill window
-slack-browser sync --since 90         # widen the first backfill to 90 days
+slack-browser sync --since 400        # widen the first backfill past its 90 days
 slack-browser sync --full --since 3000  # as far back as Slack will serve
 slack-browser sync --quiet            # no per-channel progress on stderr
 slack-browser archive search "mtu"               # full-text, ranked, all workspaces
@@ -201,6 +201,11 @@ slack-browser archive stats --workspace globex
 slack-browser archive reindex         # rebuild the index from the JSONL files
 slack-browser archive migrate         # upgrade the stored layout in place
 ```
+
+A workspace seen for the first time is read back **90 days**
+(`DEFAULT_BACKFILL_DAYS`): that is where the workspaces handled so far stop
+serving channel history, so a narrower window would leave a hole, and a wider one
+spends pages Slack ends early anyway. `--since` widens it, `--full` re-walks it.
 
 One pass stops after 4000 messages per channel, newest first, so a channel with
 more history than that hits a ceiling before the window's start. `archive stats`

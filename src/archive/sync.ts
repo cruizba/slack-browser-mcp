@@ -23,6 +23,14 @@ const MAX_PAGES = 20
 const PENDING_THREAD_CAP = 500
 const RECONCILE_INTERVAL_MS = 86_400_000
 
+/**
+ * How far back a workspace is read the first time it is seen. Deeper costs pages
+ * Slack ends early when a plan keeps less history, and shallower leaves a gap that
+ * only `--full --since` closes; 90 days is where the workspaces handled so far stop
+ * serving channel history.
+ */
+export const DEFAULT_BACKFILL_DAYS = 90
+
 export interface SyncClient {
   listMyChannels(): Promise<SlackChannel[]>
   history(params: {
@@ -85,7 +93,7 @@ export async function syncAccount(args: {
   const options = args.options ?? {}
   const resolved: ResolvedOptions = {
     full: options.full ?? false,
-    backfillDays: options.backfillDays ?? 30,
+    backfillDays: options.backfillDays ?? DEFAULT_BACKFILL_DAYS,
     reconcileDays: options.reconcileDays ?? 7,
     maxThreadsPerChannel: options.maxThreadsPerChannel ?? 10,
     now: options.now ?? new Date(),

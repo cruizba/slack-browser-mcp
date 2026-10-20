@@ -15,7 +15,7 @@ import {
 } from './auth/store.ts'
 import { ArchiveIndex, rebuildIndex } from './archive/index.ts'
 import { ensureArchiveSchema } from './archive/schema.ts'
-import { syncAccount } from './archive/sync.ts'
+import { DEFAULT_BACKFILL_DAYS, syncAccount } from './archive/sync.ts'
 import { FileSettingsStore, ensureDefaultWorkspace } from './config/settings.ts'
 import { loginLockPath } from './config/paths.ts'
 import { AuthError, SchemaError, StoreError } from './errors.ts'
@@ -384,7 +384,7 @@ async function commandSync(args: ParsedArgs): Promise<number> {
   const options = (remainingMs: number) => ({
     full: args.flags.get('full') === true,
     deadlineMs: remainingMs,
-    ...(stringFlag(args, 'since') ? { backfillDays: numberFlag(args, 'since', 30) } : {}),
+    ...(stringFlag(args, 'since') ? { backfillDays: numberFlag(args, 'since', DEFAULT_BACKFILL_DAYS) } : {}),
     ...(stringFlag(args, 'reconcile-days')
       ? { reconcileDays: numberFlag(args, 'reconcile-days', 7) }
       : {}),
