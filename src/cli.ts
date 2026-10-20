@@ -13,17 +13,18 @@ import {
   type DefaultSource,
   type DefaultWorkspace,
 } from './auth/store.ts'
-import { ArchiveIndex } from './archive/index.ts'
-import { ArchiveStore } from './archive/store.ts'
+import { ArchiveIndex, rebuildIndex } from './archive/index.ts'
+import { ensureArchiveSchema } from './archive/schema.ts'
 import { syncAccount } from './archive/sync.ts'
 import { FileSettingsStore, ensureDefaultWorkspace } from './config/settings.ts'
 import { loginLockPath } from './config/paths.ts'
-import { AuthError, StoreError } from './errors.ts'
+import { AuthError, SchemaError, StoreError } from './errors.ts'
 import { main as serve } from './mcp/server.ts'
 import { recordSend } from './slack/audit.ts'
 import { SlackClient } from './slack/client.ts'
 import { channelLabel, renderMessages } from './slack/format.ts'
-import { directoryScope, directoryUser, loadDirectory } from './slack/directory.ts'
+import { directoryScope, directoryUser, loadDirectory, DirectoryStore } from './slack/directory.ts'
+import { resolveReferences } from './slack/references.ts'
 
 const HELP = `slack-browser — Slack read access from a browser session
 
@@ -41,6 +42,7 @@ Usage:
   slack-browser archive search <query> [--channel <name>] [--workspace <ref>] [--limit <n>] [--deleted]
   slack-browser archive stats [--workspace <ref>]
   slack-browser archive reindex
+  slack-browser archive migrate
   slack-browser serve
 
 The browser opens once, during login. Everything else talks to the Slack Web API
@@ -350,6 +352,17 @@ async function commandSync(args: ParsedArgs): Promise<number> {
     return 0
   }
 
+  // Before any workspace touches the archive: an old layout must be upgraded
+  // first, and this also holds the sync lock for the rewrite.
+  const schema = await ensureArchiveSchema(
+    quiet ? {} : { log: (line: string) => console.error(line) },
+  )
+  if (schema.locked) {
+    console.error('another sync is running; archive schema left untouched')
+  } else if (schema.applied.length > 0) {
+    console.error(`archive schema migrated ${schema.from} -> ${schema.to}`)
+  }
+
   // One budget for the whole run: a timer asks for a deadline, not one per workspace.
   const deadline = Date.now() + numberFlag(args, 'deadline', 600) * 1000
   const options = (remainingMs: number) => ({
@@ -420,6 +433,20 @@ async function commandSync(args: ParsedArgs): Promise<number> {
 async function commandArchive(args: ParsedArgs): Promise<number> {
   const subcommand = args.positional[0] ?? 'stats'
   const store = new FileCredentialStore()
+
+  if (subcommand === 'migrate') {
+    const status = await ensureArchiveSchema({ log: (line) => console.error(line) })
+    console.log(
+      status.locked
+        ? `schema v${status.from}: a sync holds the lock, retry when it finishes`
+        : status.applied.length > 0
+          ? `schema migrated ${status.from} -> ${status.to}`
+          : `schema v${status.to}, up to date`,
+    )
+    return 0
+  }
+
+  await ensureArchiveSchema()
   const index = new ArchiveIndex()
   try {
     if (subcommand === 'search') {
@@ -440,28 +467,28 @@ async function commandArchive(args: ParsedArgs): Promise<number> {
         return 0
       }
       const labels = team ? new Map<string, string>() : await workspaceLabels(store)
+      const directories = new Map<string, Awaited<ReturnType<DirectoryStore['read']>>>()
+      for (const hit of hits) {
+        if (!directories.has(hit.team)) {
+          directories.set(hit.team, await new DirectoryStore().read(hit.team))
+        }
+      }
       for (const hit of hits) {
         const label = hit.channel_name ? `#${hit.channel_name}` : hit.channel
-        const author = hit.username ?? hit.user ?? 'unknown'
+        const directory = directories.get(hit.team)
+        const author =
+          hit.username ?? directoryUser(directory, hit.user ?? '') ?? hit.user ?? 'unknown'
         const deleted = hit.deleted ? ' [deleted]' : ''
         const scope = labels.get(hit.team)
         const prefix = scope ? `${scope} · ` : ''
-        console.log(`[${hit.ts}] ${prefix}${label} ${author}: ${hit.text ?? ''}${deleted}`)
+        const text = resolveReferences(hit.text ?? '', directoryScope(directory))
+        console.log(`[${hit.ts}] ${prefix}${label} ${author}: ${text}${deleted}`)
       }
       return 0
     }
 
     if (subcommand === 'reindex') {
-      const store = new ArchiveStore()
-      index.reset()
-      let total = 0
-      for (const team of await store.teams()) {
-        for (const channel of await store.channelIds(team)) {
-          const records = await store.read(team, channel)
-          index.upsert(team, records)
-          total += records.length
-        }
-      }
+      const total = await rebuildIndex({ index })
       console.log(`reindexed ${total} messages`)
       return 0
     }
@@ -531,7 +558,7 @@ main()
     process.exitCode = code
   })
   .catch((error: unknown) => {
-    if (error instanceof AuthError) {
+    if (error instanceof AuthError || error instanceof SchemaError) {
       console.error(`${error.message}\n${error.hint}`)
       process.exitCode = 2
       return

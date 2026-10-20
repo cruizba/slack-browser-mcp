@@ -198,7 +198,16 @@ slack-browser archive search "mtu" --workspace globex
 slack-browser archive stats
 slack-browser archive stats --workspace globex
 slack-browser archive reindex         # rebuild the index from the JSONL files
+slack-browser archive migrate         # upgrade the stored layout in place
 ```
+
+The archive records its own layout version in `archive/schema.json`. After an
+update you do not need to delete anything: `sync` and the archive tools migrate
+the files in place first, under the same lock as the sync, and the FTS index is
+rebuilt from the JSONL. Data written by a **newer** version is refused with a
+message to update `slack-browser`, never read with wrong assumptions. A line that
+cannot be parsed is moved to `<channel>.jsonl.corrupt` instead of blocking the
+upgrade.
 
 Every 15 minutes, through the systemd user units in `systemd/`. `install.sh`
 does this for you; by hand it is:
@@ -294,7 +303,7 @@ so a backfill does not pull every screenshot ever posted.
 | `~/.local/share/slack-browser-mcp/audit.jsonl` | one line per message sent, `0600` |
 | `~/.local/share/slack-browser-mcp/login.lock/` | held while a sign-in is running, `0700` |
 | `~/.local/share/slack-browser-mcp/login.log` | progress and errors of the last sign-in, `0600` |
-| `~/.local/share/slack-browser-mcp/archive/` | JSONL per channel + `state.json` + `directory.json` (names), `0700`/`0600` |
+| `~/.local/share/slack-browser-mcp/archive/` | JSONL per channel + `state.json`, `directory.json` and `schema.json`, `0700`/`0600` |
 | `~/.local/share/slack-browser-mcp/archive/<team>/files/` | attachments downloaded by `read_file`, `0700`/`0600` |
 | `~/.local/share/slack-browser-mcp/archive.sqlite` | FTS5 index, rebuildable, `0600` |
 

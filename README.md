@@ -27,7 +27,8 @@ Re-running it is safe; `install.sh --help` lists the flags.
 ## Update
 
 Run the same script again. It pulls `main` and rebuilds before touching anything
-else:
+else. Updates never require deleting local data: the archive carries a layout
+version and is migrated in place, with the index rebuilt from the JSONL.
 
 ```bash
 ~/slack-browser-mcp/install.sh

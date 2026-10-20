@@ -9,7 +9,7 @@ import { dirname } from 'node:path'
 
 import { archiveIndexPath } from '../config/paths.ts'
 import { redact } from '../log/redact.ts'
-import type { ArchivedMessage } from './store.ts'
+import { ArchiveStore, type ArchivedMessage } from './store.ts'
 
 interface Statement {
   run(...params: unknown[]): unknown
@@ -69,6 +69,28 @@ export function toFtsQuery(query: string): string {
     .filter((token) => !/^(and|or|not|near)$/i.test(token))
   if (tokens.length === 0) return ''
   return tokens.map((token) => `"${token}"`).join(' AND ')
+}
+
+export async function rebuildIndex(args: {
+  store?: ArchiveStore
+  index?: ArchiveIndex
+} = {}): Promise<number> {
+  const store = args.store ?? new ArchiveStore()
+  const index = args.index ?? new ArchiveIndex()
+  let total = 0
+  try {
+    index.reset()
+    for (const team of await store.teams()) {
+      for (const channel of await store.channelIds(team)) {
+        const records = await store.read(team, channel)
+        index.upsert(team, records)
+        total += records.length
+      }
+    }
+  } finally {
+    if (!args.index) index.close()
+  }
+  return total
 }
 
 export class ArchiveIndex {

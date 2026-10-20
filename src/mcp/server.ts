@@ -23,13 +23,14 @@ import {
 } from '../auth/store.ts'
 import { ArchiveIndex } from '../archive/index.ts'
 import { ArchiveFileStore } from '../archive/files.ts'
+import { ensureArchiveSchema } from '../archive/schema.ts'
 import { Lock, SyncLock, type LockOwner } from '../archive/lock.ts'
 import { formatAge, oldestAge, teamStatus } from '../archive/status.ts'
 import { ArchiveStore } from '../archive/store.ts'
 import { loginLockPath, loginLogPath } from '../config/paths.ts'
 import { FileSettingsStore } from '../config/settings.ts'
 import { syncAccount } from '../archive/sync.ts'
-import { AuthError } from '../errors.ts'
+import { AuthError, SchemaError } from '../errors.ts'
 import { redact } from '../log/redact.ts'
 import { recordSend } from '../slack/audit.ts'
 import { SlackClient, type SlackFile } from '../slack/client.ts'
@@ -174,7 +175,7 @@ async function teamIdFor(reference: string): Promise<string> {
 
 function failure(error: unknown) {
   const message = error instanceof Error ? redact(error.message) : redact(String(error))
-  const hint = error instanceof AuthError ? `\n${error.hint}` : ''
+  const hint = error instanceof AuthError || error instanceof SchemaError ? `\n${error.hint}` : ''
   return { content: [{ type: 'text' as const, text: `${message}${hint}` }], isError: true }
 }
 
@@ -812,6 +813,7 @@ export function buildServer(): McpServer {
     },
     async ({ query, workspace: reference, channel, limit, include_deleted }) => {
       try {
+        await ensureArchiveSchema()
         const index = new ArchiveIndex()
         try {
           const state = await archive.loadState()
@@ -892,6 +894,7 @@ export function buildServer(): McpServer {
     },
     async ({ workspace: reference }) => {
       try {
+        const schema = await ensureArchiveSchema()
         const state = await archive.loadState()
         const teamIds = reference
           ? [await teamIdFor(reference)]
@@ -935,6 +938,12 @@ export function buildServer(): McpServer {
         } finally {
           index.close()
         }
+
+        lines.push(
+          schema.locked
+            ? `schema: v${schema.from} (migration waiting for the running sync)`
+            : `schema: v${schema.to}`,
+        )
 
         const holder = await new SyncLock(archive.root).holder()
         lines.push(

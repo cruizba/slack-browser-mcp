@@ -149,7 +149,10 @@ export class ArchiveStore {
   async teams(): Promise<string[]> {
     try {
       const entries = await readdir(this.root, { withFileTypes: true })
-      return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()
+      return entries
+        .filter((entry) => entry.isDirectory() && /^[A-Za-z0-9_-]{1,64}$/.test(entry.name))
+        .map((entry) => entry.name)
+        .sort()
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
       throw error

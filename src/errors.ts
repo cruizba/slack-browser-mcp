@@ -39,3 +39,13 @@ export class StoreError extends Error {
     this.name = 'StoreError'
   }
 }
+
+export class SchemaError extends Error {
+  readonly hint: string
+
+  constructor(message: string, hint: string) {
+    super(message)
+    this.name = 'SchemaError'
+    this.hint = hint
+  }
+}

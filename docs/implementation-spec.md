@@ -275,7 +275,7 @@ footer tells the model how to page rather than dumping history.
 ### CLI
 
 `login`, `accounts`, `workspace [list|use|clear]`, `status`, `read`, `thread`,
-`send`, `sync`, `archive search|stats|reindex`, `serve`. Same core, no duplicated
+`send`, `sync`, `archive search|stats|reindex|migrate`, `serve`. Same core, no duplicated
 logic. Diagnostics go to stderr; in `serve` mode stdout belongs to the MCP
 protocol. `sync` is the only command that ignores the default on purpose: without
 `--workspace` it walks every stored workspace under one shared deadline, so one
@@ -291,6 +291,7 @@ cost a request.
 
 ```
 $XDG_DATA_HOME/slack-browser-mcp/archive/
+├── schema.json                    # layout version, written by the migration step
 ├── state.json                     # per-channel cursors, backlogs, last errors
 └── <TEAM_ID>/
     ├── <CHANNEL_ID>.jsonl         # one JSON object per line
@@ -394,6 +395,44 @@ disables it for machines where background work is unwelcome.
   `read_file` asks for one: the JSONL keeps the id, name, mimetype and size, not
   the content.
 
+### 9.5 Schema and migrations
+
+The archive outlives a single build: a systemd timer, an MCP server and a shell
+can be running different versions against the same files. So the layout carries a
+version in `archive/schema.json` (`{"version": 2, …}`), and data written before
+that marker existed counts as version 1, because the layout has not changed since.
+
+`ensureArchiveSchema` (`src/archive/schema.ts`) runs before `sync`, before
+`archive search|stats|reindex`, and before the MCP tools that read the archive:
+
+- A version newer than the build is refused, naming the update, instead of being
+  read with the wrong assumptions.
+- It takes the same lock as `sync`, so a migration never rewrites a file while an
+  append is writing it, and a read reports `locked` instead of waiting.
+- Every migration above the stored version runs in order; the marker is written
+  once they all succeed.
+- It drops and rebuilds the FTS index from the migrated JSONL inside the same
+  step, because `sync` only adds new rows: leaving it empty would make search
+  blind until someone remembered `archive reindex`.
+- A channel file is only rewritten when a line actually changes, so a second run
+  touches nothing.
+
+Migrations are idempotent, so a crash halfway converges on the next run. A line
+that cannot be parsed moves to `<channel>.jsonl.corrupt` instead of blocking the
+upgrade or vanishing.
+
+| Version | Change |
+| --- | --- |
+| 1 | implicit: JSONL per channel, `state.json`, no marker |
+| 2 | attachment records carry `id`/`mimetype`/`size`; null-valued fields are omitted |
+
+Readers keep tolerating the previous shape (`files: ["name"]` still folds into
+`{name}`), because not every path migrates: `slack-browser read` is live-only, and
+an already-running MCP server can outlive an upgrade. `directory.json` is a cache
+with its own `version`; on a mismatch it is simply fetched again.
+
+`slack-browser archive migrate` runs the same step by hand and prints the version.
+
 ## 10. Error model
 
 | Situation | Type | Agent sees |
@@ -402,6 +441,7 @@ disables it for machines where background work is unwelcome.
 | Slack refused the operation | `SlackApiError(method, code)` | `method failed: code` |
 | Channel name unknown / ambiguous | `Error` from `resolveChannel` | candidates to choose from |
 | Store missing / wrong permissions | `StoreError` | path + the `chmod` to run |
+| Archive written by a newer build | `SchemaError` | version found + "update slack-browser" |
 | Rate limited after retries | `SlackApiError(http_429)` | wait and retry |
 
 All agent-facing error text passes through `redact` before leaving the process.
@@ -454,6 +494,9 @@ Unit tests need no browser and no network:
   that reappears clearing `deleted_at`, file records from before ids existed,
   permissions, FTS search with user-typed operators, deleted filtering, and a
   rebuild from plain text after a reset.
+- `test/schema.test.ts` — fresh marker, legacy records upgraded in place with
+  corrupt lines quarantined, a second run touching nothing, the derived index
+  dropped, a newer version refused, and the sync lock deferring the migration.
 - `test/sync.test.ts` — first backfill plus threads, incremental cursor on the
   second run, no refetch when `reply_count` is unchanged, daily reconcile marking
   disappeared messages, thread backlog draining across runs, and no rewritten
@@ -516,6 +559,8 @@ Manual checklist for the login path (cannot be automated without a real account)
       cached directory instead of leaking raw ids
 - [x] `read_file`: fetch attachment bytes on demand and return images as an
       image block
+- [x] Versioned archive layout with in-place migrations, a sync-lock guard and a
+      derived index that is rebuilt instead of trusted
 - [ ] Cursor pass-through for `read_messages` instead of only `oldest`
 - [ ] Serve archived history to `read_messages` when the requested range is cached
 - [ ] Retention policy (`slack-browser archive prune --older-than`)
