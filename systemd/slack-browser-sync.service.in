@@ -1,0 +1,11 @@
+[Unit]
+Description=Slack archive sync (slack-browser-mcp)
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Rendered by install.sh, which replaces the two placeholders with the node
+# binary and the checkout it just built.
+ExecStart=@NODE@ --no-warnings @REPO@/dist/cli.js sync --quiet
+Nice=10
+IOSchedulingClass=idle

@@ -2,40 +2,25 @@
 
 Slack read and write for pi, Claude Code and opencode, from a normal browser login.
 
+**Linux only.** The archive timer is a systemd user unit; there is no fallback for
+macOS, WSL without systemd, or other init systems. Needs Node.js 22 or newer and
+Google Chrome.
+
 ## Install
 
-Pick your agent and paste its one-liner. Everything is installed and registered
-by the time it finishes; `slack-browser login` opens Chrome at the end.
-
-**pi**
-
 ```bash
-git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp ~/slack-browser-mcp \
-  && cd ~/slack-browser-mcp && npm install && npm run build && npm link \
-  && mkdir -p ~/.pi/agent/prompts && ln -sf ~/slack-browser-mcp/commands/slack*.md ~/.pi/agent/prompts/ \
-  && pi mcp add slack -- slack-browser serve \
-  && slack-browser login
+git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp ~/slack-browser-mcp && ~/slack-browser-mcp/install.sh
 ```
 
-**Claude Code**
+It pulls `main`, builds the checkout, puts `slack-browser` on your PATH, and then
+does the rest for every agent it finds — `pi`, `claude`, `opencode`:
 
-```bash
-git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp ~/slack-browser-mcp \
-  && cd ~/slack-browser-mcp && npm install && npm run build && npm link \
-  && mkdir -p ~/.claude/commands && ln -sf ~/slack-browser-mcp/commands/slack*.md ~/.claude/commands/ \
-  && claude mcp add --scope user slack -- slack-browser serve \
-  && slack-browser login
-```
+- registers the MCP server `slack`
+- links the `/slack`, `/slack-search`, `/slack-post` and `/slack-sync` commands
+- installs `slack-browser-sync.timer`, which refreshes the archive every 15 minutes
+- opens the browser once, if no Slack session is stored yet
 
-**opencode**
-
-```bash
-git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp ~/slack-browser-mcp \
-  && cd ~/slack-browser-mcp && npm install && npm run build && npm link \
-  && mkdir -p ~/.config/opencode/commands && ln -sf ~/slack-browser-mcp/commands/slack*.md ~/.config/opencode/commands/ \
-  && opencode mcp add --global slack -- slack-browser serve \
-  && slack-browser login
-```
+Re-running it is safe; `install.sh --help` lists the flags.
 
 ## Examples
 

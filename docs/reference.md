@@ -13,11 +13,33 @@ disk so history survives and search does not need the API.
 
 ## Requirements
 
+- Linux with systemd (user units and `loginctl`). Nothing else is supported.
 - Node.js 22 or newer
 - Google Chrome. The login starts it as a normal browser and attaches over CDP;
   set `CHROME_PATH` if it is not in a standard location. Playwright's bundled
   Chromium works via `npx playwright install chromium`, but Slack is more likely
   to accept a stock Chrome install.
+
+## install.sh
+
+The README installs with it. It pulls `main`, runs `npm ci` and `npm run build`,
+`npm link`, then walks the agents found in `PATH` and, for each, links the
+`commands/` slash commands into that agent's directory and registers the MCP
+server `slack`. Finally it renders `systemd/slack-browser-sync.service.in` into
+`~/.config/systemd/user/`, installs the timer, enables it and turns on linger.
+It only opens the browser when no session is stored yet, and re-running it is
+safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left on
+its branch).
+
+```bash
+./install.sh --help
+
+  --dir <path>      where to install (default: ~/slack-browser-mcp)
+  --branch <name>   branch to install (default: main)
+  --no-login        never open the browser, even with no stored session
+  --no-pull         keep the checkout as it is, do not fetch or pull
+  --no-systemd      skip the archive timer
+```
 
 ## Install by hand
 
@@ -163,11 +185,13 @@ slack-browser archive stats --workspace codeurjc
 slack-browser archive reindex         # rebuild the index from the JSONL files
 ```
 
-Every 15 minutes, via systemd user units kept in this repo:
+Every 15 minutes, through the systemd user units in `systemd/`. `install.sh`
+does this for you; by hand it is:
 
 ```bash
-ln -sf "$PWD/systemd/slack-browser-sync.service" ~/.config/systemd/user/
-ln -sf "$PWD/systemd/slack-browser-sync.timer" ~/.config/systemd/user/
+sed -e "s|@NODE@|$(command -v node)|" -e "s|@REPO@|$PWD|" \
+  systemd/slack-browser-sync.service.in > ~/.config/systemd/user/slack-browser-sync.service
+install -m 0644 systemd/slack-browser-sync.timer ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now slack-browser-sync.timer
 loginctl enable-linger "$USER"        # keep syncing while logged out
