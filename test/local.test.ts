@@ -66,6 +66,18 @@ describe('localHistory', () => {
     assert.equal(messages, undefined)
   })
 
+  it('answers empty for a channel a sync walked and found quiet', async () => {
+    const messages = await localHistory({
+      store,
+      teamId: TEAM,
+      channelId: 'C0QUIET',
+      limit: 20,
+      oldest: '1792447200',
+      synced: true,
+    })
+    assert.deepEqual(messages, [])
+  })
+
   it('leaves thread replies and deleted messages out of channel history', async () => {
     const channel = 'C0LOCAL2'
     await store.append(TEAM, channel, [

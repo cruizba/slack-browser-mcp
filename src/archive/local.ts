@@ -10,8 +10,7 @@ import type { ArchiveStore } from './store.ts'
 
 /**
  * A channel's top-level history. `undefined` means Slack has to be asked: the
- * archive holds nothing for the channel, or the caller wants a window that
- * starts before what the backfill reached.
+ * archive holds nothing for the channel and no sync has walked it either.
  */
 export async function localHistory(args: {
   store: ArchiveStore
@@ -20,6 +19,8 @@ export async function localHistory(args: {
   limit: number
   oldest?: string
   latest?: string
+  /** A sync has walked the channel, so finding nothing in it is an answer too. */
+  synced?: boolean
 }): Promise<SlackMessage[] | undefined> {
   const records = await args.store.read(args.teamId, args.channelId)
   // conversations.history never returns thread replies, and neither does the tool.
@@ -37,7 +38,9 @@ export async function localHistory(args: {
     .sort((left, right) => Number(left.ts) - Number(right.ts))
 
   if (inWindow.length > 0) return inWindow.slice(-args.limit).map(fromRecord)
-  if (top.length === 0) return undefined
+  // A quiet channel leaves no records behind; without this every read of it
+  // would go to Slack only to hear the same empty answer.
+  if (top.length === 0 && !args.synced) return undefined
   // Archived but outside the window: an empty answer, not a reason to ask Slack.
   return []
 }

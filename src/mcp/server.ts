@@ -756,6 +756,7 @@ export function buildServer(): McpServer {
           limit,
           ...(oldest ? { oldest } : {}),
           ...(latest ? { latest } : {}),
+          synced: Boolean(fresh.entry?.last_sync),
         })
 
         if (cached) {
