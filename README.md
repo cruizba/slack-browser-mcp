@@ -24,9 +24,10 @@ disk so history survives and search does not need the API.
 ## Install
 
 ```bash
-npm install
-npm run build
-npm link          # optional: puts `slack-browser` on PATH
+git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp
+cd slack-browser-mcp
+npm install && npm run build
+npm link          # puts `slack-browser` on PATH
 ```
 
 ## Sign in
@@ -48,6 +49,71 @@ happens, the failure screenshot is at `/tmp/slack-browser-login-failure.png`.
 
 Useful flags: `--timeout <seconds>` (default 300), `--headless` (only if your
 workspace has no SSO challenge).
+
+## Connect your agent
+
+The agent talks to one stdio process, `slack-browser serve`, registered as the
+server `slack`. One command per agent:
+
+```bash
+pi mcp add slack -- slack-browser serve
+claude mcp add --scope user slack -- slack-browser serve
+opencode mcp add --global slack -- slack-browser serve
+```
+
+Each one writes the entry into that agent's config: `~/.pi/agent/mcp.json`,
+`~/.claude.json` and `~/.config/opencode/opencode.json`.
+
+Confirm that it connected, then restart the agent:
+
+```bash
+pi mcp list          # slack: connected, 7 tools
+claude mcp list      # slack: ... ✔ Connected
+opencode mcp list    # ✓ slack  connected
+```
+
+Without `npm link`, replace `slack-browser serve` with
+`node /path/to/slack-browser-mcp/dist/mcp/server.js`.
+
+To write the entry by hand, `mcpServers` is the shape for pi and Claude Code,
+`mcp` the one for opencode (2.x nests the servers under `servers`):
+
+```json
+{ "mcpServers": { "slack": { "command": "slack-browser", "args": ["serve"] } } }
+```
+
+```json
+{ "mcp": { "servers": { "slack": { "type": "local", "command": ["slack-browser", "serve"] } } } }
+```
+
+## Slash commands
+
+Four prompt templates in `commands/` give the agents `/slack`, `/slack-search`,
+`/slack-post` and `/slack-sync`. Link them into each agent's command directory:
+
+```bash
+for dir in ~/.pi/agent/prompts ~/.claude/commands ~/.config/opencode/commands; do
+  mkdir -p "$dir"
+  ln -sf "$PWD"/commands/slack*.md "$dir"/
+done
+```
+
+Use `cp` instead of `ln -sf` if you would rather not have the commands follow the
+repository.
+
+| Command | What it does |
+| --- | --- |
+| `/slack` | Sessions and archive status for every workspace; reads no messages |
+| `/slack <channel> [count]` | Recent messages, printed oldest first (`me` is your own DM) |
+| `/slack <channel> <thread_ts>` | Every reply in that thread |
+| `/slack-search <query> [channel]` | Full-text over the archive, newest hits first |
+| `/slack-post <channel> <text>` | Prints the exact message and posts only after you say yes |
+| `/slack-sync [workspace]` | Runs a sync and reports the new archive age |
+
+They are plain Markdown with `description` front matter, which is the part all
+three agents read; the file name is the command. Claude Code and pi pick them up
+in the next session (`/reload` in pi), opencode on the next TUI start —
+`opencode run` passes the text through unexpanded, so there it is a TUI feature.
 
 ## Check and read
 
@@ -154,51 +220,6 @@ What the archive does **not** promise:
 `--workspace <name|domain|team-id>` works on every command that talks to Slack;
 see [Several workspaces](#several-workspaces) for how the default is chosen.
 
-## Register with the agents you use
-
-The server speaks MCP over stdio, so any MCP client works. Absolute paths below
-assume this repository lives at `~/DevProjects/Personal/slack-browser-mcp`.
-
-**pi** (`pi mcp add`, or `~/.pi/agent/mcp.json`):
-
-```bash
-pi mcp add slack -- node ~/DevProjects/Personal/slack-browser-mcp/dist/mcp/server.js
-```
-
-```json
-{
-  "mcpServers": {
-    "slack": {
-      "command": "node",
-      "args": ["/home/carlos/DevProjects/Personal/slack-browser-mcp/dist/mcp/server.js"],
-      "description": "Read Slack channels, DMs and threads"
-    }
-  }
-}
-```
-
-**Claude Code**:
-
-```bash
-claude mcp add slack -- node ~/DevProjects/Personal/slack-browser-mcp/dist/mcp/server.js
-```
-
-**opencode** (`~/.config/opencode/opencode.json`):
-
-```json
-{
-  "mcp": {
-    "slack": {
-      "type": "local",
-      "command": ["node", "/home/carlos/DevProjects/Personal/slack-browser-mcp/dist/mcp/server.js"],
-      "enabled": true
-    }
-  }
-}
-```
-
-If you ran `npm link`, `slack-browser serve` works as the command everywhere.
-
 ## Tools
 
 | Tool | Arguments | Notes |
@@ -274,5 +295,6 @@ npm run typecheck
 ```
 
 Layout: `src/auth` (capture, store), `src/slack` (API client, rendering),
-`src/mcp` (tool surface), `src/cli.ts` (human entry point). Design notes and the
-next milestones: [docs/implementation-spec.md](docs/implementation-spec.md).
+`src/mcp` (tool surface), `src/cli.ts` (human entry point), `commands/` (the
+agent slash commands). Design notes and the next milestones:
+[docs/implementation-spec.md](docs/implementation-spec.md).
