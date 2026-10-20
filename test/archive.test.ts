@@ -180,3 +180,56 @@ describe('ArchiveIndex', () => {
     assert.ok(stats.oldest && stats.newest)
   })
 })
+
+describe('ArchiveIndex.list', () => {
+  const OTHER = 'C0LIST'
+
+  before(async () => {
+    index.reset()
+    index.upsert(TEAM, [
+      record({ ts: '1700000000.000100', channel: OTHER, channel_name: 'random', text: 'primero' }),
+      record({ ts: '1700000100.000200', text: 'segundo' }),
+      record({ ts: '1700000200.000300', text: 'una respuesta', thread_ts: '1700000000.000100' }),
+      record({ ts: '1700000300.000400', channel: OTHER, channel_name: 'random', text: 'tercero', user: 'U0BOT' }),
+    ])
+  })
+
+  it('reads the archive from one end, skipping thread replies', () => {
+    const hits = index.list({ order: 'oldest', limit: 3 })
+    assert.deepEqual(
+      hits.map((hit) => hit.text),
+      ['primero', 'segundo', 'tercero'],
+    )
+  })
+
+  it('takes the newest end too', () => {
+    const hits = index.list({ order: 'newest', limit: 2 })
+    assert.deepEqual(
+      hits.map((hit) => hit.text),
+      ['tercero', 'segundo'],
+    )
+  })
+
+  it('filters by author, channel and ts window', () => {
+    assert.deepEqual(
+      index.list({ authors: ['U0BOT'], limit: 5 }).map((hit) => hit.text),
+      ['tercero'],
+    )
+    assert.deepEqual(
+      index.list({ channel: OTHER, limit: 5 }).map((hit) => hit.text),
+      ['primero', 'tercero'],
+    )
+    assert.deepEqual(
+      index
+        .list({ oldest: '1700000000.000100', latest: '1700000300.000400', limit: 5 })
+        .map((hit) => hit.text),
+      ['segundo'],
+      'both bounds are exclusive, as in a history window',
+    )
+  })
+
+  it('includes replies only when asked', () => {
+    const replies = index.list({ includeReplies: true, authors: ['U0AUTHOR'], limit: 10 })
+    assert.ok(replies.some((hit) => hit.text === 'una respuesta'))
+  })
+})

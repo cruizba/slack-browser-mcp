@@ -38,6 +38,8 @@ export interface SearchHit {
   text?: string
   thread_ts?: string
   deleted: boolean
+  /** Only `list()` reads it; search ranks messages without needing the count. */
+  reply_count?: number
 }
 
 export interface SearchParams {
@@ -47,6 +49,37 @@ export interface SearchParams {
   channelName?: string
   limit?: number
   includeDeleted?: boolean
+}
+
+export interface ListParams {
+  team?: string
+  channel?: string
+  channelName?: string
+  /** User ids, the shape the directory resolves a name to. */
+  authors?: string[]
+  oldest?: string
+  latest?: string
+  order?: 'oldest' | 'newest'
+  limit?: number
+  includeDeleted?: boolean
+  includeReplies?: boolean
+}
+
+function hitFrom(row: Record<string, unknown>): SearchHit {
+  return {
+    team: String(row.team),
+    channel: String(row.channel),
+    ...(row.channel_name ? { channel_name: String(row.channel_name) } : {}),
+    ts: String(row.ts),
+    ...(row.user ? { user: String(row.user) } : {}),
+    ...(row.username ? { username: String(row.username) } : {}),
+    ...(row.text ? { text: redact(String(row.text)) } : {}),
+    ...(row.thread_ts ? { thread_ts: String(row.thread_ts) } : {}),
+    deleted: Number(row.deleted) === 1,
+    ...(row.reply_count !== null && row.reply_count !== undefined
+      ? { reply_count: Number(row.reply_count) }
+      : {}),
+  }
 }
 
 export interface ArchiveStats {
@@ -227,17 +260,58 @@ export class ArchiveIndex {
       )
       .all(...args) as Array<Record<string, unknown>>
 
-    return rows.map((row) => ({
-      team: String(row.team),
-      channel: String(row.channel),
-      ...(row.channel_name ? { channel_name: String(row.channel_name) } : {}),
-      ts: String(row.ts),
-      ...(row.user ? { user: String(row.user) } : {}),
-      ...(row.username ? { username: String(row.username) } : {}),
-      ...(row.text ? { text: redact(String(row.text)) } : {}),
-      ...(row.thread_ts ? { thread_ts: String(row.thread_ts) } : {}),
-      deleted: Number(row.deleted) === 1,
-    }))
+    return rows.map(hitFrom)
+  }
+
+  /**
+   * Timeline across every conversation. Answers what FTS cannot ("the oldest
+   * messages", "the first one in #x"): no words to match, just an order.
+   */
+  list(params: ListParams): SearchHit[] {
+    const db = this.open()
+    const where: string[] = []
+    const args: unknown[] = []
+    if (params.team) {
+      where.push('team = ?')
+      args.push(params.team)
+    }
+    if (params.channel) {
+      where.push('channel = ?')
+      args.push(params.channel)
+    }
+    if (params.channelName) {
+      where.push('lower(channel_name) = lower(?)')
+      args.push(params.channelName)
+    }
+    if (params.authors && params.authors.length > 0) {
+      where.push(`user IN (${params.authors.map(() => '?').join(', ')})`)
+      args.push(...params.authors)
+    }
+    if (!params.includeDeleted) where.push('deleted = 0')
+    // A reply lands on its parent's day, so a timeline of what was said wants roots.
+    if (!params.includeReplies) where.push('thread_ts IS NULL')
+    if (params.oldest !== undefined) {
+      where.push('CAST(ts AS REAL) > CAST(? AS REAL)')
+      args.push(params.oldest)
+    }
+    if (params.latest !== undefined) {
+      where.push('CAST(ts AS REAL) < CAST(? AS REAL)')
+      args.push(params.latest)
+    }
+    args.push(params.limit ?? 20)
+
+    const rows = db
+      .prepare(
+        `SELECT team, channel, channel_name, ts, user, username, text, thread_ts,
+                deleted, reply_count
+         FROM messages
+         ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY CAST(ts AS REAL) ${params.order === 'newest' ? 'DESC' : 'ASC'}
+         LIMIT ?`,
+      )
+      .all(...args) as Array<Record<string, unknown>>
+
+    return rows.map(hitFrom)
   }
 
   stats(team?: string): ArchiveStats {

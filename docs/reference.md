@@ -191,6 +191,7 @@ slack-browser sync                    # incremental; every workspace by default
 slack-browser sync --workspace acme   # just one
 slack-browser sync --full             # re-fetch the backfill window
 slack-browser sync --since 90         # widen the first backfill to 90 days
+slack-browser sync --full --since 3000  # as far back as Slack will serve
 slack-browser sync --quiet            # no per-channel progress on stderr
 slack-browser archive search "mtu"               # full-text, ranked, all workspaces
 slack-browser archive search "mtu" --channel operations
@@ -200,6 +201,11 @@ slack-browser archive stats --workspace globex
 slack-browser archive reindex         # rebuild the index from the JSONL files
 slack-browser archive migrate         # upgrade the stored layout in place
 ```
+
+One pass stops after 4000 messages per channel, newest first, so a channel with
+more history than that hits a ceiling before the window's start. `archive stats`
+and `archive_status` show where the floor really is, and `archive_messages` says
+so in the answer instead of passing a sliced archive off as the whole story.
 
 The archive records its own layout version in `archive/schema.json`. After an
 update you do not need to delete anything: `sync` and the archive tools migrate
@@ -296,6 +302,7 @@ see [Several workspaces](#several-workspaces) for how the default is chosen.
 | `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm` | `confirm=true` is required; without it the call returns the exact message and posts nothing. |
 | `read_file` | `workspace?`, `file`, `refresh?` | Saves a Slack file into the archive and returns images as an image block, so the model can see them. `file` is the id printed after `id=` in a message line. |
 | `search_messages` | `query`, `workspace?`, `channel?`, `limit?`, `include_deleted?` | Full-text over the local archive. No network; covers what `sync` has fetched. |
+| `archive_messages` | `workspace?`, `order?` (`oldest\|newest`), `limit?`, `author?`, `channel?`, `oldest?`, `latest?`, `include_deleted?`, `include_replies?` | One time-ordered walk of the whole archive, oldest or newest first. Strictly local: no Slack request, no directory refresh, no background sync. The answer for "the oldest messages", "my oldest message" or "the first one in #x", where going channel by channel costs a call each. `author` matches the cached directory by name, handle or id. |
 | `archive_status` | `workspace?` | Age of the archive, channels, thread backlog, per-channel errors, whether a sync is running now. |
 
 `channel` accepts `#name`, `name`, a DM id (`D…`), a channel id (`C…`), `me`

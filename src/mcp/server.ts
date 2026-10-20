@@ -21,7 +21,7 @@ import {
   type AccountSummary,
   type SlackAccount,
 } from '../auth/store.ts'
-import { ArchiveIndex } from '../archive/index.ts'
+import { ArchiveIndex, type SearchHit } from '../archive/index.ts'
 import { localHistory, localThread } from '../archive/local.ts'
 import { rememberMessages } from '../archive/remember.ts'
 import { ArchiveFileStore } from '../archive/files.ts'
@@ -43,8 +43,10 @@ import {
   directoryUserByReference,
   loadDirectory,
   memoizedDirectory,
+  userLabel,
   DirectoryStore,
   type Directory,
+  type DirectoryUser,
 } from '../slack/directory.ts'
 import {
   conversationFilter,
@@ -206,6 +208,29 @@ function imageMime(stored: { name: string }, mimetype?: string): string | undefi
 
 async function teamIdFor(reference: string): Promise<string> {
   return (await store.resolve(reference)).team_id
+}
+
+/**
+ * Who the user means by a name, from the cached directory only. Resolving against
+ * Slack would cost one lookup per hit, which is the cost this listing exists to
+ * avoid; an exact name wins over a substring so `Carlos` never drags in `Juan
+ * Carlos`.
+ */
+function matchAuthors(directory: Directory | undefined, author: string): DirectoryUser[] {
+  const wanted = author.replace(/^@/, '').trim().toLowerCase()
+  if (!wanted) return []
+  const handles = (user: DirectoryUser): string[] =>
+    [user.id, user.name, user.display_name, user.real_name].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    )
+  const users = directory?.users ?? []
+  const exact = users.filter((user) =>
+    handles(user).some((value) => value.toLowerCase() === wanted),
+  )
+  if (exact.length > 0) return exact
+  return users.filter((user) =>
+    handles(user).some((value) => value.toLowerCase().includes(wanted)),
+  )
 }
 
 function failure(error: unknown) {
@@ -1147,6 +1172,179 @@ export function buildServer(): McpServer {
                 text: `${freshnessLine}\n${hits.length} hits (best first)\n${lines.join('\n')}`,
               },
             ],
+          }
+        } finally {
+          index.close()
+        }
+      } catch (error) {
+        return failure(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'archive_messages',
+    {
+      title: 'List archived messages in time order',
+      description:
+        'Walk the local archive across every conversation, oldest or newest first, filtered by author, channel or ts range. One call answers "the oldest messages", "my oldest message" or "the first message in #x", where walking channels one by one costs a call each. Strictly local: no Slack request, no directory refresh, no background sync; an author is matched against the cached directory. Ask archive_status first when the answer needs the whole history, because this can only show what sync has fetched.',
+      inputSchema: {
+        workspace,
+        order: z
+          .enum(['oldest', 'newest'])
+          .default('oldest')
+          .describe('Which end of the archive to start from.'),
+        limit: z.number().int().min(1).max(200).default(20),
+        author: z
+          .string()
+          .optional()
+          .describe(
+            'A name, handle or user id from the cached directory, so `me` has to be spelled as the user\'s own name. A leading @ is ignored.',
+          ),
+        channel: z
+          .string()
+          .optional()
+          .describe('Channel name or id in any form read_messages takes, or a label as list_conversations prints it.'),
+        oldest: z.string().optional().describe('Slack ts; only messages after it.'),
+        latest: z.string().optional().describe('Slack ts; only messages before it.'),
+        include_deleted: z.boolean().default(false),
+        include_replies: z.boolean().default(false).describe('Include thread replies instead of only the messages that started a thread.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({
+      workspace: reference,
+      order,
+      limit,
+      author,
+      channel,
+      oldest,
+      latest,
+      include_deleted,
+      include_replies,
+    }) => {
+      try {
+        await ensureArchiveSchema()
+        const index = new ArchiveIndex()
+        try {
+          const state = await archive.loadState()
+          const ageMs = oldestAge(state, new Date())
+          const known = reference
+            ? [await teamIdFor(reference)]
+            : Object.keys(state.teams).sort()
+          // state.json is sync's bookkeeping; a rebuilt archive can lack it while the
+          // messages sit there, and refusing to read them would be a lie.
+          const teamIds = known.length > 0 ? known : await archive.teams()
+          if (teamIds.length === 0) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: 'No archive yet. Run `slack-browser sync`, or read a channel: the first read fetches and files it.',
+                },
+              ],
+            }
+          }
+
+          const directories = new Map<string, Directory | undefined>()
+          const directoryFor = async (teamId: string): Promise<Directory | undefined> => {
+            if (!directories.has(teamId)) {
+              directories.set(teamId, await new DirectoryStore(archive.root).read(teamId))
+            }
+            return directories.get(teamId)
+          }
+
+          const hits: SearchHit[] = []
+          const matchedAuthor = new Set<string>()
+          for (const teamId of teamIds) {
+            const directory = await directoryFor(teamId)
+            let authors: string[] | undefined
+            if (author) {
+              const people = matchAuthors(directory, author)
+              if (people.length > 1) {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: `"${author}" matches ${people.length} people: ${people
+                        .map((user) => userLabel(user) ?? user.id)
+                        .join(', ')}. Pass one of those names or an id.`,
+                    },
+                  ],
+                }
+              }
+              const user = people[0]
+              if (!user) continue
+              matchedAuthor.add(userLabel(user) ?? user.id)
+              authors = [user.id]
+            }
+            const filter: ConversationFilter = channel ? conversationFilter(channel, directory) : {}
+            hits.push(
+              ...index.list({
+                team: teamId,
+                limit,
+                order,
+                includeDeleted: include_deleted,
+                includeReplies: include_replies,
+                ...(authors ? { authors } : {}),
+                ...filter,
+                ...(oldest ? { oldest } : {}),
+                ...(latest ? { latest } : {}),
+              }),
+            )
+          }
+
+          if (author && matchedAuthor.size === 0) {
+            throw new Error(
+              `No user in the cached directory matches "${author}". Names come from the last sync, so try the id, or list_conversations to see the spellings in use.`,
+            )
+          }
+
+          hits.sort((left, right) =>
+            order === 'newest'
+              ? Number(right.ts) - Number(left.ts)
+              : Number(left.ts) - Number(right.ts),
+          )
+          const page = hits.slice(0, limit)
+          const labels = teamIds.length > 1 ? await workspaceLabels(store) : new Map<string, string>()
+          const lines = page.map((hit) => {
+            const directory = directories.get(hit.team)
+            const label = conversationLabel({ id: hit.channel, name: hit.channel_name }, directory)
+            const who = hit.username ?? directoryUser(directory, hit.user ?? '') ?? hit.user ?? 'unknown'
+            const text = resolveReferences(hit.text ?? '', directoryScope(directory))
+            const thread = hit.reply_count
+              ? ` (${hit.reply_count} replies, thread_ts ${hit.ts})`
+              : hit.thread_ts
+                ? ` (thread ${hit.thread_ts})`
+                : ''
+            const scope = labels.get(hit.team)
+            const prefix = scope && scope !== hit.team ? `${scope} · ` : ''
+            return `[${hit.ts}] ${formatTs(hit.ts)} ${prefix}${label} ${who}: ${text}${thread}${hit.deleted ? ' [deleted]' : ''}`
+          })
+
+          const stats = index.stats(teamIds.length === 1 ? teamIds[0] : undefined)
+          const who = author && matchedAuthor.size > 0 ? ` by ${[...matchedAuthor].join(', ')}` : ''
+          const header =
+            `archive: ${formatAge(ageMs)} · ${order === 'oldest' ? 'oldest first' : 'newest first'} · ` +
+            `${lines.length} of ${stats.messages} archived messages${who}`
+          if (lines.length === 0) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `${header}\nNothing in the archive matches. It covers ${stats.oldest ? formatTs(stats.oldest) : 'nothing'} to ${stats.newest ? formatTs(stats.newest) : 'nothing'}: a gap means the range was never synced, not that nothing was said.`,
+                },
+              ],
+            }
+          }
+          const coverage =
+            hits.length <= lines.length
+              ? `\n\nthat is everything the archive holds: ${stats.messages} messages, ` +
+                `${stats.oldest ? formatTs(stats.oldest) : 'unknown'} to ${stats.newest ? formatTs(stats.newest) : 'unknown'}. ` +
+                'Going further back than that needs `slack-browser sync --full --since <days>`.'
+              : ''
+          return {
+            content: [{ type: 'text' as const, text: `${header}\n${lines.join('\n')}${coverage}` }],
           }
         } finally {
           index.close()

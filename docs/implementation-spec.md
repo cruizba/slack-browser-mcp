@@ -236,6 +236,7 @@ Behaviours:
 | `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm=false` | `Sent to <where> at ts <ts>` + audit path, or the exact dry-run text | destructive |
 | `read_file` | `workspace?`, `file`, `refresh=false` | saved path + summary, plus an `image` block for images up to 4 MB | read-only |
 | `search_messages` | `query`, `workspace?`, `channel?`, `limit?=20`, `include_deleted=false` | `archive: <age>` then ranked hits `[ts] channel author: text`, prefixed with the workspace when the search spans more than one | read-only |
+| `archive_messages` | `workspace?`, `order=oldest\|newest`, `limit?=20`, `author?`, `channel?`, `oldest?`, `latest?`, `include_deleted=false`, `include_replies=false` | `archive: <age> · oldest first · N of M archived messages[ by name]`, then `[ts] date channel author: text` with `ts` preserved, plus a coverage footer when the archive ends there. Local only: an `author` is resolved from the cached directory, never from `users.info`, and no sync is nudged. | read-only |
 | `archive_status` | `workspace?` | last sync, channels, thread backlog, errors, lock holder | read-only |
 
 Every tool's `workspace` argument accepts a name, domain or team id and falls
