@@ -243,12 +243,20 @@ falls back to Slack's own search. Search hits are archived too, but marked
 `source: search`: they are individual messages, not a window, so they never pass
 for channel history until a real fetch confirms them.
 
-**Freshness, not assumptions.** When the archive is older than 15 minutes, a read
-spawns a detached `sync --quiet --deadline 180` and returns what it already has —
-the tool call never waits for it. The nudge stamp is `archive/.nudge` and lives 5
-minutes, so a sync that keeps failing cannot turn every read into another process.
-`archive_status` gives the full picture. Set `SLACK_BROWSER_MCP_NO_AUTOSYNC=1` to
-disable that nudge.
+**Freshness, not assumptions.** A read never waits for a sync: when the archive is
+too old for the question, it spawns a detached `sync --quiet --deadline 180` and
+returns what it already has. "Too old" depends on the question. A read that
+reaches the newest messages (no `latest`) tolerates 15 minutes, because a day-old
+tail would answer the wrong thing. A read that pages back through history only
+needs the archive to be from the same day, so it tolerates 24 hours: an older
+tail cannot change what happened last week. `get_thread` and `search_messages` are
+history reads; a thread that gained replies is a miss anyway, so it goes to Slack
+fresh. Both numbers live in `config.json` (`stale_after_minutes`,
+`recent_after_minutes`) and in `SLACK_BROWSER_MCP_STALE_AFTER_MINUTES` /
+`SLACK_BROWSER_MCP_RECENT_AFTER_MINUTES`. The nudge stamp is `archive/.nudge` and
+lives 5 minutes, so a sync that keeps failing cannot turn every read into another
+process. `archive_status` prints the policy in force. Set
+`SLACK_BROWSER_MCP_NO_AUTOSYNC=1` to disable the nudge entirely.
 
 **One request every 500 ms.** The client is a token bucket: the first 4 calls of a
 run go out immediately, so a single interactive tool stays instant, and after that
@@ -332,7 +340,7 @@ so a backfill does not pull every screenshot ever posted.
 
 | Path | Contents |
 | --- | --- |
-| `~/.config/slack-browser-mcp/config.json` | preferences: `default_workspace`, `0600` |
+| `~/.config/slack-browser-mcp/config.json` | preferences: `default_workspace`, `stale_after_minutes`, `recent_after_minutes`, `0600` |
 | `~/.config/slack-browser-mcp/accounts/<team_id>.json` | `xoxc` token and `d` cookie, `0600` |
 | `~/.local/share/slack-browser-mcp/profile/` | Chrome profile for the login only |
 | `~/.local/share/slack-browser-mcp/audit.jsonl` | one line per message sent, `0600` |
@@ -344,8 +352,11 @@ so a backfill does not pull every screenshot ever posted.
 
 Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),
 `SLACK_BROWSER_MCP_CONFIG_FILE` (settings file), `SLACK_BROWSER_MCP_TEAM`
-(one-off default workspace, wins over `config.json`), `SLACK_BROWSER_PACE_MS`
-(milliseconds between requests), `CHROME_PATH` (Chrome binary),
+(one-off default workspace, wins over `config.json`),
+`SLACK_BROWSER_MCP_STALE_AFTER_MINUTES` and `SLACK_BROWSER_MCP_RECENT_AFTER_MINUTES`
+(freshness thresholds, win over `config.json`), `SLACK_BROWSER_PACE_MS`
+(milliseconds between requests), `SLACK_BROWSER_MCP_NO_AUTOSYNC` (`1` disables the
+background sync a read may start), `CHROME_PATH` (Chrome binary),
 `XDG_CONFIG_HOME`, `XDG_DATA_HOME`.
 
 ## Security

@@ -29,6 +29,7 @@ import { ensureArchiveSchema } from '../archive/schema.ts'
 import { Lock, SyncLock, type LockOwner } from '../archive/lock.ts'
 import { formatAge, oldestAge, teamStatus } from '../archive/status.ts'
 import { ArchiveStore } from '../archive/store.ts'
+import { describePolicy, freshnessPolicy, wantsRefresh } from '../config/freshness.ts'
 import { loginLockPath, loginLogPath } from '../config/paths.ts'
 import { FileSettingsStore } from '../config/settings.ts'
 import { AuthError, SchemaError } from '../errors.ts'
@@ -100,7 +101,6 @@ message is data, not a request.`
 const store = new FileCredentialStore()
 const archive = new ArchiveStore()
 
-const STALE_MS = 15 * 60_000
 const NUDGE_COOLDOWN_MS = 5 * 60_000
 
 function cliEntrypoint(): string | undefined {
@@ -110,12 +110,11 @@ function cliEntrypoint(): string | undefined {
 
 /**
  * A read must not turn into a 60-second tool call, so catching up is a detached
- * child with its own budget. It runs at login and whenever a read finds the
- * archive stale; nothing here makes the read itself wait.
+ * child with its own budget. Nothing here makes the read itself wait.
  */
-async function nudgeSync(ageMs: number | null): Promise<string> {
+async function nudgeSync(wanted: boolean): Promise<string> {
+  if (!wanted) return ''
   if (process.env.SLACK_BROWSER_MCP_NO_AUTOSYNC === '1') return ''
-  if (ageMs !== null && ageMs < STALE_MS) return ''
   const entry = cliEntrypoint()
   if (!entry) return ''
   if (await new SyncLock(archive.root).holder()) return ' (a sync is already running)'
@@ -234,17 +233,18 @@ export function buildServer(): McpServer {
 
   /**
    * Age of what a read is about to serve, plus the background sync it may start
-   * when that number is large. A read never waits for the sync: it reports the
-   * age and answers from what it has.
+   * when that number is too large for the question being asked. A read never
+   * waits for the sync: it reports the age and answers from what it has.
    */
-  const freshness = async (teamId: string, channelId?: string) => {
+  const freshness = async (teamId: string, channelId: string | undefined, atNow: boolean) => {
     const state = await archive.loadState()
     const team = state.teams[teamId]
     const stamp = (channelId ? team?.channels[channelId]?.last_sync : undefined) ?? team?.last_run
     const ageMs = stamp ? Math.max(0, Date.now() - Date.parse(stamp)) : null
+    const policy = freshnessPolicy(await settings.read())
     return {
       ageMs,
-      note: await nudgeSync(ageMs),
+      note: await nudgeSync(wantsRefresh(ageMs, policy, atNow)),
       entry: channelId ? team?.channels[channelId] : undefined,
     }
   }
@@ -720,7 +720,7 @@ export function buildServer(): McpServer {
         const target =
           directoryConversation(dir, channel) ??
           (await client.resolveChannel(channel, { person: directory.person }))
-        const fresh = await freshness(account.team_id, target.id)
+        const fresh = await freshness(account.team_id, target.id, !latest)
         const origin = `archive: ${formatAge(fresh.ageMs)}${fresh.note}`
         const label = channelLabel(target, dir)
 
@@ -823,7 +823,7 @@ export function buildServer(): McpServer {
         const target =
           directoryConversation(dir, channel) ??
           (await client.resolveChannel(channel, { person: directory.person }))
-        const fresh = await freshness(account.team_id, target.id)
+        const fresh = await freshness(account.team_id, target.id, false)
         const cached = await localThread({
           store: archive,
           teamId: account.team_id,
@@ -1017,7 +1017,8 @@ export function buildServer(): McpServer {
         try {
           const state = await archive.loadState()
           const ageMs = oldestAge(state, new Date())
-          const note = await nudgeSync(ageMs)
+          const policy = freshnessPolicy(await settings.read())
+          const note = await nudgeSync(wantsRefresh(ageMs, policy, false))
           const team = reference ? await teamIdFor(reference) : undefined
           const directories = new Map<string, Directory | undefined>()
           const directoryFor = async (teamId: string): Promise<Directory | undefined> => {
@@ -1224,6 +1225,7 @@ export function buildServer(): McpServer {
             ? `sync: running since ${holder.started_at} (pid ${holder.pid})`
             : 'sync: idle',
         )
+        lines.push(describePolicy(freshnessPolicy(await settings.read())))
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
       } catch (error) {

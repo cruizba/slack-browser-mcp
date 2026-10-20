@@ -81,6 +81,20 @@ describe('FileSettingsStore', () => {
     await writeFile(settingsFile, '{"default_workspace": "x", "defaultWorkspace": "y"}', 'utf8')
     await assert.rejects(() => settings.read(), StoreError)
   })
+
+  it('keeps the refresh thresholds next to the default workspace', async () => {
+    await settings.write({ default_workspace: 'T01ACME', stale_after_minutes: 1440, recent_after_minutes: 30 })
+    assert.deepEqual(await settings.read(), {
+      default_workspace: 'T01ACME',
+      stale_after_minutes: 1440,
+      recent_after_minutes: 30,
+    })
+  })
+
+  it('refuses a threshold that would refresh on every read', async () => {
+    await assert.rejects(() => settings.write({ stale_after_minutes: 0 }), /stale_after_minutes/)
+    await assert.rejects(() => settings.write({ recent_after_minutes: -1 }), /recent_after_minutes/)
+  })
 })
 
 describe('ensureDefaultWorkspace', () => {

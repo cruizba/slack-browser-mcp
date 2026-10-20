@@ -389,11 +389,19 @@ than stylistic:
 So the archive is refreshed by two things that are not the request path: a
 systemd unit that runs once per session (`OnBootSec=`), and a detached nudge a
 read may start. The nudge only covers the case the unit cannot: time passing
-while a session stays open. Reads report the archive's age and, when it is older
-than 15 minutes, spawn `sync --quiet --deadline 180` after checking that the lock
-is free, then answer from the current index. The nudge writes to local disk only,
-never to Slack, so it does not violate R6. `SLACK_BROWSER_MCP_NO_AUTOSYNC=1`
-disables it for machines where background work is unwelcome.
+while a session stays open. Reads report the archive's age and spawn
+`sync --quiet --deadline 180` when that age passes the threshold of the question,
+after checking that the lock is free, then answer from the current index. There
+are two thresholds because there are two questions: a read that reaches the
+newest messages tolerates 15 minutes, since its answer would otherwise be
+yesterday's tail; a read that pages back through history tolerates 24 hours,
+because the archive being a few hours old cannot change what happened last week.
+Both are configurable (`stale_after_minutes` and `recent_after_minutes` in
+`config.json`, or `SLACK_BROWSER_MCP_STALE_AFTER_MINUTES` and
+`SLACK_BROWSER_MCP_RECENT_AFTER_MINUTES`), and the 5-minute stamp still caps how
+often a failing sync can be retried. The nudge writes to local disk only, never to
+Slack, so it does not violate R6. `SLACK_BROWSER_MCP_NO_AUTOSYNC=1` disables it for
+machines where background work is unwelcome.
 
 Dropping the periodic timer is a deliberate trade. Between two sessions the
 archive is not refreshed, so a gap longer than the 7-day reconcile window loses

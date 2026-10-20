@@ -1,6 +1,7 @@
 /**
  * Preferences that are not credentials: today, which workspace answers a call
- * that carries no explicit reference.
+ * that carries no explicit reference, and how old the archive may get before a
+ * read refreshes it.
  *
  * The file is plain JSON so a user can edit it by hand; the shape is still
  * validated on read, because a default pointing at a workspace that no longer
@@ -17,6 +18,8 @@ import { settingsPath } from './paths.ts'
 const SettingsSchema = z
   .object({
     default_workspace: z.string().trim().min(1).max(128).optional(),
+    stale_after_minutes: z.number().positive().optional(),
+    recent_after_minutes: z.number().positive().optional(),
   })
   .strict()
 
