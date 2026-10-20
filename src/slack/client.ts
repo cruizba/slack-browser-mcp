@@ -547,7 +547,7 @@ export class SlackClient {
    * than by a caller holding only a URL. Slack redirects between its own hosts,
    * which keeps the `Authorization` header on the request.
    */
-  async downloadFile(url: string): Promise<{ bytes: Uint8Array; contentType?: string }> {
+  async fetchAttachment(url: string): Promise<{ bytes: Uint8Array; contentType?: string }> {
     const cookieName = this.account.d_cookie_name ?? 'd'
     const response = await this.fetchImpl(url, {
       headers: {

@@ -908,7 +908,7 @@ export function buildServer(): McpServer {
               `Slack returned no download URL for ${file}; it may be an external link preview or a deleted file.`,
             )
           }
-          const downloaded = await client.downloadFile(url)
+          const downloaded = await client.fetchAttachment(url)
           stored = await files.save(account.team_id, info ?? { id: file }, downloaded.bytes)
         }
 

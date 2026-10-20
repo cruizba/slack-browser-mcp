@@ -193,7 +193,7 @@ describe('SlackClient', () => {
     }) as unknown as typeof fetch
 
     const client = new SlackClient(account, { fetch: fetchImpl })
-    const { bytes, contentType } = await client.downloadFile(
+    const { bytes, contentType } = await client.fetchAttachment(
       'https://files.slack.com/files-pri/T01-F0ABC/foto.png',
     )
     assert.deepEqual([...bytes], [1, 2, 3])
@@ -208,7 +208,7 @@ describe('SlackClient', () => {
       new Response('nope', { status: 403 })) as unknown as typeof fetch
     const client = new SlackClient(account, { fetch: fetchImpl })
     await assert.rejects(
-      () => client.downloadFile('https://files.slack.com/files-pri/T01-F0ABC/foto.png'),
+      () => client.fetchAttachment('https://files.slack.com/files-pri/T01-F0ABC/foto.png'),
       (error: unknown) => error instanceof SlackApiError && error.code === 'http_403',
     )
   })
