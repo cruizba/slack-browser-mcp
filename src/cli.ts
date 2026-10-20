@@ -5,6 +5,7 @@
  */
 
 import { login } from './auth/login.ts'
+import { Lock } from './archive/lock.ts'
 import {
   FileCredentialStore,
   workspaceLabels,
@@ -15,7 +16,8 @@ import {
 import { ArchiveIndex } from './archive/index.ts'
 import { ArchiveStore } from './archive/store.ts'
 import { syncAccount } from './archive/sync.ts'
-import { FileSettingsStore } from './config/settings.ts'
+import { FileSettingsStore, ensureDefaultWorkspace } from './config/settings.ts'
+import { loginLockPath } from './config/paths.ts'
 import { AuthError, StoreError } from './errors.ts'
 import { main as serve } from './mcp/server.ts'
 import { recordSend } from './slack/audit.ts'
@@ -133,24 +135,42 @@ function describeDefault(
 
 async function commandLogin(args: ParsedArgs): Promise<number> {
   const store = new FileCredentialStore()
-  const timeoutMs = numberFlag(args, 'timeout', 300) * 1000
-  const result = await login(store, {
-    timeoutMs,
-    headless: args.flags.get('headless') === true,
-    onProgress: (message) => console.error(message),
-  })
-
-  for (const account of result.saved) {
-    console.log(`saved  ${account.team_name} (${account.team_id}) as ${account.user ?? 'unknown user'}`)
-  }
-  for (const rejected of result.rejected) {
-    console.error(`failed ${rejected.team_name} (${rejected.team_id}): ${rejected.reason}`)
-  }
-  if (result.saved.length === 0) {
-    console.error('Nothing was stored. If you have several workspaces, sign in to one at a time.')
+  const lock = new Lock(loginLockPath())
+  if (!(await lock.acquire())) {
+    const owner = await lock.holder()
+    console.error(
+      `another sign-in is already running${owner ? ` (pid ${owner.pid}, since ${owner.started_at})` : ''}; ` +
+        'finish it in the browser window that is open',
+    )
     return 1
   }
-  return result.rejected.length > 0 ? 1 : 0
+
+  try {
+    const timeoutMs = numberFlag(args, 'timeout', 300) * 1000
+    const result = await login(store, {
+      timeoutMs,
+      headless: args.flags.get('headless') === true,
+      onProgress: (message) => console.error(message),
+    })
+
+    for (const account of result.saved) {
+      console.log(`saved  ${account.team_name} (${account.team_id}) as ${account.user ?? 'unknown user'}`)
+    }
+    for (const rejected of result.rejected) {
+      console.error(`failed ${rejected.team_name} (${rejected.team_id}): ${rejected.reason}`)
+    }
+    if (result.saved.length === 0) {
+      console.error('Nothing was stored. If you have several workspaces, sign in to one at a time.')
+      return 1
+    }
+    const first = result.saved[0]!
+    if (await ensureDefaultWorkspace(new FileSettingsStore(), first.team_id)) {
+      console.log(`default workspace: ${first.team_name} (${first.team_id})`)
+    }
+    return result.rejected.length > 0 ? 1 : 0
+  } finally {
+    await lock.release()
+  }
 }
 
 async function commandAccounts(): Promise<number> {
@@ -321,7 +341,10 @@ async function commandSync(args: ParsedArgs): Promise<number> {
     ? [await store.resolve(reference)]
     : await Promise.all((await store.list()).map((summary) => store.get(summary.team_id)))
   if (accounts.length === 0) {
-    throw new StoreError('No Slack session stored yet. Run `slack-browser login`.')
+    // Not an error: the timer runs before anyone signs in, and a red unit every
+    // fifteen minutes says nothing useful.
+    console.error('No Slack session stored yet. Run `slack-browser login`.')
+    return 0
   }
 
   // One budget for the whole run: a timer asks for a deadline, not one per workspace.

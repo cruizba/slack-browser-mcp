@@ -8,7 +8,6 @@ REPO_URL="${SLACK_BROWSER_MCP_REPO:-https://gitea.infra.cruizba.dev/cruizba/slac
 BRANCH=main
 DIR="${HOME}/slack-browser-mcp"
 DIR_GIVEN=0
-LOGIN=1
 PULL=1
 SYSTEMD=1
 
@@ -18,7 +17,6 @@ Usage: install.sh [options]
 
   --dir <path>      where to install (default: ~/slack-browser-mcp)
   --branch <name>   branch to install (default: main)
-  --no-login        never open the browser, even with no stored session
   --no-pull         keep the checkout as it is, do not fetch or pull
   --no-systemd      skip the archive timer
   -h, --help        show this help
@@ -38,7 +36,6 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dir) DIR="$2"; DIR_GIVEN=1; shift 2 ;;
     --branch) BRANCH="$2"; shift 2 ;;
-    --no-login) LOGIN=0; shift ;;
     --no-pull) PULL=0; shift ;;
     --no-systemd) SYSTEMD=0; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -150,23 +147,10 @@ if [ "$SYSTEMD" = 1 ]; then
   fi
 fi
 
-step "Slack session"
-ACCOUNTS="$HOME/.config/slack-browser-mcp/accounts"
-if [ "$LOGIN" = 0 ]; then
-  echo "    skipped (--no-login); run 'slack-browser login' when you want to sign in"
-elif [ -n "$(ls -A "$ACCOUNTS" 2>/dev/null)" ]; then
-  echo "    a stored session is already there; 'slack-browser accounts' lists it"
-else
-  if [ -t 0 ]; then
-    slack-browser login
-  else
-    echo "    no session yet; run 'slack-browser login' in a terminal"
-  fi
-fi
-
 step "Done"
 echo "    slack-browser   $(command -v slack-browser)"
 echo "    checkout        $DIR"
+echo "    sign in         /slack-login in your agent, or: slack-browser login"
 if [ "$SYSTEMD" = 1 ] && [ -f "$HOME/.config/systemd/user/slack-browser-sync.timer" ]; then
   echo "    timer           systemctl --user list-timers slack-browser-sync.timer"
   echo "    sync now        systemctl --user start slack-browser-sync.service"

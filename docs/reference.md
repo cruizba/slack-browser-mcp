@@ -27,16 +27,15 @@ The README installs with it. It pulls `main`, runs `npm ci` and `npm run build`,
 `commands/` slash commands into that agent's directory and registers the MCP
 server `slack`. Finally it renders `systemd/slack-browser-sync.service.in` into
 `~/.config/systemd/user/`, installs the timer, enables it and turns on linger.
-It only opens the browser when no session is stored yet, and re-running it is
-safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left on
-its branch). That re-run is also the update: there is no separate command.
+It never opens a browser: signing in is a command the agent runs. Re-running it
+is safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left
+on its branch). That re-run is also the update: there is no separate command.
 
 ```bash
 ./install.sh --help
 
   --dir <path>      where to install (default: ~/slack-browser-mcp)
   --branch <name>   branch to install (default: main)
-  --no-login        never open the browser, even with no stored session
   --no-pull         keep the checkout as it is, do not fetch or pull
   --no-systemd      skip the archive timer
 ```
@@ -57,11 +56,15 @@ Without `npm link`, replace `slack-browser serve` below with
 
 ## Sign in
 
+From the agent, `/slack-login` (the `login_workspace` tool) opens the browser;
+it returns as soon as Chrome is up, and the tool waits up to `wait_seconds` for
+the sign-in to finish. The CLI does the same thing and blocks:
+
 ```bash
 slack-browser login
 ```
 
-Chrome opens on `app.slack.com`. Sign in as you normally would, including SSO or
+Either way Chrome opens on `app.slack.com`. Sign in as you normally would, including SSO or
 2FA. The tool waits until it can read the session, proves it with `auth.test`,
 and only then writes it to disk. Sign in **one workspace at a time**; a workspace
 whose stored cookie Slack rejects is reported instead of saved.
@@ -71,6 +74,14 @@ Slack's automation check. The login does not use an automation-driving browser
 for exactly this reason: it launches Chrome itself, without Playwright's
 `--enable-automation` flag, and attaches over the DevTools protocol. If it still
 happens, the failure screenshot is at `/tmp/slack-browser-login-failure.png`.
+
+The first workspace stored becomes the default automatically. Later sign-ins
+leave it alone; `/slack-workspaces` lists what is stored and changes it.
+
+One sign-in at a time: a lock directory (`login.lock` in the data directory)
+makes a second attempt report the running one instead of opening a second
+browser. A login the agent starts writes its progress to `login.log` next to it,
+and the last line of that file is what `list_workspaces` reports when it ends.
 
 Useful flags: `--timeout <seconds>` (default 300), `--headless` (only if your
 workspace has no SSO challenge).
@@ -93,14 +104,15 @@ server `slack`. The commands in the README write these entries for you:
 ```
 
 Check the connection with `pi mcp list`, `claude mcp list` or `opencode mcp list`;
-each should report `slack` as connected with seven tools.
+each should report `slack` as connected with its tools.
 
 ## Slash commands
 
-Four prompt templates in `commands/` give the agents `/slack`, `/slack-search`,
-`/slack-post` and `/slack-sync`. They are plain Markdown with `description` front
-matter, which is the part all three agents read; the file name is the command.
-Link them into each agent's command directory:
+Six prompt templates in `commands/` give the agents `/slack-login`,
+`/slack-workspaces`, `/slack`, `/slack-search`, `/slack-post` and `/slack-sync`.
+They are plain Markdown with `description` front matter, which is the part all
+three agents read; the file name is the command. Link them into each agent's
+command directory:
 
 ```bash
 for dir in ~/.pi/agent/prompts ~/.claude/commands ~/.config/opencode/commands; do
@@ -116,6 +128,8 @@ unexpanded, so there it is a TUI feature.
 
 | Command | What it does |
 | --- | --- |
+| `/slack-login [workspace]` | Opens Chrome to sign in; the first workspace becomes the default |
+| `/slack-workspaces [use <ws>\|clear]` | Lists the stored workspaces and changes the default |
 | `/slack` | Sessions and archive status for every workspace; reads no messages |
 | `/slack <channel> [count]` | Recent messages, printed oldest first (`me` is your own DM) |
 | `/slack <channel> <thread_ts>` | Every reply in that thread |
@@ -145,7 +159,8 @@ slack-browser send general "ack" --thread 1792500000.000100 --send
 
 ## Several workspaces
 
-Each stored session is a workspace. List them, choose a default, or clear it:
+Each stored session is a workspace. `list_workspaces` shows them and
+`set_default_workspace` picks one; from the shell:
 
 ```bash
 slack-browser workspace                   # '*' marks the default workspace
@@ -235,6 +250,9 @@ see [Several workspaces](#several-workspaces) for how the default is chosen.
 | Tool | Arguments | Notes |
 | --- | --- | --- |
 | `auth_status` | `workspace?` | Validates each stored session with `auth.test`. Never returns tokens. |
+| `login_workspace` | `workspace?`, `wait_seconds?` | Opens Chrome for a sign-in, detached so no tool call outlives the client timeout. Reports a running sign-in instead of starting a second one. |
+| `list_workspaces` | — | Stored workspaces, which one is the default and why, whether a sign-in is running. Local only. |
+| `set_default_workspace` | `workspace?`, `clear?` | Writes `default_workspace` in `config.json`, or clears it. |
 | `list_conversations` | `workspace?`, `query?`, `kind?` (`all\|channel\|private\|dm`), `limit?` | Only conversations the user belongs to. |
 | `read_messages` | `workspace?`, `channel`, `limit?`, `oldest?`, `latest?` | Oldest first, raw Slack `ts` preserved for paging. |
 | `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?` | Every reply in the thread. |
@@ -257,6 +275,8 @@ and why, and an unfiltered `search_messages` labels each hit with its workspace.
 | `~/.config/slack-browser-mcp/accounts/<team_id>.json` | `xoxc` token and `d` cookie, `0600` |
 | `~/.local/share/slack-browser-mcp/profile/` | Chrome profile for the login only |
 | `~/.local/share/slack-browser-mcp/audit.jsonl` | one line per message sent, `0600` |
+| `~/.local/share/slack-browser-mcp/login.lock/` | held while a sign-in is running, `0700` |
+| `~/.local/share/slack-browser-mcp/login.log` | progress and errors of the last sign-in, `0600` |
 | `~/.local/share/slack-browser-mcp/archive/` | JSONL per channel + `state.json`, `0700`/`0600` |
 | `~/.local/share/slack-browser-mcp/archive.sqlite` | FTS5 index, rebuildable, `0600` |
 

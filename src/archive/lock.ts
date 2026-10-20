@@ -1,5 +1,6 @@
 /**
- * One writer at a time for the archive.
+ * One writer at a time for anything that must not interleave: the archive sync
+ * and the interactive login.
  *
  * Node has no `flock` binding, and re-execing the whole sync under `flock(1)`
  * just to hold a lock is worse than a lock directory: `mkdir` is atomic on every
@@ -30,12 +31,12 @@ function isAlive(pid: number): boolean {
   }
 }
 
-export class SyncLock {
+export class Lock {
   private readonly dir: string
   private held = false
 
-  constructor(archiveRoot: string) {
-    this.dir = join(archiveRoot, '.sync.lock')
+  constructor(dir: string) {
+    this.dir = dir
   }
 
   async acquire(): Promise<boolean> {
@@ -91,5 +92,12 @@ export class SyncLock {
     if (Date.now() - Date.parse(owner.started_at) > MAX_AGE_MS) return true
     if (owner.host !== hostname()) return false
     return !isAlive(owner.pid)
+  }
+}
+
+/** The archive's writer lock, at the root of the archive directory. */
+export class SyncLock extends Lock {
+  constructor(archiveRoot: string) {
+    super(join(archiveRoot, '.sync.lock'))
   }
 }

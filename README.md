@@ -16,9 +16,11 @@ It pulls `main`, builds the checkout, puts `slack-browser` on your PATH, and the
 does the rest for every agent it finds — `pi`, `claude`, `opencode`:
 
 - registers the MCP server `slack`
-- links the `/slack`, `/slack-search`, `/slack-post` and `/slack-sync` commands
+- links the `/slack*` commands, sign-in included
 - installs `slack-browser-sync.timer`, which refreshes the archive every 15 minutes
-- opens the browser once, if no Slack session is stored yet
+
+It never opens a browser. Sign in from the agent with `/slack-login`; the first
+workspace you sign in to becomes the default, and `/slack-workspaces` changes it.
 
 Re-running it is safe; `install.sh --help` lists the flags.
 
@@ -34,6 +36,9 @@ else:
 ## Examples
 
 ```text
+/slack-login                              # sign in to a workspace in a browser window
+/slack-workspaces                         # what is stored, which one is the default
+/slack-workspaces use openvidu            # change the default
 /slack                                    # sessions and archive status
 /slack operations 20                      # last 20 messages of #operations
 /slack operations 1792500000.000100       # a thread

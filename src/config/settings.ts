@@ -88,3 +88,16 @@ export class FileSettingsStore implements SettingsStore {
     return next
   }
 }
+
+/**
+ * First login wins: a default the user chose stays, and a missing one is filled
+ * with the workspace that was just stored.
+ */
+export async function ensureDefaultWorkspace(
+  settings: SettingsStore,
+  teamId: string,
+): Promise<boolean> {
+  if ((await settings.read()).default_workspace) return false
+  await settings.setDefaultWorkspace(teamId)
+  return true
+}

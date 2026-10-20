@@ -9,7 +9,7 @@ import {
   workspaceLabels,
   type SlackAccount,
 } from '../src/auth/store.ts'
-import { FileSettingsStore } from '../src/config/settings.ts'
+import { FileSettingsStore, ensureDefaultWorkspace } from '../src/config/settings.ts'
 import { StoreError } from '../src/errors.ts'
 
 let root: string
@@ -80,6 +80,19 @@ describe('FileSettingsStore', () => {
   it('refuses unknown keys instead of silently ignoring them', async () => {
     await writeFile(settingsFile, '{"default_workspace": "x", "defaultWorkspace": "y"}', 'utf8')
     await assert.rejects(() => settings.read(), StoreError)
+  })
+})
+
+describe('ensureDefaultWorkspace', () => {
+  it('fills the default the first time a workspace is stored', async () => {
+    assert.equal(await ensureDefaultWorkspace(settings, 'T01OPENVIDU'), true)
+    assert.deepEqual(await settings.read(), { default_workspace: 'T01OPENVIDU' })
+  })
+
+  it('leaves a default the user already chose', async () => {
+    await settings.setDefaultWorkspace('T0CODEURJC')
+    assert.equal(await ensureDefaultWorkspace(settings, 'T01OPENVIDU'), false)
+    assert.deepEqual(await settings.read(), { default_workspace: 'T0CODEURJC' })
   })
 })
 

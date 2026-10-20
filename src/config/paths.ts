@@ -41,21 +41,35 @@ export function settingsPath(): string {
  * Chromium user data directory for the one interactive login. It holds the
  * Slack session cookies, so it is as sensitive as the account files.
  */
+export function dataDir(): string {
+  return join(xdgDataHome(), 'slack-browser-mcp')
+}
+
 export function profileDir(): string {
-  return join(xdgDataHome(), 'slack-browser-mcp', 'profile')
+  return join(dataDir(), 'profile')
+}
+
+/** Guard that stops two interactive logins from running at once. */
+export function loginLockPath(): string {
+  return join(dataDir(), 'login.lock')
+}
+
+/** stderr of the login the agent starts, so a failure is readable afterwards. */
+export function loginLogPath(): string {
+  return join(dataDir(), 'login.log')
 }
 
 /** Append-only record of what this tool posted, next to the browser profile. */
 export function auditLogPath(): string {
-  return join(xdgDataHome(), 'slack-browser-mcp', 'audit.jsonl')
+  return join(dataDir(), 'audit.jsonl')
 }
 
 /** Plain-text mirror of the conversations, one JSONL file per channel. */
 export function archiveDir(): string {
-  return join(xdgDataHome(), 'slack-browser-mcp', 'archive')
+  return join(dataDir(), 'archive')
 }
 
 /** Rebuildable SQLite index over the archive, derived data only. */
 export function archiveIndexPath(): string {
-  return join(xdgDataHome(), 'slack-browser-mcp', 'archive.sqlite')
+  return join(dataDir(), 'archive.sqlite')
 }

@@ -1,11 +1,13 @@
 /**
- * MCP server exposing read-only Slack access.
+ * MCP server exposing Slack access, including the interactive sign-in the agent
+ * can start so the user never has to leave it.
  *
  * stdout belongs to the protocol: every diagnostic goes to stderr.
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -13,11 +15,18 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 
-import { FileCredentialStore, workspaceLabels, type SlackAccount } from '../auth/store.ts'
+import {
+  FileCredentialStore,
+  workspaceLabels,
+  type AccountSummary,
+  type SlackAccount,
+} from '../auth/store.ts'
 import { ArchiveIndex } from '../archive/index.ts'
-import { SyncLock } from '../archive/lock.ts'
+import { Lock, SyncLock, type LockOwner } from '../archive/lock.ts'
 import { formatAge, oldestAge, teamStatus } from '../archive/status.ts'
 import { ArchiveStore } from '../archive/store.ts'
+import { loginLockPath, loginLogPath } from '../config/paths.ts'
+import { FileSettingsStore } from '../config/settings.ts'
 import { syncAccount } from '../archive/sync.ts'
 import { AuthError } from '../errors.ts'
 import { redact } from '../log/redact.ts'
@@ -29,7 +38,11 @@ const VERSION = '0.1.0'
 
 const INSTRUCTIONS = `Read Slack conversations on behalf of the user, and post as them.
 
-Sessions come from \`slack-browser login\`; there is no OAuth and no bot.
+Sessions come from an interactive browser sign-in, not OAuth and not a bot.
+\`login_workspace\` opens Chrome and lets the user sign in (SSO and 2FA included);
+nothing is stored until Slack accepts the session, and the first workspace stored
+becomes the default. \`list_workspaces\` shows what is stored and which one answers
+calls without a \`workspace\` argument; \`set_default_workspace\` changes it.
 
 Several workspaces can be stored at once. Every tool takes an optional
 \`workspace\` (name, domain or team id); without it the call uses the default
@@ -77,6 +90,28 @@ async function nudgeSync(ageMs: number | null): Promise<string> {
   return ' (background sync started)'
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((done) => setTimeout(done, ms))
+}
+
+function tailLines(file: string, count: number): string[] {
+  try {
+    return readFileSync(file, 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(
+        (line) =>
+          line.length > 0 &&
+          // node prints its own warnings into this log; they are not an outcome.
+          !/^\(node:\d+\)/.test(line) &&
+          !line.startsWith('(Use `node'),
+      )
+      .slice(-count)
+  } catch {
+    return []
+  }
+}
+
 interface Session {
   account: SlackAccount
   client: SlackClient
@@ -111,6 +146,15 @@ export function buildServer(): McpServer {
     { instructions: INSTRUCTIONS },
   )
 
+  const loginLock = new Lock(loginLockPath())
+  const settings = new FileSettingsStore()
+  const loginSummary = async (): Promise<string> => {
+    const holder = await loginLock.holder()
+    if (holder) return `login: running since ${holder.started_at} (pid ${holder.pid})`
+    const [last] = tailLines(loginLogPath(), 1)
+    return last ? `login: idle; last attempt: ${last}` : 'login: idle'
+  }
+
   server.registerTool(
     'auth_status',
     {
@@ -131,7 +175,7 @@ export function buildServer(): McpServer {
             content: [
               {
                 type: 'text' as const,
-                text: 'No Slack session stored. Run `slack-browser login` on the machine that runs this server.',
+                text: `No Slack session stored. Call login_workspace: it opens Chrome so the user can sign in.\n${await loginSummary()}`,
               },
             ],
           }
@@ -151,7 +195,7 @@ export function buildServer(): McpServer {
             lines.push(
               `FAIL ${account.team_name} (${account.team_id}): ${
                 error instanceof Error ? error.message : String(error)
-              } — re-run \`slack-browser login\``,
+              } — call login_workspace to sign in again`,
             )
           }
         }
@@ -180,6 +224,234 @@ export function buildServer(): McpServer {
         }
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+      } catch (error) {
+        return failure(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'login_workspace',
+    {
+      title: 'Sign in to a Slack workspace',
+      description:
+        'Open Chrome on app.slack.com so the user can sign in to one workspace by hand (SSO and 2FA included, nothing scripted). Returns once the browser is running, and waits `wait_seconds` for the sign-in to finish. Nothing is stored until Slack accepts the session; then the workspace appears in list_workspaces, and the first one stored becomes the default. Use it when there is no session yet, when a session was revoked, or when the user wants another workspace.',
+      inputSchema: {
+        workspace: z
+          .string()
+          .optional()
+          .describe('Workspace the user means to sign in to. Only shapes the instructions: the browser decides what gets captured.'),
+        wait_seconds: z
+          .number()
+          .int()
+          .min(0)
+          .max(45)
+          .default(20)
+          .describe('How long to wait for the user to finish before returning. 0 returns as soon as the browser opens.'),
+      },
+      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+    },
+    async ({ workspace: hint, wait_seconds }) => {
+      try {
+        const holder = await loginLock.holder()
+        if (holder) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  `A browser sign-in is already running (pid ${holder.pid}, started ${holder.started_at}). ` +
+                  'Finish it in the window that is open, then call auth_status.',
+              },
+            ],
+          }
+        }
+
+        const entry = cliEntrypoint()
+        if (!entry) throw new Error('The slack-browser CLI is not next to this MCP server, so the browser cannot be started. Run `slack-browser login` in a terminal instead.')
+
+        const known = new Set((await store.list()).map((account) => account.team_id))
+        const logPath = loginLogPath()
+        await mkdir(dirname(logPath), { recursive: true, mode: 0o700 })
+        const fd = openSync(logPath, 'w', 0o600)
+        try {
+          spawn(process.execPath, ['--no-warnings', entry, 'login'], {
+            detached: true,
+            stdio: ['ignore', fd, fd],
+          }).unref()
+        } finally {
+          closeSync(fd)
+        }
+
+        let started: LockOwner | undefined
+        for (let attempt = 0; attempt < 30 && !started; attempt++) {
+          started = await loginLock.holder()
+          if (!started) await sleep(100)
+        }
+        if (!started) {
+          const tail = tailLines(logPath, 6).join('\n')
+          throw new Error(
+            `the browser did not start${tail ? `:\n${tail}` : `; see ${logPath}`}`,
+          )
+        }
+        // The lock can exist for a moment before Chrome refuses to run, and
+        // reporting "the browser is open" then would send the user to a window
+        // that is not there.
+        await sleep(1200)
+        if (!(await loginLock.holder())) {
+          const tail = tailLines(logPath, 6).join('\n')
+          throw new Error(`the browser closed during start-up${tail ? `:\n${tail}` : `; see ${logPath}`}`)
+        }
+
+        const deadline = Date.now() + wait_seconds * 1000
+        let added: AccountSummary[] = []
+        for (;;) {
+          added = (await store.list()).filter((account) => !known.has(account.team_id))
+          if (added.length > 0 || Date.now() >= deadline || !(await loginLock.holder())) break
+          await sleep(500)
+        }
+
+        if (added.length > 0) {
+          const names = added.map(
+            (account) =>
+              `${account.team_name} (${account.team_id})${account.user ? ` as ${account.user}` : ''}`,
+          )
+          const fallback = await store.default()
+          const isDefault = fallback !== null && added.some((account) => account.team_id === fallback.team_id)
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `signed in: ${names.join(', ')}${isDefault ? ' — it is the default workspace' : ''}\n${await loginSummary()}`,
+              },
+            ],
+          }
+        }
+
+        if (!(await loginLock.holder())) {
+          const tail = tailLines(logPath, 6).join('\n')
+          throw new Error(`the sign-in did not finish${tail ? `:\n${tail}` : `; see ${logPath}`}`)
+        }
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                `Chrome is open on app.slack.com${hint ? `: sign in to ${hint}` : ''}. ` +
+                'Finish the sign-in there; nothing is stored until Slack accepts the session. ' +
+                `Then call auth_status or list_workspaces. Log: ${logPath}`,
+            },
+          ],
+        }
+      } catch (error) {
+        return failure(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'list_workspaces',
+    {
+      title: 'List Slack workspaces',
+      description:
+        'List the Slack workspaces with a stored session, which one answers calls that carry no `workspace` argument and why, and whether a sign-in is running. Local only: no Slack call and no tokens in the output.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      try {
+        const accounts = await store.list()
+        const summary = await loginSummary()
+        if (accounts.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `No Slack workspace stored yet. Call login_workspace to open a browser and sign in to one.\n${summary}`,
+              },
+            ],
+          }
+        }
+
+        const fallback = await store.default()
+        const source =
+          fallback?.source === 'config'
+            ? ' from config.json'
+            : fallback?.source === 'environment'
+              ? ' from SLACK_BROWSER_MCP_TEAM'
+              : fallback?.source === 'only'
+                ? ': the only stored session'
+                : ''
+        const lines = accounts.map((account) => {
+          const marker = fallback?.team_id === account.team_id ? '*' : ' '
+          const bits = [`${account.team_name} (${account.team_id})`]
+          if (account.team_domain) bits.push(account.team_domain)
+          if (account.user) bits.push(`as ${account.user}`)
+          bits.push(account.last_ok_at ? `last ok ${account.last_ok_at}` : 'never validated')
+          return `${marker} ${bits.join(' · ')}`
+        })
+        lines.push(
+          `stored: ${accounts.length} workspace${accounts.length === 1 ? '' : 's'}` +
+            (fallback ? `; * = default${source}` : '; no default, pass workspace on every call'),
+        )
+        lines.push(summary)
+        return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+      } catch (error) {
+        return failure(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'set_default_workspace',
+    {
+      title: 'Choose the default Slack workspace',
+      description:
+        'Make one stored workspace the one that answers calls without a `workspace` argument, or clear that choice. The first workspace signed in becomes the default automatically; this tool is how the user changes it later.',
+      inputSchema: {
+        workspace: z
+          .string()
+          .optional()
+          .describe('Workspace to use by default: name, domain or team id.'),
+        clear: z
+          .boolean()
+          .default(false)
+          .describe('Remove the configured default instead of setting one.'),
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+    },
+    async ({ workspace: reference, clear }) => {
+      try {
+        if (clear && reference) throw new Error('Pass either workspace or clear, not both.')
+        const accounts = await store.list()
+
+        if (clear) {
+          await settings.setDefaultWorkspace(null)
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  accounts.length > 1
+                    ? 'Default workspace cleared; every call must name a workspace now.'
+                    : 'Default workspace cleared; with a single stored session it is still used implicitly.',
+              },
+            ],
+          }
+        }
+
+        if (!reference) throw new Error('Pass workspace (name, domain or team id), or clear: true.')
+        const account = await store.resolve(reference)
+        await settings.setDefaultWorkspace(account.team_id)
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `default workspace: ${account.team_name} (${account.team_id}); calls without a workspace now use it.`,
+            },
+          ],
+        }
       } catch (error) {
         return failure(error)
       }
