@@ -16,11 +16,13 @@ import {
 import { ArchiveIndex, rebuildIndex } from './archive/index.ts'
 import { ensureArchiveSchema } from './archive/schema.ts'
 import { DEFAULT_BACKFILL_DAYS, syncAccount } from './archive/sync.ts'
+import { ASSISTED_NICKNAME_ENV, assistedNickname } from './config/assist.ts'
 import { FileSettingsStore, ensureDefaultWorkspace } from './config/settings.ts'
 import { loginLockPath } from './config/paths.ts'
 import { AuthError, SchemaError, StoreError } from './errors.ts'
 import { main as serve } from './mcp/server.ts'
 import { recordSend } from './slack/audit.ts'
+import { withAssistHeader } from './slack/assist.ts'
 import { SlackClient } from './slack/client.ts'
 import { channelLabel, renderMessages } from './slack/format.ts'
 import { conversationFilter, conversationLabel } from './slack/conversations.ts'
@@ -43,10 +45,11 @@ Usage:
   slack-browser workspace [list]
   slack-browser workspace use <name|domain|team-id>
   slack-browser workspace clear
+  slack-browser assist [<nickname>] [--clear]
   slack-browser status [--workspace <ref>]
   slack-browser read <channel> [--limit <n>] [--oldest <ts>] [--latest <ts>] [--workspace <ref>]
   slack-browser thread <channel> <thread_ts> [--workspace <ref>]
-  slack-browser send <channel> <message> [--thread <ts>] [--send] [--workspace <ref>]
+  slack-browser send <channel> <message> [--thread <ts>] [--send] [--no-assist] [--workspace <ref>]
   slack-browser sync [--full] [--since <days>] [--deadline <seconds>] [--quiet] [--workspace <ref>]
   slack-browser archive search <query> [--channel <name>] [--workspace <ref>] [--limit <n>] [--deleted]
   slack-browser archive stats [--workspace <ref>]
@@ -60,7 +63,11 @@ mode 0600.
 
 Without --workspace, a command uses SLACK_BROWSER_MCP_TEAM, then the default
 saved by "workspace use", then the only stored session. "sync" without
---workspace covers every stored workspace.`
+--workspace covers every stored workspace.
+
+With an assisted nickname set ("assist <nickname>"), every sent message starts
+with one bold line, "*Message assisted by AI Bot <nickname>*"; --no-assist posts
+the text alone. ${ASSISTED_NICKNAME_ENV} wins over config.json.`
 
 interface ParsedArgs {
   positional: string[]
@@ -234,6 +241,36 @@ async function commandWorkspace(args: ParsedArgs): Promise<number> {
   }
 }
 
+async function commandAssist(args: ParsedArgs): Promise<number> {
+  const store = new FileSettingsStore()
+
+  if (args.flags.get('clear') === true) {
+    if (args.positional.length > 0) throw new Error('assist --clear takes no nickname')
+    await store.setAssistedNickname(null)
+    console.log('assisted nickname cleared: sent messages carry no header')
+    return 0
+  }
+
+  const nickname = args.positional.join(' ').trim()
+  if (nickname) {
+    await store.setAssistedNickname(nickname)
+    console.log(`assisted nickname: ${nickname}`)
+    console.log(`every sent message now starts with: *Message assisted by AI Bot ${nickname}*`)
+    return 0
+  }
+
+  const effective = assistedNickname(await store.read())
+  if (!effective) {
+    console.log('no assisted nickname: sent messages carry no header')
+    return 0
+  }
+  const source = process.env[ASSISTED_NICKNAME_ENV]?.trim()
+    ? ` (from ${ASSISTED_NICKNAME_ENV})`
+    : ''
+  console.log(`assisted nickname: ${effective}${source}`)
+  return 0
+}
+
 async function commandStatus(args: ParsedArgs): Promise<number> {
   const store = new FileCredentialStore()
   const reference = stringFlag(args, 'workspace')
@@ -328,17 +365,20 @@ async function commandSend(args: ParsedArgs): Promise<number> {
   const label = channelLabel(channel, directory)
   const threadTs = stringFlag(args, 'thread')
   const target = `${account.team_name} · ${label} (${channel.id})`
+  const nickname = assistedNickname(await new FileSettingsStore().read())
+  const body =
+    nickname && args.flags.get('no-assist') !== true ? withAssistHeader(text, nickname) : text
 
   if (args.flags.get('send') !== true) {
     console.log(`dry run — would post to ${target}${threadTs ? ` in thread ${threadTs}` : ''}:`)
-    console.log(text)
+    console.log(body)
     console.error('nothing sent; add --send to commit')
     return 0
   }
 
   const posted = await client.postMessage({
     channel: channel.id,
-    text,
+    text: body,
     ...(threadTs ? { thread_ts: threadTs } : {}),
   })
   const audit = await recordSend({
@@ -347,7 +387,7 @@ async function commandSend(args: ParsedArgs): Promise<number> {
     channel_id: channel.id,
     ...(threadTs ? { thread_ts: threadTs } : {}),
     message_ts: posted.ts,
-    text,
+    text: body,
   })
   console.log(`sent ts ${posted.ts} to ${target}; audit: ${audit}`)
   return 0
@@ -548,6 +588,8 @@ async function main(): Promise<number> {
     case 'workspace':
     case 'workspaces':
       return commandWorkspace(args)
+    case 'assist':
+      return commandAssist(args)
     case 'status':
       return commandStatus(args)
     case 'read':

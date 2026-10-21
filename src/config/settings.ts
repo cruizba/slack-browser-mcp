@@ -1,7 +1,7 @@
 /**
- * Preferences that are not credentials: today, which workspace answers a call
- * that carries no explicit reference, and how old the archive may get before a
- * read refreshes it.
+ * Preferences that are not credentials: which workspace answers a call that
+ * carries no explicit reference, how old the archive may get before a read
+ * refreshes it, and the nickname posted messages are signed with.
  *
  * The file is plain JSON so a user can edit it by hand; the shape is still
  * validated on read, because a default pointing at a workspace that no longer
@@ -13,6 +13,7 @@ import { dirname } from 'node:path'
 import { z } from 'zod'
 
 import { StoreError } from '../errors.ts'
+import { assistedNicknameSchema, checkedNickname } from './assist.ts'
 import { settingsPath } from './paths.ts'
 
 const SettingsSchema = z
@@ -20,6 +21,7 @@ const SettingsSchema = z
     default_workspace: z.string().trim().min(1).max(128).optional(),
     stale_after_minutes: z.number().positive().optional(),
     recent_after_minutes: z.number().positive().optional(),
+    assisted_nickname: assistedNicknameSchema.optional(),
   })
   .strict()
 
@@ -30,6 +32,8 @@ export interface SettingsStore {
   write(settings: Settings): Promise<void>
   /** Stores a team id, or removes the default when given null. */
   setDefaultWorkspace(reference: string | null): Promise<Settings>
+  /** Stores the nickname, or removes it (null) so messages go out bare. */
+  setAssistedNickname(nickname: string | null): Promise<Settings>
 }
 
 export class FileSettingsStore implements SettingsStore {
@@ -86,6 +90,19 @@ export class FileSettingsStore implements SettingsStore {
       next.default_workspace = reference
     } else {
       delete next.default_workspace
+    }
+    await this.write(next)
+    return next
+  }
+
+  async setAssistedNickname(nickname: string | null): Promise<Settings> {
+    const next: Settings = { ...(await this.read()) }
+    if (nickname === null) {
+      delete next.assisted_nickname
+    } else {
+      // Validated before the write so the caller sees a readable error, not a
+      // zod issue dump from inside `write`.
+      next.assisted_nickname = checkedNickname(nickname)
     }
     await this.write(next)
     return next

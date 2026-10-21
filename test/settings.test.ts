@@ -95,6 +95,37 @@ describe('FileSettingsStore', () => {
     await assert.rejects(() => settings.write({ stale_after_minutes: 0 }), /stale_after_minutes/)
     await assert.rejects(() => settings.write({ recent_after_minutes: -1 }), /recent_after_minutes/)
   })
+
+  it('stores the assisted nickname next to the other preferences', async () => {
+    await settings.setDefaultWorkspace('T01ACME')
+    await settings.setAssistedNickname('Qwen3.8 27B')
+    assert.deepEqual(await settings.read(), {
+      default_workspace: 'T01ACME',
+      assisted_nickname: 'Qwen3.8 27B',
+    })
+  })
+
+  it('drops the assisted nickname when it is cleared', async () => {
+    await settings.setAssistedNickname('Qwen3.8 27B')
+    await settings.setAssistedNickname(null)
+    assert.deepEqual(await settings.read(), {})
+  })
+
+  it('refuses a nickname that cannot fit in the bold header line', async () => {
+    await assert.rejects(() => settings.setAssistedNickname('a*b'), /no \* and no line break/)
+    await assert.rejects(() => settings.setAssistedNickname('  '), /cannot be empty/)
+    await assert.rejects(() => settings.setAssistedNickname('x'.repeat(61)), /at most 60/)
+  })
+
+  it('rejects a broken nickname found in a hand-edited file', async () => {
+    await writeFile(settingsFile, '{"assisted_nickname": "two\\nlines"}', 'utf8')
+    await assert.rejects(() => settings.read(), (error: unknown) => {
+      assert.ok(error instanceof StoreError)
+      assert.match(error.message, /assisted_nickname/)
+      assert.match(error.message, /line break/)
+      return true
+    })
+  })
 })
 
 describe('ensureDefaultWorkspace', () => {

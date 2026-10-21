@@ -14,6 +14,11 @@ function json(body: unknown): Response {
   })
 }
 
+function textOf(result: unknown): string {
+  const content = (result as { content?: Array<{ type: string; text?: string }> }).content ?? []
+  return content.map((part) => part.text ?? '').join('\n')
+}
+
 test('post_message refuses without confirm and posts exactly once with it', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'slack-write-'))
   process.env.SLACK_BROWSER_MCP_CONFIG_DIR = join(root, 'config')
@@ -112,4 +117,40 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
   assert.equal(record.channel_id, 'C0CINOTIF')
   assert.equal(record.message_ts, '1792500000.000100')
   assert.equal(record.text, undefined, 'the audit log must not store the full text')
+
+  // The dry run must already show the header: it promises the exact text.
+  const signed = await client.callTool({
+    name: 'set_assisted_nickname',
+    arguments: { nickname: 'Qwen3.8 27B' },
+  })
+  assert.match(textOf(signed), /assisted nickname: Qwen3\.8 27B/)
+
+  const preview = await client.callTool({
+    name: 'post_message',
+    arguments: { channel: 'ci-notifications', text: 'hola con mote' },
+  })
+  assert.match(
+    textOf(preview),
+    /\*Message assisted by AI Bot Qwen3\.8 27B\*\n\nhola con mote/,
+  )
+
+  await client.callTool({
+    name: 'post_message',
+    arguments: { channel: 'ci-notifications', text: 'hola con mote', confirm: true },
+  })
+  const signedPost = calls.filter((call) => call.method === 'chat.postMessage').at(-1)
+  assert.equal(signedPost?.body.get('text'), '*Message assisted by AI Bot Qwen3.8 27B*\n\nhola con mote')
+
+  await client.callTool({
+    name: 'post_message',
+    arguments: { channel: 'ci-notifications', text: 'sin cabecera', confirm: true, assist: false },
+  })
+  const barePost = calls.filter((call) => call.method === 'chat.postMessage').at(-1)
+  assert.equal(barePost?.body.get('text'), 'sin cabecera')
+
+  const cleared = await client.callTool({
+    name: 'set_assisted_nickname',
+    arguments: { clear: true },
+  })
+  assert.match(textOf(cleared), /carry no header/)
 })

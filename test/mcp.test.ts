@@ -52,17 +52,18 @@ test('exposes the Slack tools and survives an empty store', async (t) => {
       'read_file',
       'read_messages',
       'search_messages',
+      'set_assisted_nickname',
       'set_default_workspace',
     ],
   )
   for (const tool of tools) {
     assert.ok((tool.description ?? '').length > 30, `${tool.name} needs a description`)
   }
-  const writes = new Set(['login_workspace', 'post_message', 'set_default_workspace'])
+  const writes = new Set(['login_workspace', 'post_message', 'set_assisted_nickname', 'set_default_workspace'])
   for (const tool of tools.filter((tool) => !writes.has(tool.name))) {
     assert.equal(tool.annotations?.readOnlyHint, true, `${tool.name} must be read-only`)
   }
-  for (const name of ['login_workspace', 'set_default_workspace']) {
+  for (const name of ['login_workspace', 'set_assisted_nickname', 'set_default_workspace']) {
     assert.equal(tools.find((tool) => tool.name === name)?.annotations?.readOnlyHint, false)
   }
   const post = tools.find((tool) => tool.name === 'post_message')
@@ -86,6 +87,9 @@ test('exposes the Slack tools and survives an empty store', async (t) => {
     arguments: { workspace: 'Acme' },
   })
   assert.match(textOf(nothing), /No Slack session stored yet/)
+
+  const nickname = await client.callTool({ name: 'set_assisted_nickname', arguments: {} })
+  assert.match(textOf(nickname), /no assisted nickname/)
 })
 
 test('a running sign-in is reported instead of starting another browser', async (t) => {

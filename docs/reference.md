@@ -180,6 +180,35 @@ under one deadline, so the run at session start covers them all. `archive search
 and `archive stats` accept `--workspace` too; an unfiltered search prefixes each
 hit with the workspace it came from.
 
+## Signing messages as AI-assisted
+
+Set a nickname once and every message `post_message` or `slack-browser send`
+posts starts with a bold line naming it:
+
+```bash
+slack-browser assist                    # the nickname in force
+slack-browser assist "Qwen3.8 27B"      # set one
+slack-browser assist --clear            # back to bare messages
+```
+
+```text
+*Message assisted by AI Bot Qwen3.8 27B*
+
+the message body
+```
+
+The dry run prints the header too, because it prints exactly what would be
+posted, and the audit log counts it as part of the text. To sign a single send
+bare, pass `--no-assist` on the CLI or `assist: false` on `post_message`.
+
+The nickname lives in `assisted_nickname` in `config.json`, and
+`SLACK_BROWSER_MCP_ASSISTED_NICKNAME` wins over the file; an empty value there
+disables the header for that shell. It is one line of Slack mrkdwn, so 1-60
+characters, no `*` and no line break: mrkdwn cannot escape `*`, and a break
+would split the block. `set_assisted_nickname` does the same from an agent. The
+header counts towards Slack's 4000-character limit for a message, so a text that
+already fills the field fails with that error instead of losing its tail.
+
 ## Archive: a local copy of your Slack
 
 `sync` copies messages into `~/.local/share/slack-browser-mcp/archive/`, one JSONL
@@ -301,10 +330,11 @@ see [Several workspaces](#several-workspaces) for how the default is chosen.
 | `login_workspace` | `workspace?`, `wait_seconds?` | Opens Chrome for a sign-in, detached so no tool call outlives the client timeout. Reports a running sign-in instead of starting a second one. |
 | `list_workspaces` | — | Stored workspaces, which one is the default and why, whether a sign-in is running. Local only. |
 | `set_default_workspace` | `workspace?`, `clear?` | Writes `default_workspace` in `config.json`, or clears it. |
+| `set_assisted_nickname` | `nickname?`, `clear?` | Writes `assisted_nickname` in `config.json`, or clears it; with neither, reports the nickname in force. |
 | `list_conversations` | `workspace?`, `query?`, `kind?` (`all\|channel\|private\|dm`), `limit?` | Only conversations the user belongs to. |
 | `read_messages` | `workspace?`, `channel`, `limit?`, `oldest?`, `latest?` | Oldest first, raw Slack `ts` preserved for paging. |
 | `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?` | Every reply in the thread. |
-| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm` | `confirm=true` is required; without it the call returns the exact message and posts nothing. |
+| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm`, `assist?=true` | `confirm=true` is required; without it the call returns the exact message and posts nothing. `assist` adds the AI-assisted header when a nickname is configured. |
 | `read_file` | `workspace?`, `file`, `refresh?` | Saves a Slack file into the archive and returns images as an image block, so the model can see them. `file` is the id printed after `id=` in a message line. |
 | `search_messages` | `query`, `workspace?`, `channel?`, `limit?`, `include_deleted?` | Full-text over the local archive. No network; covers what `sync` has fetched. |
 | `archive_messages` | `workspace?`, `order?` (`oldest\|newest`), `limit?`, `author?`, `channel?`, `oldest?`, `latest?`, `include_deleted?`, `include_replies?` | One time-ordered walk of the whole archive, oldest or newest first. Strictly local: no Slack request, no directory refresh, no background sync. The answer for "the oldest messages", "my oldest message" or "the first one in #x", where going channel by channel costs a call each. `author` matches the cached directory by name, handle or id. |
@@ -352,7 +382,7 @@ so a backfill does not pull every screenshot ever posted.
 
 | Path | Contents |
 | --- | --- |
-| `~/.config/slack-browser-mcp/config.json` | preferences: `default_workspace`, `stale_after_minutes`, `recent_after_minutes`, `0600` |
+| `~/.config/slack-browser-mcp/config.json` | preferences: `default_workspace`, `stale_after_minutes`, `recent_after_minutes`, `assisted_nickname`, `0600` |
 | `~/.config/slack-browser-mcp/accounts/<team_id>.json` | `xoxc` token and `d` cookie, `0600` |
 | `~/.local/share/slack-browser-mcp/profile/` | Chrome profile for the login only |
 | `~/.local/share/slack-browser-mcp/audit.jsonl` | one line per message sent, `0600` |
@@ -366,7 +396,8 @@ Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),
 `SLACK_BROWSER_MCP_CONFIG_FILE` (settings file), `SLACK_BROWSER_MCP_TEAM`
 (one-off default workspace, wins over `config.json`),
 `SLACK_BROWSER_MCP_STALE_AFTER_MINUTES` and `SLACK_BROWSER_MCP_RECENT_AFTER_MINUTES`
-(freshness thresholds, win over `config.json`), `SLACK_BROWSER_PACE_MS`
+(freshness thresholds, win over `config.json`), `SLACK_BROWSER_MCP_ASSISTED_NICKNAME`
+(the header nickname; empty disables it), `SLACK_BROWSER_PACE_MS`
 (milliseconds between requests), `SLACK_BROWSER_MCP_NO_AUTOSYNC` (`1` disables the
 background sync a read may start), `CHROME_PATH` (Chrome binary),
 `XDG_CONFIG_HOME`, `XDG_DATA_HOME`.

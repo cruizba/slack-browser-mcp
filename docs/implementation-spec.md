@@ -177,7 +177,8 @@ by hand:
 
 ```json
 {
-  "default_workspace": "T01ACME"
+  "default_workspace": "T01ACME",
+  "assisted_nickname": "Qwen3.8 27B"
 }
 ```
 
@@ -190,6 +191,16 @@ is quietly ignored looks like the tool reading the wrong workspace.
 
 `SLACK_BROWSER_MCP_TEAM` stays as a one-off override for a single shell or an MCP
 client's `env`, and wins over the file so a temporary choice never needs editing.
+
+`assisted_nickname` is the line that signs a posted message as written with AI
+help. It is a preference because it changes what every reader sees, not what the
+tool can do: unset, messages go out bare. It is also the one value whose shape
+matters to Slack, since the header is a single bold line of mrkdwn and mrkdwn has
+no escape for `*`: the schema trims it, caps it at 60 characters and refuses `*`
+and line breaks, and `SLACK_BROWSER_MCP_ASSISTED_NICKNAME` overrides it (empty
+disables the header for that shell). Both writers,
+`slack-browser assist <nickname>` and `set_assisted_nickname`, validate before
+writing, so the error names the value rather than a zod path.
 
 ## 7. Slack API layer
 
@@ -230,10 +241,14 @@ Behaviours:
 | Tool | Input | Output | Annotations |
 | --- | --- | --- | --- |
 | `auth_status` | `workspace?` | one line per account: `ok`/`FAIL` + team + user | read-only |
+| `login_workspace` | `workspace?`, `wait_seconds?` | progress of the sign-in, or the running one it found | local write |
+| `list_workspaces` | — | stored workspaces, the default and its source, login state | read-only |
+| `set_default_workspace` | `workspace?`, `clear=false` | `default workspace: <name> (<id>)`, or the rule now in force | local write |
+| `set_assisted_nickname` | `nickname?`, `clear=false` | `assisted nickname: <nickname>`, or the nickname in force when called bare | local write |
 | `list_conversations` | `workspace?`, `query?`, `kind?=all`, `limit?=100` | `label (id) [N members]`, sorted by name | read-only |
 | `read_messages` | `workspace?`, `channel`, `limit?=20`, `oldest?`, `latest?` | header + oldest-first lines + paging footer | read-only |
 | `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?=100` | header + thread lines | read-only |
-| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm=false` | `Sent to <where> at ts <ts>` + audit path, or the exact dry-run text | destructive |
+| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm=false`, `assist=true` | `Sent to <where> at ts <ts>` + audit path, or the exact dry-run text | destructive |
 | `read_file` | `workspace?`, `file`, `refresh=false` | saved path + summary, plus an `image` block for images up to 4 MB | read-only |
 | `search_messages` | `query`, `workspace?`, `channel?`, `limit?=20`, `include_deleted=false` | `archive: <age>` then ranked hits `[ts] channel author: text`, prefixed with the workspace when the search spans more than one | read-only |
 | `archive_messages` | `workspace?`, `order=oldest\|newest`, `limit?=20`, `author?`, `channel?`, `oldest?`, `latest?`, `include_deleted=false`, `include_replies=false` | `archive: <age> · oldest first · N of M archived messages[ by name]`, then `[ts] date channel author: text` with `ts` preserved, plus a coverage footer when the archive ends there. Local only: an `author` is resolved from the cached directory, never from `users.info`, and no sync is nudged. | read-only |
@@ -254,6 +269,14 @@ so a result set that spans workspaces is never ambiguous.
   read, so a typo in the channel name surfaces before the send, not after.
 - With `confirm=true` it calls `chat.postMessage` once, with `thread_ts` when
   given so a reply cannot land in the channel timeline by mistake.
+- When `assisted_nickname` is set, `text` is composed as
+  `*Message assisted by AI Bot <nickname>*` followed by a blank line and the
+  message, before the dry run prints it and before the audit records it. That is
+  deliberate and not something the caller should strip: `assist=false` is the
+  per-send opt-out, so a signed send never depends on the model remembering.
+  The composition lives in one function shared with `slack-browser send`, since a
+  header that appears in one path and not the other would be a bug nobody sees
+  until it is in a channel.
 - Every successful send appends one line to
   `$XDG_DATA_HOME/slack-browser-mcp/audit.jsonl` (`0600`): timestamp, workspace,
   channel label and id, message ts, character count, and a redacted 120-char
@@ -286,8 +309,9 @@ footer tells the model how to page rather than dumping history.
 
 ### CLI
 
-`login`, `accounts`, `workspace [list|use|clear]`, `status`, `read`, `thread`,
-`send`, `sync`, `archive search|stats|reindex|migrate`, `serve`. Same core, no duplicated
+`login`, `accounts`, `workspace [list|use|clear]`, `assist [<nickname>|--clear]`,
+`status`, `read`, `thread`, `send [--no-assist]`, `sync`,
+`archive search|stats|reindex|migrate`, `serve`. Same core, no duplicated
 logic. Diagnostics go to stderr; in `serve` mode stdout belongs to the MCP
 protocol. `sync` is the only command that ignores the default on purpose: without
 `--workspace` it walks every stored workspace under one shared deadline, so the

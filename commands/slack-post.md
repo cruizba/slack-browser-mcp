@@ -10,6 +10,11 @@ What the user asked for: $ARGUMENTS
 The first token is the channel, the rest is the message; `--thread <ts>` is a
 thread reply.
 
+When an assisted nickname is configured, `post_message` puts one bold line above
+the text, `*Message assisted by AI Bot <nickname>*`, and the dry run shows it.
+That line is expected: never strip it, and only suppress it if the user asks, by
+passing `assist: false`.
+
 1. Call `post_message` **without** `confirm` first. It posts nothing and returns
    the exact message, resolved channel and workspace.
 2. Show that back: workspace, channel, thread (or "new message"), and the text
