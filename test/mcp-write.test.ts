@@ -7,6 +7,8 @@ import { test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
+import { ASSISTED_RULE } from '../src/slack/assist.ts'
+
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -104,7 +106,11 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
   const post = calls.find((call) => call.method === 'chat.postMessage')
   assert.ok(post, 'chat.postMessage was not called')
   assert.equal(post.body.get('channel'), 'C0CINOTIF')
-  assert.equal(post.body.get('text'), 'hola desde el test')
+  assert.equal(
+    post.body.get('text'),
+    `${ASSISTED_RULE}\n\n*Message Sent by AI Agent 'test-client' of ana.lopez*\n\nhola desde el test\n\n${ASSISTED_RULE}`,
+    'with no nickname configured the generated default signs the message',
+  )
   assert.equal(post.body.get('token'), 'xoxc-test-token')
   assert.equal(
     calls.filter((call) => call.method === 'chat.postMessage').length,
@@ -131,7 +137,7 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
   })
   assert.match(
     textOf(preview),
-    /\*Message assisted by AI Bot Qwen3\.8 27B\*\n\nhola con mote/,
+    /\*Message Sent by AI Qwen3\.8 27B\*\n\nhola con mote/,
   )
 
   await client.callTool({
@@ -139,7 +145,10 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
     arguments: { channel: 'ci-notifications', text: 'hola con mote', confirm: true },
   })
   const signedPost = calls.filter((call) => call.method === 'chat.postMessage').at(-1)
-  assert.equal(signedPost?.body.get('text'), '*Message assisted by AI Bot Qwen3.8 27B*\n\nhola con mote')
+  assert.equal(
+    signedPost?.body.get('text'),
+    `${ASSISTED_RULE}\n\n*Message Sent by AI Qwen3.8 27B*\n\nhola con mote\n\n${ASSISTED_RULE}`,
+  )
 
   await client.callTool({
     name: 'post_message',
@@ -152,5 +161,5 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
     name: 'set_assisted_nickname',
     arguments: { clear: true },
   })
-  assert.match(textOf(cleared), /carry no header/)
+  assert.match(textOf(cleared), /Agent 'test-client' of <the sending account>/)
 })

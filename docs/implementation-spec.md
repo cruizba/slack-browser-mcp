@@ -194,13 +194,19 @@ client's `env`, and wins over the file so a temporary choice never needs editing
 
 `assisted_nickname` is the line that signs a posted message as written with AI
 help. It is a preference because it changes what every reader sees, not what the
-tool can do: unset, messages go out bare. It is also the one value whose shape
-matters to Slack, since the header is a single bold line of mrkdwn and mrkdwn has
-no escape for `*`: the schema trims it, caps it at 60 characters and refuses `*`
-and line breaks, and `SLACK_BROWSER_MCP_ASSISTED_NICKNAME` overrides it (empty
-disables the header for that shell). Both writers,
+tool can do. Unset, the nickname is generated per send from the two ends that are
+already known: the MCP client name from `initialize` and the `user` handle stored
+with the session, so the line reads `Agent 'pi' of carlos.ruiz`. That default is
+not a stored value: it follows whichever client and account are in play, and an
+unidentified client says `unknown`. It is also the one value whose shape matters
+to Slack, since the header is a single bold line of mrkdwn and mrkdwn has no
+escape for `*`: the schema trims it, caps it at 60 characters and refuses `*` and
+line breaks, and `SLACK_BROWSER_MCP_ASSISTED_NICKNAME` overrides it (empty turns
+signing off for that shell, which is why the reader is a three-way
+nickname/default/off rather than a nullable string). Both writers,
 `slack-browser assist <nickname>` and `set_assisted_nickname`, validate before
-writing, so the error names the value rather than a zod path.
+writing, so the error names the value rather than a zod path; `--clear` drops the
+custom nickname and returns to the generated default, not to bare messages.
 
 ## 7. Slack API layer
 
@@ -244,7 +250,7 @@ Behaviours:
 | `login_workspace` | `workspace?`, `wait_seconds?` | progress of the sign-in, or the running one it found | local write |
 | `list_workspaces` | — | stored workspaces, the default and its source, login state | read-only |
 | `set_default_workspace` | `workspace?`, `clear=false` | `default workspace: <name> (<id>)`, or the rule now in force | local write |
-| `set_assisted_nickname` | `nickname?`, `clear=false` | `assisted nickname: <nickname>`, or the nickname in force when called bare | local write |
+| `set_assisted_nickname` | `nickname?`, `clear=false` | `assisted nickname: <nickname>`, or the state in force when called bare (a set nickname, the generated default, or off) | local write |
 | `list_conversations` | `workspace?`, `query?`, `kind?=all`, `limit?=100` | `label (id) [N members]`, sorted by name | read-only |
 | `read_messages` | `workspace?`, `channel`, `limit?=20`, `oldest?`, `latest?` | header + oldest-first lines + paging footer | read-only |
 | `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?=100` | header + thread lines | read-only |
@@ -269,9 +275,10 @@ so a result set that spans workspaces is never ambiguous.
   read, so a typo in the channel name surfaces before the send, not after.
 - With `confirm=true` it calls `chat.postMessage` once, with `thread_ts` when
   given so a reply cannot land in the channel timeline by mistake.
-- When `assisted_nickname` is set, `text` is composed as
-  `*Message assisted by AI Bot <nickname>*` followed by a blank line and the
-  message, before the dry run prints it and before the audit records it. That is
+- When no nickname is configured, `text` is composed as a rule line, a bold
+  `*Message Sent by AI Agent '<client>' of <account>*` line, a blank line, the
+  message and a closing rule, before the dry run prints it and before the audit
+  records it. That is
   deliberate and not something the caller should strip: `assist=false` is the
   per-send opt-out, so a signed send never depends on the model remembering.
   The composition lives in one function shared with `slack-browser send`, since a

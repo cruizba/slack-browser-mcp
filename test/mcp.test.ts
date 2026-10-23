@@ -89,7 +89,7 @@ test('exposes the Slack tools and survives an empty store', async (t) => {
   assert.match(textOf(nothing), /No Slack session stored yet/)
 
   const nickname = await client.callTool({ name: 'set_assisted_nickname', arguments: {} })
-  assert.match(textOf(nickname), /no assisted nickname/)
+  assert.match(textOf(nickname), /no nickname configured.*Agent 'test-client'/)
 })
 
 test('a running sign-in is reported instead of starting another browser', async (t) => {

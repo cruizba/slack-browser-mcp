@@ -10,10 +10,12 @@ What the user asked for: $ARGUMENTS
 The first token is the channel, the rest is the message; `--thread <ts>` is a
 thread reply.
 
-When an assisted nickname is configured, `post_message` puts one bold line above
-the text, `*Message assisted by AI Bot <nickname>*`, and the dry run shows it.
-That line is expected: never strip it, and only suppress it if the user asks, by
-passing `assist: false`.
+When a message is posted, `post_message` wraps the text in a block: a rule line, a
+bold `*Message Sent by AI <nickname>*` line, the text and a closing rule. With no
+nickname configured the line names the client and the Slack account instead,
+`Agent '<client>' of <account>`. The dry run shows that block. Treat it as
+expected output: never strip it, and only suppress it if the user asks, by passing
+`assist: false`.
 
 1. Call `post_message` **without** `confirm` first. It posts nothing and returns
    the exact message, resolved channel and workspace.
