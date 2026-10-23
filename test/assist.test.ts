@@ -11,10 +11,11 @@ import {
 import { StoreError } from '../src/errors.ts'
 import { ASSISTED_RULE, describeSigning, withAssistHeader } from '../src/slack/assist.ts'
 
-test('the text sits between two rules, below one bold line naming the bot', () => {
+test('a blank line, then the text between two rules, below one bold line naming the bot', () => {
   assert.equal(
     withAssistHeader('latest deploy is green', 'Qwen3.8 27B'),
     [
+      '',
       ASSISTED_RULE,
       '',
       '*Message Sent by AI Qwen3.8 27B*',

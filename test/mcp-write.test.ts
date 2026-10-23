@@ -108,7 +108,7 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
   assert.equal(post.body.get('channel'), 'C0CINOTIF')
   assert.equal(
     post.body.get('text'),
-    `${ASSISTED_RULE}\n\n*Message Sent by AI Agent 'test-client' of ana.lopez*\n\nhola desde el test\n\n${ASSISTED_RULE}`,
+    `\n${ASSISTED_RULE}\n\n*Message Sent by AI Agent 'test-client' of ana.lopez*\n\nhola desde el test\n\n${ASSISTED_RULE}`,
     'with no nickname configured the generated default signs the message',
   )
   assert.equal(post.body.get('token'), 'xoxc-test-token')
@@ -147,7 +147,7 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
   const signedPost = calls.filter((call) => call.method === 'chat.postMessage').at(-1)
   assert.equal(
     signedPost?.body.get('text'),
-    `${ASSISTED_RULE}\n\n*Message Sent by AI Qwen3.8 27B*\n\nhola con mote\n\n${ASSISTED_RULE}`,
+    `\n${ASSISTED_RULE}\n\n*Message Sent by AI Qwen3.8 27B*\n\nhola con mote\n\n${ASSISTED_RULE}`,
   )
 
   await client.callTool({
