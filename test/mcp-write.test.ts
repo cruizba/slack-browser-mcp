@@ -108,8 +108,21 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
   assert.equal(post.body.get('channel'), 'C0CINOTIF')
   assert.equal(
     post.body.get('text'),
-    `\u200b\n${ASSISTED_RULE}\n\n*Message Sent by AI Agent 'test-client' of ana.lopez*\n\nhola desde el test\n\n${ASSISTED_RULE}`,
+    `${ASSISTED_RULE}\n\n*Message Sent by AI Agent 'test-client' of ana.lopez*\n\nhola desde el test\n\n${ASSISTED_RULE}`,
     'with no nickname configured the generated default signs the message',
+  )
+  assert.deepEqual(
+    JSON.parse(String(post.body.get('blocks'))),
+    [
+      { type: 'divider' },
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: "*Message Sent by AI Agent 'test-client' of ana.lopez*" },
+      },
+      { type: 'section', text: { type: 'mrkdwn', text: 'hola desde el test' } },
+      { type: 'divider' },
+    ],
+    'the rendered block puts a Slack divider where the fallback has a rule',
   )
   assert.equal(post.body.get('token'), 'xoxc-test-token')
   assert.equal(
@@ -147,8 +160,9 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
   const signedPost = calls.filter((call) => call.method === 'chat.postMessage').at(-1)
   assert.equal(
     signedPost?.body.get('text'),
-    `\u200b\n${ASSISTED_RULE}\n\n*Message Sent by AI Qwen3.8 27B*\n\nhola con mote\n\n${ASSISTED_RULE}`,
+    `${ASSISTED_RULE}\n\n*Message Sent by AI Qwen3.8 27B*\n\nhola con mote\n\n${ASSISTED_RULE}`,
   )
+  assert.match(String(signedPost?.body.get('blocks')), /"type":"divider"/)
 
   await client.callTool({
     name: 'post_message',
@@ -156,6 +170,7 @@ test('post_message refuses without confirm and posts exactly once with it', asyn
   })
   const barePost = calls.filter((call) => call.method === 'chat.postMessage').at(-1)
   assert.equal(barePost?.body.get('text'), 'sin cabecera')
+  assert.equal(barePost?.body.get('blocks'), null, 'a bare send carries no blocks')
 
   const cleared = await client.callTool({
     name: 'set_assisted_nickname',

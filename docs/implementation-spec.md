@@ -275,12 +275,14 @@ so a result set that spans workspaces is never ambiguous.
   read, so a typo in the channel name surfaces before the send, not after.
 - With `confirm=true` it calls `chat.postMessage` once, with `thread_ts` when
   given so a reply cannot land in the channel timeline by mistake.
-- When no nickname is configured, `text` is composed as a zero-width space and a
-  newline, a rule line, a bold `*Message Sent by AI Agent '<client>' of
-  <account>*` line, a blank line, the message and a closing rule, before the dry
-  run prints it and before the audit records it. The spacer keeps the rule off
-  the author's name, which Slack prints directly above the text, and it is a
-  zero-width space because Slack trims a leading newline. That is
+- The send carries `blocks` alongside `text`. The blocks are a `divider`, a
+  section with the bold `*Message Sent by AI <nickname>*` line, a section with the
+  message, and a closing `divider`; `text` stays the plain fallback that
+  notifications and search read, and the audit records it. Dividers are blocks
+  because Slack prints the first line of a message right after the author's name
+  and trims leading whitespace, so a rule made of characters would hang off that
+  name. A message over 2900 characters, which a section block cannot hold, keeps
+  the fallback alone. That is
   deliberate and not something the caller should strip: `assist=false` is the
   per-send opt-out, so a signed send never depends on the model remembering.
   The composition lives in one function shared with `slack-browser send`, since a

@@ -187,15 +187,19 @@ that says an AI wrote it. With nothing configured the block names the MCP client
 that sent it and the Slack account it went out from:
 
 ```text
-​
-----------------------------------------
+────────────────────────────────────────
 
 *Message Sent by AI Agent 'pi' of carlos.ruiz*
 
 the message body
 
-----------------------------------------
+────────────────────────────────────────
 ```
+
+The two lines are Slack `divider` blocks, so they render with margins of their
+own and never share a line with the author's name. Text characters cannot do
+that: Slack prints the first line of a message immediately after the name, and
+it trims both a leading newline and a zero-width space before rendering.
 
 Set a nickname of your own to replace that line:
 
@@ -206,19 +210,21 @@ slack-browser assist --clear            # drop it, back to the generated default
 ```
 
 ```text
-​
-----------------------------------------
+────────────────────────────────────────
 
 *Message Sent by AI Qwen3.8 27B*
 
 the message body
 
-----------------------------------------
+────────────────────────────────────────
 ```
 
-The dry run prints the block too, because it prints exactly what would be
-posted, and the audit log counts it as part of the text. To post one message
-bare, pass `--no-assist` on the CLI or `assist: false` on `post_message`.
+The blocks travel with a plain `text` fallback, which is what notifications,
+search and clients without block support show; a message longer than 2900
+characters keeps the fallback only. The dry run prints that fallback, so a
+message of dashes there is the same block without the dividers, and the audit
+log counts that text. To post one message bare, pass `--no-assist` on the CLI or
+`assist: false` on `post_message`.
 
 The nickname lives in `assisted_nickname` in `config.json`, and
 `SLACK_BROWSER_MCP_ASSISTED_NICKNAME` wins over the file; an empty value there
@@ -226,8 +232,8 @@ turns signing off for that shell, which is the way to stop signing without
 editing each send. A nickname is one line of Slack mrkdwn, so 1-60 characters,
 no `*` and no line break: mrkdwn cannot escape `*`, and a break would split the
 block. `set_assisted_nickname` does the same from an agent. The rules and the
-header count towards Slack's 4000-character limit for a message, so a text that
-already fills the field fails with that error instead of losing its tail.
+header count towards Slack's 4000-character limit for the `text` field, so a
+text that already fills it fails with that error instead of losing its tail.
 
 A client that does not identify itself, as `slack-browser send` does, is named
 `unknown`; an account with no stored handle drops the `of <account>` part rather

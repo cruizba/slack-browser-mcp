@@ -9,13 +9,12 @@ import {
   signingFor,
 } from '../src/config/assist.ts'
 import { StoreError } from '../src/errors.ts'
-import { ASSISTED_RULE, describeSigning, withAssistHeader } from '../src/slack/assist.ts'
+import { ASSISTED_RULE, describeSigning, signedMessage } from '../src/slack/assist.ts'
 
-test('an invisible gap, then the text between two rules, below one bold line naming the bot', () => {
+test('the fallback text is the text between two rules, below one bold line naming the bot', () => {
   assert.equal(
-    withAssistHeader('latest deploy is green', 'Qwen3.8 27B'),
+    signedMessage('latest deploy is green', 'Qwen3.8 27B').text,
     [
-      '\u200b',
       ASSISTED_RULE,
       '',
       '*Message Sent by AI Qwen3.8 27B*',
@@ -27,9 +26,24 @@ test('an invisible gap, then the text between two rules, below one bold line nam
   )
 })
 
+test('the rendered block is a divider, the header and the text, closed by another divider', () => {
+  assert.deepEqual(signedMessage('latest deploy is green', 'Qwen3.8 27B').blocks, [
+    { type: 'divider' },
+    { type: 'section', text: { type: 'mrkdwn', text: '*Message Sent by AI Qwen3.8 27B*' } },
+    { type: 'section', text: { type: 'mrkdwn', text: 'latest deploy is green' } },
+    { type: 'divider' },
+  ])
+})
+
+test('a text past the section limit keeps only the fallback, which still fits', () => {
+  const long = signedMessage('x'.repeat(3500), 'Qwen3.8')
+  assert.equal(long.blocks, undefined)
+  assert.match(long.text, /^----------------------------------------\n\n\*Message Sent by AI/)
+})
+
 test('refuses a message that the header would push past Slack\'s limit', () => {
-  assert.throws(() => withAssistHeader('x'.repeat(4000), 'Qwen3.8'), /Slack accepts 4000/)
-  assert.doesNotThrow(() => withAssistHeader('x'.repeat(3000), 'Qwen3.8'))
+  assert.throws(() => signedMessage('x'.repeat(4000), 'Qwen3.8'), /Slack accepts 4000/)
+  assert.doesNotThrow(() => signedMessage('x'.repeat(3000), 'Qwen3.8'))
 })
 
 test('nothing configured signs with the generated default', () => {

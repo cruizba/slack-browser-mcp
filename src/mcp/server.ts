@@ -36,7 +36,7 @@ import { FileSettingsStore } from '../config/settings.ts'
 import { AuthError, SchemaError } from '../errors.ts'
 import { redact } from '../log/redact.ts'
 import { recordSend } from '../slack/audit.ts'
-import { ASSISTED_HEADER, describeSigning, withAssistHeader } from '../slack/assist.ts'
+import { ASSISTED_HEADER, describeSigning, signedMessage } from '../slack/assist.ts'
 import { SlackClient, type SlackChannel, type SlackFile, type SlackMessage } from '../slack/client.ts'
 import {
   directoryChannel,
@@ -1053,14 +1053,14 @@ export function buildServer(): McpServer {
           agent: agentName(),
           user: account.user,
         })
-        const body = assist && nickname ? withAssistHeader(text, nickname) : text
+        const signed = assist && nickname ? signedMessage(text, nickname) : { text }
 
         if (!confirm) {
           return {
             content: [
               {
                 type: 'text' as const,
-                text: `Nothing sent. Would post to ${where}${thread}:\n\n${body}\n\nCall again with confirm=true to send it.`,
+                text: `Nothing sent. Would post to ${where}${thread}:\n\n${signed.text}\n\nCall again with confirm=true to send it.`,
               },
             ],
           }
@@ -1068,7 +1068,8 @@ export function buildServer(): McpServer {
 
         const posted = await client.postMessage({
           channel: target.id,
-          text: body,
+          text: signed.text,
+          ...(signed.blocks ? { blocks: signed.blocks } : {}),
           ...(thread_ts ? { thread_ts } : {}),
         })
         const audit = await recordSend({
@@ -1077,7 +1078,7 @@ export function buildServer(): McpServer {
           channel_id: target.id,
           ...(thread_ts ? { thread_ts } : {}),
           message_ts: posted.ts,
-          text: body,
+          text: signed.text,
         })
         return {
           content: [

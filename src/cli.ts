@@ -22,7 +22,7 @@ import { loginLockPath } from './config/paths.ts'
 import { AuthError, SchemaError, StoreError } from './errors.ts'
 import { main as serve } from './mcp/server.ts'
 import { recordSend } from './slack/audit.ts'
-import { ASSISTED_HEADER, describeSigning, withAssistHeader } from './slack/assist.ts'
+import { ASSISTED_HEADER, describeSigning, signedMessage } from './slack/assist.ts'
 import { SlackClient } from './slack/client.ts'
 import { channelLabel, renderMessages } from './slack/format.ts'
 import { conversationFilter, conversationLabel } from './slack/conversations.ts'
@@ -363,19 +363,20 @@ async function commandSend(args: ParsedArgs): Promise<number> {
   const nickname = resolveNickname(signingFor(await new FileSettingsStore().read()), {
     user: account.user,
   })
-  const body =
-    nickname && args.flags.get('no-assist') !== true ? withAssistHeader(text, nickname) : text
+  const signed =
+    nickname && args.flags.get('no-assist') !== true ? signedMessage(text, nickname) : { text }
 
   if (args.flags.get('send') !== true) {
     console.log(`dry run — would post to ${target}${threadTs ? ` in thread ${threadTs}` : ''}:`)
-    console.log(body)
+    console.log(signed.text)
     console.error('nothing sent; add --send to commit')
     return 0
   }
 
   const posted = await client.postMessage({
     channel: channel.id,
-    text: body,
+    text: signed.text,
+    ...(signed.blocks ? { blocks: signed.blocks } : {}),
     ...(threadTs ? { thread_ts: threadTs } : {}),
   })
   const audit = await recordSend({
@@ -384,7 +385,7 @@ async function commandSend(args: ParsedArgs): Promise<number> {
     channel_id: channel.id,
     ...(threadTs ? { thread_ts: threadTs } : {}),
     message_ts: posted.ts,
-    text: body,
+    text: signed.text,
   })
   console.log(`sent ts ${posted.ts} to ${target}; audit: ${audit}`)
   return 0

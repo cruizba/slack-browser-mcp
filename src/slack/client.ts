@@ -449,6 +449,7 @@ export class SlackClient {
     channel: string
     text: string
     thread_ts?: string
+    blocks?: readonly unknown[] | undefined
   }): Promise<PostedMessage> {
     const payload = await this.call<
       SlackEnvelope & { ts: string; channel: string; message?: { text?: string } }
@@ -456,6 +457,7 @@ export class SlackClient {
       channel: params.channel,
       text: params.text,
       ...(params.thread_ts ? { thread_ts: params.thread_ts } : {}),
+      ...(params.blocks ? { blocks: JSON.stringify(params.blocks) } : {}),
     })
     return {
       ts: payload.ts,
