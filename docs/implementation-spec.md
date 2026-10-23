@@ -275,11 +275,12 @@ so a result set that spans workspaces is never ambiguous.
   read, so a typo in the channel name surfaces before the send, not after.
 - With `confirm=true` it calls `chat.postMessage` once, with `thread_ts` when
   given so a reply cannot land in the channel timeline by mistake.
-- When no nickname is configured, `text` is composed as a blank line, a rule
-  line, a bold `*Message Sent by AI Agent '<client>' of <account>*` line, a blank
-  line, the message and a closing rule, before the dry run prints it and before
-  the audit records it. The leading blank line keeps the rule off the author's
-  name, which Slack prints directly above the text. That is
+- When no nickname is configured, `text` is composed as a zero-width space and a
+  newline, a rule line, a bold `*Message Sent by AI Agent '<client>' of
+  <account>*` line, a blank line, the message and a closing rule, before the dry
+  run prints it and before the audit records it. The spacer keeps the rule off
+  the author's name, which Slack prints directly above the text, and it is a
+  zero-width space because Slack trims a leading newline. That is
   deliberate and not something the caller should strip: `assist=false` is the
   per-send opt-out, so a signed send never depends on the model remembering.
   The composition lives in one function shared with `slack-browser send`, since a

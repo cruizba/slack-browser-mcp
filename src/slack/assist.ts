@@ -25,9 +25,11 @@ export function describeSigning(signing: Signing, agent?: string | undefined): s
 }
 
 export function withAssistHeader(text: string, nickname: string): string {
-  // Slack prints the author's name right above the text, so the opening rule
-  // needs a line of its own or it reads as part of that name.
-  const opening = `\n${ASSISTED_RULE}\n\n*${ASSISTED_HEADER} ${nickname}*\n\n`
+  // Slack trims leading whitespace, so a bare "\n" before the first rule is
+  // dropped and the rule lands on the line with the author's name. A zero-width
+  // space is not whitespace: it survives the trim and leaves a line that reads
+  // as blank, which is the gap this block wants under that name.
+  const opening = `\u200b\n${ASSISTED_RULE}\n\n*${ASSISTED_HEADER} ${nickname}*\n\n`
   const closing = `\n\n${ASSISTED_RULE}`
   const total = opening.length + text.length + closing.length
   if (total > MAX_TEXT_CHARS) {

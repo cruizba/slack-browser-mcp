@@ -187,7 +187,7 @@ that says an AI wrote it. With nothing configured the block names the MCP client
 that sent it and the Slack account it went out from:
 
 ```text
-
+​
 ----------------------------------------
 
 *Message Sent by AI Agent 'pi' of carlos.ruiz*
@@ -206,7 +206,7 @@ slack-browser assist --clear            # drop it, back to the generated default
 ```
 
 ```text
-
+​
 ----------------------------------------
 
 *Message Sent by AI Qwen3.8 27B*
