@@ -356,6 +356,56 @@ test('presence is announced once, then throttled by the local mark', async (t) =
   )
 })
 
+test('a write retries once when the thread lags behind', async (t) => {
+  const { calls } = await setup(t)
+  const { openForum } = await import('../src/forum/context.ts')
+  const { replyTo, transportFor } = await import('../src/forum/service.ts')
+  const { FileCredentialStore } = await import('../src/auth/store.ts')
+  const { ArchiveStore } = await import('../src/archive/store.ts')
+  const { render, summaryFor } = await import('../src/forum/envelope.ts')
+  const { newId } = await import('../src/forum/id.ts')
+
+  const archive = new ArchiveStore(join(root, 'data', 'slack-browser-mcp', 'archive'))
+  const accept = {
+    v: 1 as const,
+    kind: 'accept' as const,
+    id: newId(),
+    from: 'reviewer@laptop',
+    sent: '2026-10-28T09:06:00Z',
+    task: TASK,
+  }
+
+  let refreshes = 0
+  const hook = {
+    retryDelayMs: 0,
+    refresh: async () => {
+      refreshes += 1
+      // The first look sees the old thread; by the retry Slack has served the accept.
+      if (refreshes === 2) {
+        await archive.append('T0TEST', 'C0HUB', [
+          {
+            ts: '1793145950.000500',
+            channel: 'C0HUB',
+            text: render(summaryFor(accept), accept),
+            user: 'U0REVIEWER',
+            synced_at: '2026-10-28T09:30:00Z',
+          },
+        ])
+      }
+    },
+  }
+
+  const result = await replyTo(
+    await openForum(),
+    async (teamId) => transportFor(await new FileCredentialStore().get(teamId)),
+    { id: TASK, kind: 'progress', body: 'starting', confirm: true, by: 'agent' },
+    hook,
+  )
+  assert.equal(result.kind, 'posted')
+  assert.equal(refreshes, 2, 'one look, one retry')
+  assert.equal(posts(calls).length, 1)
+})
+
 test('unregistering says goodbye, forgets the identity and retires the label', async (t) => {
   const { calls } = await setup(t)
   const { openForum } = await import('../src/forum/context.ts')

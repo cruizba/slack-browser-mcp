@@ -67,7 +67,11 @@ export type TransportResolver = (teamId: string) => Promise<Transport>
  */
 export interface RefreshHook {
   refresh?: () => Promise<unknown>
+  /** Only for tests: the pause before the single retry. */
+  retryDelayMs?: number
 }
+
+const RETRY_DELAY_MS = 1200
 
 async function freshen(context: ForumContext, hook?: RefreshHook): Promise<ForumContext> {
   if (!hook?.refresh) return context
@@ -460,11 +464,80 @@ export async function replyTo(
   args: ReplyArgs,
   hook?: RefreshHook,
 ): Promise<WriteResult> {
-  context = await freshen(context, hook)
   const identity = requireIdentity(context)
   const me = labelOf(identity)
-  const views = await loadViews(context)
-  const { view, task } = locateTask(views, args.id)
+
+  if ((args.kind === 'progress' || args.kind === 'result' || args.kind === 'error') && !args.body) {
+    fail(`A ${args.kind} needs a body: say what happened.`)
+  }
+
+  const resolve = async (current: ForumContext) => {
+    const views = await loadViews(current)
+    const { view, task } = locateTask(views, args.id)
+    validate(current, task, args)
+    return { view, task }
+  }
+
+  context = await freshen(context, hook)
+  let located
+  try {
+    located = await resolve(context)
+  } catch (error) {
+    // Slack serves a message a second or two after accepting it, so a write can act
+    // on a view older than the thread. One retry after a pause turns that race into
+    // a successful write; a real state error fails twice and is reported as it is.
+    if (!hook?.refresh) throw error
+    await new Promise((done) => setTimeout(done, hook.retryDelayMs ?? RETRY_DELAY_MS))
+    context = await freshen(context, hook)
+    located = await resolve(context)
+  }
+  const { view, task } = located
+
+  await checkBudget(context, view.binding)
+
+  const base = {
+    v: 1 as const,
+    id: newId(context.now.getTime()),
+    from: me,
+    sent: context.now.toISOString(),
+    task: task.id,
+    ...(args.body ? { body: args.body } : {}),
+  }
+  const envelope: Envelope =
+    args.kind === 'result'
+      ? { ...base, kind: 'result', body: args.body ?? '', ok: args.ok ?? true }
+      : ({ ...base, kind: args.kind } as Envelope)
+
+  if (!args.confirm) return preview(view.binding, envelope, task.title)
+
+  const transport = await resolveTransport(view.binding.workspace)
+  const posted = await deliver(context, transport, view.binding, envelope, task.ts)
+  const decision = DECISION_OF[args.kind]
+  if (decision) {
+    await context.decisions.record(view.binding.workspace, view.binding.channel, {
+      task: task.id,
+      decision,
+      by: args.by,
+      ...(args.body ? { note: args.body.slice(0, 200) } : {}),
+    })
+  }
+  return {
+    kind: 'posted',
+    envelope,
+    binding: view.binding,
+    ts: posted.ts,
+    audit: posted.audit,
+    target: task.title,
+  }
+}
+
+/**
+ * What each move is allowed to say, before anything is built: claiming needs an
+ * open task and the right addressee, reporting needs an accepted one, and closing
+ * or reopening needs the requester and a reported result.
+ */
+function validate(context: ForumContext, task: ForumTask, args: ReplyArgs): void {
+  const me = meLabel(context)
 
   switch (args.kind) {
     case 'accept':
@@ -509,46 +582,6 @@ export async function replyTo(
       }
       requireRequester(task, me)
       break
-  }
-
-  if ((args.kind === 'progress' || args.kind === 'result' || args.kind === 'error') && !args.body) {
-    fail(`A ${args.kind} needs a body: say what happened.`)
-  }
-  await checkBudget(context, view.binding)
-
-  const base = {
-    v: 1 as const,
-    id: newId(context.now.getTime()),
-    from: me,
-    sent: context.now.toISOString(),
-    task: task.id,
-    ...(args.body ? { body: args.body } : {}),
-  }
-  const envelope: Envelope =
-    args.kind === 'result'
-      ? { ...base, kind: 'result', body: args.body ?? '', ok: args.ok ?? true }
-      : ({ ...base, kind: args.kind } as Envelope)
-
-  if (!args.confirm) return preview(view.binding, envelope, task.title)
-
-  const transport = await resolveTransport(view.binding.workspace)
-  const posted = await deliver(context, transport, view.binding, envelope, task.ts)
-  const decision = DECISION_OF[args.kind]
-  if (decision) {
-    await context.decisions.record(view.binding.workspace, view.binding.channel, {
-      task: task.id,
-      decision,
-      by: args.by,
-      ...(args.body ? { note: args.body.slice(0, 200) } : {}),
-    })
-  }
-  return {
-    kind: 'posted',
-    envelope,
-    binding: view.binding,
-    ts: posted.ts,
-    audit: posted.audit,
-    target: task.title,
   }
 }
 
