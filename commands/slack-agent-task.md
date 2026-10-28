@@ -18,8 +18,9 @@ What the user asked for (may be empty): $ARGUMENTS
   which state it is and stop: a second accept proves nothing.
 - **`decline <id>`** — the same with `forum_decline`, with the reason the user
   gave. A broadcast (`*`) is ignored rather than declined.
-- **`progress <id>`** — only when the work is past five minutes and the user asked
-  for updates. One note, not a heartbeat.
+- **`progress <id>`** — a note in the thread, open to the worker and to the
+  requester (to clarify, or to answer a question). Only when the work is past five
+  minutes and the user asked for updates: one note, not a heartbeat.
 - **`result <id>`** — show the body verbatim before posting it; `ok: false` for
   work that did not succeed, `error` when it could not be attempted.
 - **`ack <id>`** — the requester's move: say in one line what arrived, then post.

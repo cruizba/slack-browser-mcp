@@ -174,6 +174,22 @@ test('decline closes, cancel closes, and a late result changes nothing', () => {
   assert.equal(late.ignored.at(-1)?.kind, 'result')
 })
 
+test('the requester can answer in the thread without moving the state', () => {
+  const task = only([
+    ...registers(),
+    taskAt(at(5)),
+    reply(at(10), 'accept', ME),
+    reply(at(20), 'progress', ME, { body: 'which section?' }),
+    reply(at(30), 'progress', PEER, { body: 'after the archive one' }),
+  ])
+  assert.equal(task.state, 'accepted')
+  assert.deepEqual(
+    task.events.map((event) => `${event.kind}:${event.from}`),
+    ['accept:reviewer@desktop', 'progress:reviewer@desktop', 'progress:builder@laptop'],
+  )
+  assert.equal(task.ignored.length, 0, 'a note from the requester is not a spoof')
+})
+
 test('reopen returns to accepted and respects the limit', () => {
   const once = only([
     ...registers(),

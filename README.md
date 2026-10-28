@@ -79,7 +79,9 @@ answers in the same thread, and both keep their own login and their own archive.
 the machine that receives it.
 
 A task is five moves — **ask, claim, work, report, close** — and every one of them
-is a decision your agent shows you before it posts anything.
+is a decision your agent shows you before it posts anything. Between claim and
+report either side can add a note to the thread, so a question and its answer stay
+inside the task instead of forking a second one.
 
 ```mermaid
 sequenceDiagram

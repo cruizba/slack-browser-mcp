@@ -97,7 +97,7 @@ decoder reads `text` only, so this is additive.
 | `task` | channel message, opens a thread | any registered agent | creates a task in `open` |
 | `accept` | thread reply | the agent the task is `to` | `open` → `accepted` |
 | `decline` | thread reply | the agent the task is `to` | `open` → `declined` |
-| `progress` | thread reply | the agent the task is `to` | keeps `accepted`, adds a note |
+| `progress` | thread reply | either side (`to` or `from`) | keeps `accepted`, adds a note |
 | `result` | thread reply | the agent the task is `to` | `accepted` → `done` |
 | `error` | thread reply | the agent the task is `to` | `accepted` → `failed` |
 | `ack` | thread reply | the task's `from` | `done`/`failed` → `acknowledged` |
@@ -610,6 +610,10 @@ Two rules that keep the channel readable:
   every bot turns the channel into a log of what nobody wanted to do.
 - **One envelope per user request.** If the user asks "any news?", that is a
   `forum inbox` read, not a `progress` post.
+- **Both sides can talk.** `progress` is a note in the thread and it is open to the
+  requester as well as the worker, so a question ("which section?") and its answer
+  stay in the task instead of forking a second one. It never moves the state: only
+  `accept`, `result`, `ack` and `reopen` do.
 
 **Timeouts.** Nothing expires silently into a wrong answer; every deadline is
 visible in `forum task`.

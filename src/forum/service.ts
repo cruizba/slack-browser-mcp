@@ -452,6 +452,16 @@ export async function replyTo(
       requireOpen(task, me)
       break
     case 'progress':
+      if (task.state !== 'accepted') {
+        fail(
+          `Task ${task.id} is ${stateLabel(task, context.now)}; a note needs an accepted task.`,
+          'Claim it first, or wait for whoever was asked to claim it.',
+        )
+      }
+      if (!isAddressee(task, me) && task.from !== me) {
+        fail(`Task ${task.id} is between ${task.from} and ${task.to}.`)
+      }
+      break
     case 'result':
     case 'error':
       requireAccepted(task, me)

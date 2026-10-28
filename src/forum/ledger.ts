@@ -130,7 +130,9 @@ function applyEvent(task: ForumTask, event: TaskEvent, limits: ForumLimits): boo
       }
       return false
     case 'progress':
-      return task.state === 'accepted' && addressee
+      // A conversation needs both sides to be able to say something in the thread:
+      // the worker answering, the requester clarifying, neither moving the state.
+      return task.state === 'accepted' && (addressee || requester)
     case 'result':
       if (task.state === 'accepted' && addressee) {
         task.state = event.ok === false ? 'failed' : 'done'
