@@ -250,6 +250,18 @@ test('forum_post is a dry run until confirm, then posts once and audits it', asy
   assert.match(audit, /agent-hub/)
 })
 
+test('a bare name is resolved to name@host in the envelope', async (t) => {
+  const { calls, client } = await setup(t)
+  const posted = await client.callTool({
+    name: 'forum_post',
+    arguments: { to: 'builder', title: 'sin host', body: 'pero con destino', confirm: true },
+  })
+  assert.match(textOf(posted), /Posted to/)
+  const text = String(posts(calls)[0]?.body.get('text'))
+  assert.match(text, /"to":"builder@desktop"/, 'the reader only knows the full label')
+  assert.doesNotMatch(text, /"to":"builder"/)
+})
+
 test('a peer that is not in the roster is refused instead of guessed', async (t) => {
   const { calls, client } = await setup(t)
   const result = await client.callTool({

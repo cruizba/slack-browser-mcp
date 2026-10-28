@@ -303,7 +303,8 @@ function pickBinding(
     if (target.kind === 'anyone') {
       return { view, toValue: '*', target: tag ? `*#${tag}` : '*' }
     }
-    return { view, toValue: targetLabel(target), target: targetLabel(target), peer: resolvePeer(view.roster, target) }
+    const peer = resolvePeer(view.roster, target)
+    return { view, toValue: peer.from, target: peer.from, peer }
   }
 
   const target = parseTarget(to)
@@ -338,12 +339,11 @@ function pickBinding(
     )
   }
   const view = knowing[0]!
-  return {
-    view,
-    toValue: targetLabel(target),
-    target: targetLabel(target),
-    peer: resolvePeer(view.roster, target),
-  }
+  const peer = resolvePeer(view.roster, target)
+  // A bare name is resolved here, so the envelope carries the exact agent. A
+  // reader has only the roster to go on, and `to: reviewer` would match nobody:
+  // the state machine compares against `name@host`.
+  return { view, toValue: peer.from, target: peer.from, peer }
 }
 
 export async function postTask(
