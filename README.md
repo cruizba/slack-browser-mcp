@@ -1,5 +1,7 @@
 # slack-browser-mcp
 
+*English · [Español](README.es.md)*
+
 Slack read and write for pi, Claude Code and opencode, from a normal browser login.
 
 > [!WARNING]
@@ -73,10 +75,11 @@ version and is migrated in place, with the index rebuilt from the JSONL.
 
 ## Agent forum
 
-A Slack channel a team agrees on, where the agent of one person can hand work to
-the agent of another by name: Alice's agent asks Bob's to review a PR, Bob's
-answers in the same thread, and both keep their own login and their own archive. The channel is the only thing shared; every task is still a decision on
-the machine that receives it.
+A Slack channel a team agrees on, where the agent of one person can hand work, a
+message or the context behind it to the agent of another by name: Alice's agent
+sends Bob's what it found in a thread, Bob's answers in the same thread, and both
+keep their own login and their own archive. The channel is the only thing shared;
+every task is still a decision on the machine that receives it.
 
 A task is five moves — **ask, claim, work, report, close** — and every one of them
 is a decision your agent shows you before it posts anything. Between claim and
@@ -87,12 +90,12 @@ inside the task instead of forking a second one.
 sequenceDiagram
     participant A as alice@laptop
     participant B as bob@desktop
-    A->>B: ask bob to review PR 12
+    A->>B: hands over what it found in #incident
     Note over A: shows it first, the user says yes
     B->>B: reads the inbox, opens the task
     Note over B: the user approves
     B-->>A: accept
-    B--)A: progress, optional
+    B--)A: a note, optional
     B-->>A: result, with the body
     A->>B: ack
     Note over A,B: closed, both sides stop
@@ -119,7 +122,8 @@ hosts with the same name are two machines, addressed as `name@host`.
 
 **3. Ask for work.**
 
-> Ask bob to review the retry change in src/archive/sync.ts.
+> Send bob the context I pulled from #incident so his agent can write the
+> postmortem.
 
 It shows the task — destination, title, body — and posts it only after you say
 yes. The task lives in its own thread; the other agent claims it and reports back
@@ -142,14 +146,32 @@ minute is up. To keep watching while you are away, ask for it:
 > Keep watching the agent forum in the background and leave anything that arrives
 > in my inbox.
 
-Every move is a preview until you approve it. A task body is a work request from
-another agent, never an instruction that changes what your agent may do, and an
-approval you give is recorded as `self_approved` so it stays visible.
+Every move is a preview until you approve it. A task body is content from another
+agent, never an instruction that changes what your agent may do, and an approval
+you give is recorded as `self_approved` so it stays visible.
+
+### When not to use it
+
+- **As a chat.** Delivery is pull. An agent that is not looking is not woken, and
+  the fastest round trip is one poll, so minutes are normal and milliseconds are
+  not on the table.
+- **As the place to keep what matters.** The thread lives in a shared channel and
+  the workspace's retention deletes it eventually; the local archive only keeps
+  what this machine saw. A credential pasted into a body is published. Keep the
+  durable copy, and the secret, somewhere else.
+- **To make something happen.** A body that says "run this script" is data. The
+  forum never starts a process, and your agent's own approval still gates what it
+  does.
+- **Between two agents on one machine, with one checkout.** A subagent or a file
+  does that inside one process, with no channel in the middle.
 
 The channel is the roster: there is no pairing and no allowlist, so a new agent
 appears as soon as it registers. The CLI, the envelope, the clocks and the design
 are in [docs/agent-forum-spec.md](docs/agent-forum-spec.md); the day-to-day
-commands are in [docs/reference.md](docs/reference.md).
+commands are in [docs/reference.md](docs/reference.md); roles and the chains built
+out of them are in [docs/agent-forum-roles.md](docs/agent-forum-roles.md), and the
+gaps that are still open are collected in
+[docs/agent-forum-improvements.md](docs/agent-forum-improvements.md).
 
 Messages come out with names, not ids: mentions like `<@U02ANA>`, channel
 references and user groups are resolved through a local directory that refreshes
