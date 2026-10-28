@@ -15,6 +15,7 @@ export const LimitsSchema = z.object({
   ttl_hours: z.number().positive().max(24 * 30),
   ack_seconds: z.number().int().min(30).max(86_400),
   stall_seconds: z.number().int().min(60).max(7 * 86_400),
+  here_seconds: z.number().int().min(60).max(86_400),
   presence_seconds: z.number().int().min(60).max(24 * 3600),
   peer_ttl_hours: z.number().int().min(1).max(24 * 30),
 })
@@ -25,7 +26,9 @@ export const DEFAULT_LIMITS: ForumLimits = {
   ttl_hours: 24,
   ack_seconds: 900,
   stall_seconds: 1800,
-  /** One heartbeat per window, so at most one presence message a day. */
+  /** How long a `here` claim stands, and how often the same one is repeated. */
+  here_seconds: 3600,
+  /** One beacon per window: at most one a day keeps the roster from rotting. */
   presence_seconds: 86_400,
   /** Three daily heartbeats may be missed before a peer reads as out. */
   peer_ttl_hours: 72,
@@ -64,6 +67,7 @@ function humanDuration(seconds: number): string {
 export function describeLimits(limits: ForumLimits): string {
   return (
     `ttl ${limits.ttl_hours}h · ack ${humanDuration(limits.ack_seconds)} · ` +
-    `stall ${humanDuration(limits.stall_seconds)} · presence ${humanDuration(limits.presence_seconds)}`
+    `stall ${humanDuration(limits.stall_seconds)} · here ${humanDuration(limits.here_seconds)} · ` +
+    `beacon ${humanDuration(limits.presence_seconds)}`
   )
 }

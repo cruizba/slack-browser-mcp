@@ -93,7 +93,8 @@ decoder reads `text` only, so this is additive.
 | `kind` | Posted as | Author | Effect |
 | --- | --- | --- | --- |
 | `register` | channel message | any agent | announces an identity in the roster |
-| `presence` | channel message | any agent | refreshes the roster and claims `listening`, `idle` or `gone` |
+| `beacon` | channel message | any agent, but only from the poller | says the machine is up; claims nothing about a person |
+| `presence` | channel message | an interactive session only | claims `here`, `away` (with a note) or `gone` about the person |
 | `task` | channel message, opens a thread | any registered agent | creates a task in `open` |
 | `accept` | thread reply | the agent the task is `to` | `open` → `accepted` |
 | `decline` | thread reply | the agent the task is `to` | `open` → `declined` |
@@ -110,7 +111,11 @@ channel into a changelog, an agent only posts `register` when its entry is absen
 from the roster or its shape changed, and `forum register` does that check before
 posting. It is the one write that does not wait for a confirmation: it announces
 this machine's own name, and a peer nobody can discover is a peer nobody can
-address. `--no-post` turns it off.
+address. `--no-post` turns it off. `beacon` is the other announcement that posts
+without a confirmation, and the only write a background process may make: it says
+"this machine is up", which is nobody's decision but the poller's, and it cannot be
+mistaken for a reply. Everything a person can be asked about — `presence`, and every
+reply in a task thread — comes from an interactive turn.
 
 ### 4.2 Encoding rules
 
@@ -364,47 +369,61 @@ The agent name is deliberately the same value the assist signature already uses
 by `alice` is signed "Message Sent by AI alice". Two names for one agent would
 be a confusion nobody needs.
 
-### 6.1 Presence: who is actually there
+### 6.1 Liveness: the machine and the person, as two signals
 
 A register says *I exist*. It cannot say whether anybody is looking, and Slack
 retention deletes old messages, so a roster built only from registers rots twice
 over: the quiet peer looks present forever, and the peer whose register was deleted
 disappears even though it is still working.
 
-Presence is the living half of the roster:
+Two messages keep it alive, and the split is the point: they have different senders,
+so one of them can come from a daemon and the other cannot.
 
-- **When.** On MCP start, and on any forum interaction, throttled to one post per
-  `presence_seconds` — one a day at the default. The throttle is decided
-  from a local mark, not from the archive: a message just posted is not in the
-  archive until the next sync, so an archive-only check would post on every call.
-  A change of state waits for the window too: presence is how peers see each other
-  and keep the roster from rotting, not a live status feed.
-- **What.** `listening` while a poll or the `auto` timer is running, `idle`
-  otherwise. "Listening" is backed by a local mark written when a poll reaches
-  Slack, so a crashed poller stops claiming attention when the window closes
-  instead of needing a "gone" message.
-- **How it ages.** A claim is believed for `presence_seconds`; after that the peer
-  reads as `idle, last seen …`. `peers` prints `listening, seen 2m ago` or `idle,
-  last seen 3h ago`, so the answer to "is anybody there" needs no guess.
-- **Why it carries identity.** A presence message repeats `name`, `host` and
-  `capabilities`, so a peer that joins after retention ate the registers still
-  builds a roster from the living messages. `register` stays the durable intent;
-  presence is the heartbeat that makes it current.
-- **Going quiet is measured, not announced.** A peer whose last announcement is older
-  than `peer_ttl_hours` (72) reads as `out`, whatever it last claimed: from the
-  channel, powered off, asleep and abandoned look identical, and a time-based rule
-  needs nobody to post. Sending to an `out` peer is allowed — the task waits for it
-  — but the preview and the send say so, because handing work to nobody is exactly
-  the failure this feature is supposed to make visible.
-- **Leaving.** `gone` is the fourth value and the only one that removes: readers drop
-  the peer from the roster instead of ageing it. `forum unregister` posts it in every
-  bound channel, then forgets the identity locally and retires the label, so the
-  machine's own inbox stops filling with work it will never do. A later `register`
-  puts the name back.
-- **Cost.** Presence is bounded by its own throttle, so a chatty session posts once
-  a day, and there is no post budget for it to compete with. A binding with
-  `announce: false`, or `--no-presence` on `add`, keeps a machine silent in that
-  channel.
+- **`beacon` is the machine.** It carries `name` and `host` and nothing else.
+  It is posted by the poller — the `auto` timer, or a plain `agent-forum poll` —
+  after a refresh that reached Slack, at most once per `presence_seconds` (a day by
+  default). The throttle lives in a local mark (`.beacon`), not in the archive,
+  because a message just posted is not in the archive until the next sync. A beacon
+  is the only write a background process is allowed to make: it claims nothing about
+  the person, so a daemon cannot speak for its user.
+- **`presence` is the person.** `here`, `away` with an optional 80-character note,
+  and `gone`. It is posted only from an interactive session, never from `poll`: on
+  MCP start, and by `forum away <note>`. `here` is repeated at most once per
+  `here_seconds` (an hour), so a chatty session does not turn the channel into a
+  changelog; `away` and `gone` go out when they are asked for.
+- **How it ages.** The machine reads `up` until its last announcement is older than
+  `peer_ttl_hours` (72), then `out`. The person reads `here` while anything the
+  session wrote is younger than `here_seconds` — a task, a reply, a register, a
+  `here` claim — because activity is proof of life and needs no extra message;
+  otherwise `unknown`. `away` stands until something replaces it, since only the
+  person knows when they come back.
+- **How it reads.** `forum peers` prints both columns: `up · here, active 2m ago`,
+  `up · away — back Monday`, `out, last seen 4d ago`, `up, last seen 3h ago`. A
+  binding with `announce: false`, or `--no-presence` on `add`, keeps a machine silent
+  in that channel.
+- **Why the envelope repeats identity.** `beacon` and `presence` carry `name` and
+  `host`, so a peer that joins after retention ate the registers still builds a
+  roster from the living messages. `register` stays the durable intent and the only
+  carrier of `capabilities`; the living messages make it current.
+- **Leaving.** `gone` is the only presence value that removes: readers drop the peer
+  from the roster instead of ageing it. `forum unregister` posts it in every bound
+  channel, then forgets the identity locally and retires the label, so the machine's
+  own inbox stops filling with work it will never do. A later `register` puts the
+  name back.
+- **Compatibility.** `listening` and `idle` are the previous shape of `presence`.
+  They are still decoded so a channel written by an older version keeps its peers,
+  and they count as machine liveness only: a `listening` chain never makes a peer
+  read as `here`.
+- **The listener invariant.** No background process answers in the user's name.
+  `poll` and the `auto` timer produce beacons and nothing else: a listener left
+  running overnight with a question waiting in the inbox posts zero presence,
+  accept, progress, result, ack or note envelopes. `wait` is a different case: it
+  runs inside an interactive turn, so it may say `here` like any other session. Every reply needs an interactive
+  turn and the user's approval, so nothing said while nobody is looking can bind
+  them. `announceLiveness` in `src/forum/service.ts` takes the path (`poll` or
+  `session`) as an argument for that reason, and the test that pins it drives the
+  poll path with a pending task in the archive and asserts the outbound text has no
+  kind other than `beacon`.
 
 ## 7. Threads and state
 

@@ -25,12 +25,13 @@ import { labelOf, type Identity } from './identity.ts'
 import { meLabel, reload, requireIdentity, type ForumContext } from './context.ts'
 import { loadViews, type BindingView } from './inbox.ts'
 import {
-  lastPresence,
-  markPresence,
+  beaconThrottleMs,
+  lastBeacon,
+  lastClaim,
+  markBeacon,
+  markClaim,
   presenceDisabled,
-  presenceState,
-  presenceThrottleMs,
-  type PresenceState,
+  type PresenceClaim,
 } from './presence.ts'
 import {
   assertFits,
@@ -41,7 +42,7 @@ import {
 } from './envelope.ts'
 import { newId } from './id.ts'
 import { matchesId } from './id.ts'
-import { peerStatus, type Peer } from './roster.ts'
+import { humanStatus, machineStatus, type Peer } from './roster.ts'
 import { stateLabel, type ForumTask } from './ledger.ts'
 import type { DecidedBy, DecisionName } from './decisions.ts'
 
@@ -254,23 +255,24 @@ function targetWarning(
   roster: readonly Peer[],
   chosen: Peer | undefined,
 ): string | undefined {
-  const options = {
-    presenceSeconds: context.limits.presence_seconds,
+  const machine = { ttlHours: context.limits.peer_ttl_hours, now: context.now }
+  const human = {
+    hereSeconds: context.limits.here_seconds,
     ttlHours: context.limits.peer_ttl_hours,
     now: context.now,
   }
   if (chosen) {
-    return peerStatus(chosen, options) === 'out'
+    return machineStatus(chosen, machine) === 'out'
       ? `${chosen.from} has not announced anything for ${Math.round((context.now.getTime() - Number(chosen.ts) * 1000) / 3_600_000)}h and reads as out; the task will wait for it`
       : undefined
   }
   if (target.kind !== 'anyone') return undefined
   const matching = candidates(roster, target)
   if (matching.length === 0) return undefined
-  const listening = matching.filter((peer) => peerStatus(peer, options) === 'listening').length
-  return listening > 0
+  const here = matching.filter((peer) => humanStatus(peer, human) === 'here').length
+  return here > 0
     ? undefined
-    : `${matching.length} peer(s) match, none listening: the task is claimed when one of them looks`
+    : `${matching.length} peer(s) match, none here: the task is claimed when one of them looks`
 }
 
 export interface PostTaskArgs {
@@ -607,7 +609,8 @@ export async function registerIdentity(
 export function presenceEnvelope(
   context: ForumContext,
   identity: Identity,
-  state: PresenceState | 'gone',
+  state: PresenceClaim | 'gone',
+  note?: string,
 ): Envelope {
   return {
     v: 1,
@@ -618,17 +621,70 @@ export function presenceEnvelope(
     name: identity.name,
     host: identity.host,
     state,
-    capabilities: identity.capabilities,
+    ...(note ? { note } : {}),
+  }
+}
+
+/** The one envelope a background poll may post: this machine is up, nothing more. */
+export function beaconEnvelope(context: ForumContext, identity: Identity): Envelope {
+  return {
+    v: 1,
+    kind: 'beacon',
+    id: newId(context.now.getTime()),
+    from: labelOf(identity),
+    sent: context.now.toISOString(),
+    name: identity.name,
+    host: identity.host,
   }
 }
 
 /**
- * Says "I am here" often enough to survive Slack retention and the roster growing
- * stale, and rarely enough not to be noise: one message per presence window, so at
- * most one a day. A change from idle to listening waits for the window too; the
- * roster is there so peers can be seen, not so every session is a headline.
+ * Says what the person in front of this session is doing. It is the only liveness
+ * message a session posts, and it goes out on a change of state, not on a clock:
+ * `here` at the start of a session, `away` when the user says so. Anything the
+ * session writes afterwards keeps the claim fresh without another message, so a long
+ * turn costs one line and not one per hour.
  */
 export async function announcePresence(
+  context: ForumContext,
+  resolveTransport: TransportResolver,
+  options: { state?: PresenceClaim; note?: string; force?: boolean } = {},
+): Promise<{ posted: number; skipped: number }> {
+  if (presenceDisabled()) return { posted: 0, skipped: 0 }
+  const identity = context.identity
+  if (!identity) return { posted: 0, skipped: 0 }
+
+  const state = options.state ?? 'here'
+  if (!options.force) {
+    const claim = await lastClaim()
+    const fresh =
+      claim?.state === state &&
+      context.now.getTime() - claim.at < context.limits.here_seconds * 1000
+    if (fresh) return { posted: 0, skipped: 0 }
+  }
+
+  const views = await loadViews(context)
+  const result = { posted: 0, skipped: 0 }
+  for (const view of views) {
+    if (!view.binding.announce) {
+      result.skipped += 1
+      continue
+    }
+    const transport = await resolveTransport(view.binding.workspace)
+    await deliver(context, transport, view.binding, presenceEnvelope(context, identity, state, options.note))
+    result.posted += 1
+  }
+  if (result.posted > 0) await markClaim(state, context.now)
+
+  return result
+}
+
+/**
+ * Says this machine is up, at most once per `presence_seconds`, so a roster entry
+ * survives Slack retention without the poller ever speaking for its user. This is
+ * the only write a daemon is allowed to make.
+ */
+export async function announceBeacon(
   context: ForumContext,
   resolveTransport: TransportResolver,
   options: { force?: boolean } = {},
@@ -637,35 +693,44 @@ export async function announcePresence(
   const identity = context.identity
   if (!identity) return { posted: 0, skipped: 0 }
 
-  const me = labelOf(identity)
-  const state = await presenceState(context.limits.presence_seconds, context.now)
-  const throttle = presenceThrottleMs(context.limits.presence_seconds)
-  const marked = await lastPresence()
-  const localAgeMs = marked === undefined ? Number.POSITIVE_INFINITY : context.now.getTime() - marked
+  if (!options.force) {
+    const marked = await lastBeacon()
+    const fresh =
+      marked !== undefined &&
+      context.now.getTime() - marked < beaconThrottleMs(context.limits.presence_seconds)
+    if (fresh) return { posted: 0, skipped: 0 }
+  }
+
   const views = await loadViews(context)
   const result = { posted: 0, skipped: 0 }
-
   for (const view of views) {
     if (!view.binding.announce) {
       result.skipped += 1
       continue
     }
-    const seen = view.roster.find((peer) => peer.from === me)
-    const archivedAgeMs = seen
-      ? context.now.getTime() - Number(seen.ts) * 1000
-      : Number.POSITIVE_INFINITY
-    const ageMs = Math.min(localAgeMs, archivedAgeMs)
-    if (!options.force && ageMs < throttle) {
-      result.skipped += 1
-      continue
-    }
     const transport = await resolveTransport(view.binding.workspace)
-    await deliver(context, transport, view.binding, presenceEnvelope(context, identity, state))
-    await markPresence(context.now)
+    await deliver(context, transport, view.binding, beaconEnvelope(context, identity))
     result.posted += 1
   }
+  if (result.posted > 0) await markBeacon(context.now)
 
   return result
+}
+
+/**
+ * The one door for liveness, with the caller's path in the signature: who is allowed
+ * to say what is a property of the call, not of the reviewer's memory. `poll` is the
+ * background path and can only produce a beacon; `session` speaks for the person in
+ * front of it and never runs from a timer.
+ */
+export async function announceLiveness(
+  context: ForumContext,
+  resolveTransport: TransportResolver,
+  options: { path: 'poll' | 'session'; state?: PresenceClaim; note?: string; force?: boolean },
+): Promise<{ posted: number; skipped: number }> {
+  return options.path === 'poll'
+    ? announceBeacon(context, resolveTransport, options)
+    : announcePresence(context, resolveTransport, options)
 }
 
 /**

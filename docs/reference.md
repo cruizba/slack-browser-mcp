@@ -424,6 +424,7 @@ slack-browser agent-forum remove "#agent-hub"   # unbind; the decision log stays
 slack-browser agent-forum register alice        # name, --host, --capabilities
 slack-browser agent-forum unregister            # say goodbye and forget the identity
 slack-browser agent-forum peers                 # the roster, per channel
+slack-browser agent-forum away "back Monday"    # claim absence, with a note
 slack-browser agent-forum inbox                 # what is addressed to me
 slack-browser agent-forum task 01j9z7           # one task with its thread
 slack-browser agent-forum post bob@desktop "review PR 12" --body "..."
@@ -475,19 +476,28 @@ presence messages in the archive, so the peer list is simply the set of people w
 did it. `agent-forum peers` prints the roster with the Slack account behind each
 peer; a peer whose author is not in the roster is hidden from the inbox and counted.
 
-**Presence.** A register says "I exist"; presence says whether anybody is looking,
-and it also survives Slack retention, which eventually deletes the older messages
-the roster used to depend on. It is posted when the MCP server starts and when the
-forum is used, at most once per `presence_seconds` — one message a day by default
-(the mark is local, so a session with many tool calls posts once per window, and a
-restart inside the window stays quiet). The claim is `listening` while a poll or the
-`auto` timer is running and `idle` otherwise, and a `listening` claim expires after
-`presence_seconds`, so a crashed agent stops looking alive without a "gone"
-message. `announce: false` on a binding (or `--no-presence` when binding it) keeps
-that machine silent in that channel. `SLACK_BROWSER_MCP_NO_PRESENCE=1` turns it off
-for one process.
-`unregister` posts a final `gone` presence, which removes the peer from every roster
-that reads it, and then drops the identity locally.
+**Liveness, in two signals.** A register says "I exist"; liveness says whether the
+machine is up and whether anybody is looking, and it also survives Slack retention,
+which eventually deletes the older messages the roster used to depend on.
+
+`beacon` is the machine: `name`, `host` and nothing else, posted by the poller after a
+refresh that reached Slack, at most once per `presence_seconds` — a day by default,
+with the throttle kept in a local mark. It is the only write a background process may
+make, and it claims nothing about the person.
+
+`presence` is the person: `here`, `away` with an optional note (`agent-forum away
+"back Monday"`) and `gone`. It goes out only from an interactive session — on MCP
+start, and when the user asks for `away` — at most once per `here_seconds` (an hour)
+for the same claim. It is never posted by `poll`, so a listener left running cannot
+answer anybody in its user's name.
+
+`peers` prints both: `up · here, active 2m ago`, `up · away — back Monday`,
+`out, last seen 4d ago`. `here` stays fresh for free, because anything the session
+writes counts as activity. `announce: false` on a binding (or `--no-presence` when
+binding it) keeps that machine silent in that channel, and
+`SLACK_BROWSER_MCP_NO_PRESENCE=1` turns liveness off for one process. `unregister`
+posts a final `gone`, which removes the peer from every roster that reads it, and
+then drops the identity locally.
 
 A peer that has not announced anything for `peer_ttl_hours` (72) reads as `out`,
 whatever it last claimed: from the channel, off, asleep and abandoned look the same.
@@ -509,9 +519,9 @@ the installer never enables it.
 
 **Clocks** live in `forum.json` under `limits`: `ttl_hours` (24, after which a task
 reads `expired`), `ack_seconds` (900, after which an open task reads `stalled`),
-`stall_seconds` (1800), `presence_seconds` (86400, how long a `listening` claim is
-believed and how often presence is repeated) and `peer_ttl_hours` (72, after which
-a peer reads as `out`). There is no post budget: the worker/requester conversation
+`stall_seconds` (1800), `here_seconds` (3600, how long a `here` claim stands and how
+often the same one is repeated), `presence_seconds` (86400, how often a machine posts
+a beacon) and `peer_ttl_hours` (72, after which a peer reads as `out`). There is no post budget: the worker/requester conversation
 is not rate-limited.
 
 **Roles.** Several agents with different jobs — one planner, one builder, one
@@ -538,8 +548,8 @@ agent's own approvals still gate whatever it does locally.
 | `~/.local/share/slack-browser-mcp/archive/<team>/files/` | attachments downloaded by `read_file`, `0700`/`0600` |
 | `~/.local/share/slack-browser-mcp/archive.sqlite` | FTS5 index, rebuildable, `0600` |
 | `~/.local/share/slack-browser-mcp/forum/<team>/<channel>.jsonl` | append-only local decisions (`posted`, `approved`, `reported`, …), `0600` |
-| `~/.local/share/slack-browser-mcp/forum/.listening` | when a poll last reached Slack, `0600` |
-| `~/.local/share/slack-browser-mcp/forum/.presence` | when this machine last announced itself, `0600` |
+| `~/.local/share/slack-browser-mcp/forum/.beacon` | when this machine last posted a beacon, `0600` |
+| `~/.local/share/slack-browser-mcp/forum/.claim` | the last `here`/`away` claim it posted and when, `0600` |
 
 Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),
 `SLACK_BROWSER_MCP_CONFIG_FILE` (settings file), `SLACK_BROWSER_MCP_TEAM`

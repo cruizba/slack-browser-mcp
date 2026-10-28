@@ -10,7 +10,7 @@ import { openForum, reload, requireIdentity, type ForumContext } from './forum/c
 import { defaultHost, normalizeCapabilities, normalizeName } from './forum/identity.ts'
 import { inboxEntries, loadViews, type InboxEntry } from './forum/inbox.ts'
 import { describeLimits, refreshWindowDays } from './forum/limits.ts'
-import { locateTask, postTask, replyTo, transportFor, announce, announcePresence, registerIdentity, unregisterIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
+import { locateTask, postTask, replyTo, transportFor, announce, announceLiveness, registerIdentity, unregisterIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
 import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from './forum/render.ts'
 import { stateLabel } from './forum/ledger.ts'
 import { catchUp, waitForWork, type CatchUpReport } from './forum/watch.ts'
@@ -70,6 +70,7 @@ Usage:
   slack-browser agent-forum register <name> [--host <h>] [--capabilities a,b] [--no-post]
   slack-browser agent-forum unregister [<name>] [--no-post]
   slack-browser agent-forum peers
+  slack-browser agent-forum away [<note>]
   slack-browser agent-forum inbox [--all] [--json] [--offline]
   slack-browser agent-forum task <id>
   slack-browser agent-forum post <to> <title> --body <text> [--tag <cap>] [--parent <id>] [--binding <name>] [--post]
@@ -670,9 +671,15 @@ async function commandForum(args: ParsedArgs): Promise<number> {
   const confirm = args.flags.get('post') === true
   const by = 'cli' as const
   const context = await forumContext()
-  // Interacting with the forum is what keeps this machine visible; the announcement
-  // is throttled and never blocks the command.
-  void announcePresence(context, resolveTransport).catch(() => {})
+  // A session speaks only for the person sitting in front of it, and it says it
+  // once per change of state. `poll` posts a beacon instead, after the refresh it
+  // was asked for, and the commands that announce a state of their own would post
+  // two messages; nothing reachable from a timer gets to claim that somebody is
+  // looking.
+  const announcesItself = subcommand === 'poll' || subcommand === 'away' || subcommand === 'unregister'
+  if (!announcesItself) {
+    void announceLiveness(context, resolveTransport, { path: 'session' }).catch(() => {})
+  }
 
   switch (subcommand) {
     case 'list': {
@@ -924,6 +931,22 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       return printWrite(result)
     }
 
+    case 'away': {
+      const note = rest.join(' ').trim()
+      const result = await announceLiveness(context, resolveTransport, {
+        path: 'session',
+        state: 'away',
+        ...(note ? { note } : {}),
+        force: true,
+      })
+      console.log(
+        result.posted > 0
+          ? `away${note ? `: ${note}` : ''} announced in ${result.posted} channel(s)`
+          : 'nothing announced; no channel bound or no identity',
+      )
+      return 0
+    }
+
     case 'wait':
     case 'poll': {
       const offline = args.flags.get('offline') === true
@@ -931,9 +954,16 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       const refresh = () => forumRefresh(context, deadline * 1000)
       if (subcommand === 'poll') {
         const result = await refresh()
+        // The refresh is this machine proving it is up, so the beacon goes out after
+        // it and carries nothing else. It is the only write the timer can cause.
+        const announced = await announceLiveness(context, resolveTransport, {
+          path: 'poll',
+        }).catch(() => ({ posted: 0, skipped: 0 }))
         if (args.flags.get('quiet') !== true) {
           console.log(
-            `refreshed ${result.synced} channel(s)${result.errors.length > 0 ? ` · ${result.errors.join(' · ')}` : ''}`,
+            `refreshed ${result.synced} channel(s)` +
+              (announced.posted > 0 ? ` · beacon in ${announced.posted}` : '') +
+              (result.errors.length > 0 ? ` · ${result.errors.join(' · ')}` : ''),
           )
         }
         return result.errors.length > 0 ? 1 : 0

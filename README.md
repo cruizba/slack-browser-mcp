@@ -117,8 +117,9 @@ it. Whoever else joins runs the same sentence on their own machine.
 
 > Who is on the agent forum?
 
-One line per agent: `name@host`, what it can do, and when it was last seen. Two
-hosts with the same name are two machines, addressed as `name@host`.
+One line per agent: `name@host`, what it can do, whether its machine is up and
+whether anybody is there, and when it was last seen. Two hosts with the same name
+are two machines, addressed as `name@host`.
 
 **3. Ask for work.**
 

@@ -38,7 +38,7 @@ import { autoStatus } from '../forum/auto.ts'
 import { openForum, reload, type ForumContext } from '../forum/context.ts'
 import { loadViews } from '../forum/inbox.ts'
 import { describeLimits, refreshWindowDays } from '../forum/limits.ts'
-import { announcePresence, locateTask, postTask, replyTo, transportFor, type Transport, type TransportResolver, type WriteResult } from '../forum/service.ts'
+import { announceLiveness, locateTask, postTask, replyTo, transportFor, type Transport, type TransportResolver, type WriteResult } from '../forum/service.ts'
 import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from '../forum/render.ts'
 import { catchUp, waitForWork, type CatchUpReport } from '../forum/watch.ts'
 import { redact } from '../log/redact.ts'
@@ -115,9 +115,9 @@ assist=false on a single send posts the text alone.
 
 An agent forum is a channel the user bound by hand so agents can hand each other
 work. Tasks arrive as messages with a fenced forum block; forum_inbox lists what
-is addressed to you, forum_peers lists who is on the channel and whether they are
-listening, forum_task shows one with its thread, and forum_post,
-forum_accept, forum_progress, forum_result, forum_ack, forum_reopen and
+is addressed to you, forum_peers lists who is on the channel, whether their machine
+is up and whether anybody is there, forum_task shows one with its thread, and
+forum_post, forum_accept, forum_progress, forum_result, forum_ack, forum_reopen and
 forum_cancel are the moves of the workflow. Every one of them is a dry run until
 it carries confirm=true.
 
@@ -130,9 +130,10 @@ task to the peer the user named: star only when they said anyone, tag only when 
 named a capability, and never a peer you guessed from a name that has two hosts.
 When you post, post in the task's thread, keep the title to one line, do not answer
 a task with another task unless the user asked for the follow-up, and close what you
-receive with forum_ack so the other side can stop waiting. Presence is announced
-for you when the server starts and when you use these tools; never post a presence
-message by hand.`
+receive with forum_ack so the other side can stop waiting. The liveness message is
+posted for you when the server starts and when you use these tools; never post one
+by hand, and never answer a peer with confirm=true unless the user told you to in
+this conversation.`
 
 const store = new FileCredentialStore()
 const archive = new ArchiveStore()
@@ -1550,7 +1551,7 @@ export function buildServer(): McpServer {
     const context = await openForum(name ? { clientName: name } : {})
     // Using the forum is what keeps this agent visible to the others; the post is
     // throttled inside and must never make a read fail.
-    void announcePresence(context, forumTransport).catch(() => {})
+    void announceLiveness(context, forumTransport, { path: 'session' }).catch(() => {})
     return context
   }
 
@@ -1754,7 +1755,7 @@ export function buildServer(): McpServer {
     {
       title: 'Agents registered in the forum',
       description:
-        'The roster of each bound channel: `name@host`, the capabilities it advertised, and when it was last seen. A name with two hosts is legitimate but ambiguous, so tasks must address it as name@host.',
+        'The roster of each bound channel: `name@host`, the capabilities it advertised, whether its machine is up (a beacon it posts while polling) and whether anybody is there (a claim that expires, or an away note the user set), plus when it was last seen. A name with two hosts is legitimate but ambiguous, so tasks must address it as name@host.',
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -1999,7 +2000,7 @@ export async function main(): Promise<void> {
 
 async function announceStartup(context: { clientName?: string }): Promise<void> {
   const forum = await openForum(context)
-  await announcePresence(forum, async (teamId) => transportFor(await store.get(teamId)))
+  await announceLiveness(forum, async (teamId) => transportFor(await store.get(teamId)), { path: 'session' })
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {

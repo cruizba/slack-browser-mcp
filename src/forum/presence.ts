@@ -1,12 +1,15 @@
 /**
- * Whether this machine is actually going to pick up a task.
+ * The two local marks behind the two liveness signals.
  *
- * A register says "I exist"; it says nothing about whether anyone is looking. Slack
- * retention makes that worse: an old register can simply disappear from the channel,
- * so the roster has to be refreshed by living messages rather than rebuilt from
- * history. Presence is that living message, and the marker below is what turns
- * "the timer is enabled" and "a wait is running" into one fact cheaply, without
- * spawning `systemctl` on every tool call.
+ * A beacon says the machine is up and belongs to the poller, so it is throttled by
+ * a timestamp: one post per window, and the window is `presence_seconds`. A claim
+ * says what the person in front of the session is doing, never comes from the
+ * poller, and only has to survive the archive lag between posting it and reading it
+ * back; `here_seconds` is how long the same claim may stand before it is repeated.
+ *
+ * They are separate files because they answer different questions. Reading the
+ * archive instead is not an option: a message that was just posted is not in it
+ * until the next sync, so an archive-only check would repost on every tool call.
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -14,41 +17,57 @@ import { join } from 'node:path'
 
 import { forumDir } from '../config/paths.ts'
 
-export type PresenceState = 'listening' | 'idle'
+/** What a session can claim about the person in it. `gone` is posted by unregister. */
+export type PresenceClaim = 'here' | 'away'
 
-/**
- * How often a peer re-announces itself. One post per window: presence is a
- * heartbeat that keeps a roster entry from rotting away with Slack retention, not
- * a live status feed, so a day between messages is enough.
- */
-export function presenceThrottleMs(presenceSeconds: number): number {
+/** How often a peer re-announces that its machine is up: one beacon per window. */
+export function beaconThrottleMs(presenceSeconds: number): number {
   return presenceSeconds * 1000
 }
 
-export function listeningMarkPath(root: string = forumDir()): string {
-  return join(root, '.listening')
+export function beaconMarkPath(root: string = forumDir()): string {
+  return join(root, '.beacon')
 }
 
-/**
- * When this machine last announced itself. The archive cannot answer that: a
- * message that was just posted is not in it until the next sync, so without a local
- * mark every tool call would look "not announced yet" and the channel would fill up
- * with presence.
- */
-export function presenceMarkPath(root: string = forumDir()): string {
-  return join(root, '.presence')
+export function claimMarkPath(root: string = forumDir()): string {
+  return join(root, '.claim')
 }
 
-export async function markPresence(when: Date): Promise<void> {
-  const file = presenceMarkPath()
+export interface ClaimMark {
+  state: PresenceClaim
+  at: number
+}
+
+async function writeMark(file: string, contents: string): Promise<void> {
   await mkdir(join(file, '..'), { recursive: true, mode: 0o700 })
-  await writeFile(file, when.toISOString(), { encoding: 'utf8', mode: 0o600 })
+  await writeFile(file, contents, { encoding: 'utf8', mode: 0o600 })
 }
 
-export async function lastPresence(): Promise<number | undefined> {
+export async function markBeacon(when: Date): Promise<void> {
+  await writeMark(beaconMarkPath(), when.toISOString())
+}
+
+export async function lastBeacon(): Promise<number | undefined> {
   try {
-    const stamp = Date.parse((await readFile(presenceMarkPath(), 'utf8')).trim())
+    const stamp = Date.parse((await readFile(beaconMarkPath(), 'utf8')).trim())
     return Number.isFinite(stamp) ? stamp : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export async function markClaim(state: PresenceClaim, when: Date): Promise<void> {
+  await writeMark(claimMarkPath(), JSON.stringify({ state, at: when.getTime() }))
+}
+
+export async function lastClaim(): Promise<ClaimMark | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(claimMarkPath(), 'utf8'))
+    if (typeof parsed !== 'object' || parsed === null) return undefined
+    const { state, at } = parsed as { state?: unknown; at?: unknown }
+    if (state !== 'here' && state !== 'away') return undefined
+    if (typeof at !== 'number' || !Number.isFinite(at)) return undefined
+    return { state, at }
   } catch {
     return undefined
   }
@@ -56,36 +75,4 @@ export async function lastPresence(): Promise<number | undefined> {
 
 export function presenceDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.SLACK_BROWSER_MCP_NO_PRESENCE === '1'
-}
-
-/**
- * Called by the poller and by `wait`: while the mark is fresh, a presence message
- * may claim `listening`.
- */
-export async function markListening(now: Date = new Date()): Promise<void> {
-  const file = listeningMarkPath()
-  await mkdir(join(file, '..'), { recursive: true, mode: 0o700 })
-  await writeFile(file, now.toISOString(), { encoding: 'utf8', mode: 0o600 })
-}
-
-export async function listeningSince(now: Date = new Date()): Promise<number | undefined> {
-  try {
-    const stamp = Date.parse((await readFile(listeningMarkPath(), 'utf8')).trim())
-    if (!Number.isFinite(stamp)) return undefined
-    return Math.max(0, now.getTime() - stamp)
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Listening is a claim with an expiry, not a mode: a crashed poller stops looking
- * alive after the window instead of claiming attention forever.
- */
-export async function presenceState(
-  presenceSeconds: number,
-  now: Date = new Date(),
-): Promise<PresenceState> {
-  const since = await listeningSince(now)
-  return since !== undefined && since < presenceSeconds * 1000 ? 'listening' : 'idle'
 }

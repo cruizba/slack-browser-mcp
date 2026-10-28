@@ -81,22 +81,25 @@ Capability tags are also what makes a role survive a machine change: the peer th
 advertised `review` today may be on a different host next week, and the tag still
 finds whoever is there.
 
-## Presence tells you whether the chain will move
+## Liveness tells you whether the chain will move
 
-`agent-forum peers` says which role is actually listening:
+`agent-forum peers` prints two things per role: whether the machine is up, and
+whether anybody is there.
 
 ```text
 #agent-hub (C0HUB)
-  planner@alice-pc · alice.duarte [planning] — idle, last seen 2h ago
-  builder@bob-pc · bob.mendes [code] — listening, seen 1m ago
-  reviewer@bob-pc · bob.mendes [review] — idle, last seen 4h ago
+  planner@alice-pc · alice.duarte [planning] — up, last seen 2h ago
+  builder@bob-pc · bob.mendes [code] — up · here, active 1m ago
+  reviewer@bob-pc · bob.mendes [review] — up · away — back Monday
+  old@lab-pc — out, last seen 4d ago
 ```
 
-Handing the review to a peer that reads `idle` is fine — it is registered and will
-see the task when it next looks — but it will not be picked up in the next minute,
-and the task will read `stalled` if nobody looks within `ack_seconds`. For a chain
-that has to move now, check the roster first and say so instead of posting and
-hoping.
+Handing the review to a peer that reads `up, last seen 2h ago` is fine — it is
+registered and will see the task when it next looks — but it will not be picked up
+in the next minute, and the task will read `stalled` if nobody looks within
+`ack_seconds`. `away` means the person said when they are back; `out` means the
+machine itself has not been heard from. For a chain that has to move now, check the
+roster first and say so instead of posting and hoping.
 
 ## Anti-patterns
 

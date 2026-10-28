@@ -73,7 +73,31 @@ const registerSchema = z
     path: ['from'],
   })
 
-/** `listening` means this peer will pick a task up within the presence window. */
+/**
+ * A machine saying it is up, and nothing else. It is the one envelope a background
+ * poll may post: it claims nothing about the person in front of it, so a daemon
+ * cannot speak for anybody. `name` and `host` are there so the roster needs no
+ * other message to keep the entry alive.
+ */
+const beaconSchema = z
+  .object({
+    ...common,
+    kind: z.literal('beacon'),
+    name: z.string().trim().min(1).max(MAX_NAME_CHARS),
+    host: z.string().trim().min(1).max(MAX_NAME_CHARS),
+  })
+  .refine((value) => value.from === `${value.name}@${value.host}`, {
+    message: 'from must be name@host',
+    path: ['from'],
+  })
+
+/**
+ * What a session claims about the person using it. `here` expires on its own
+ * (`here_seconds`); `away` is explicit and carries the note that says until when.
+ * `listening` and `idle` are the old shape: still decoded so a channel written by
+ * the previous version keeps its peers, but never posted again — a heartbeat is a
+ * fact about the machine, and it now travels as a beacon.
+ */
 const presenceSchema = z
   .object({
     ...common,
@@ -81,8 +105,7 @@ const presenceSchema = z
     name: z.string().trim().min(1).max(MAX_NAME_CHARS),
     host: z.string().trim().min(1).max(MAX_NAME_CHARS),
     /** `gone` retires the peer: readers drop it from the roster. */
-    state: z.enum(['listening', 'idle', 'gone']),
-    capabilities: z.array(tag).max(8).default([]),
+    state: z.enum(['here', 'away', 'gone', 'listening', 'idle']),
     note: fenceFree(z.string().trim().max(80)).optional(),
   })
   .refine((value) => value.from === `${value.name}@${value.host}`, {
@@ -130,6 +153,7 @@ const cancelSchema = z.object({ ...replyBase, kind: z.literal('cancel'), body: o
 
 export const EnvelopeSchema = z.discriminatedUnion('kind', [
   registerSchema,
+  beaconSchema,
   presenceSchema,
   taskSchema,
   acceptSchema,
@@ -145,6 +169,7 @@ export const EnvelopeSchema = z.discriminatedUnion('kind', [
 export type Envelope = z.infer<typeof EnvelopeSchema>
 export type TaskEnvelope = z.infer<typeof taskSchema>
 export type RegisterEnvelope = z.infer<typeof registerSchema>
+export type BeaconEnvelope = z.infer<typeof beaconSchema>
 export type PresenceEnvelope = z.infer<typeof presenceSchema>
 export type ReplyEnvelope = z.infer<typeof acceptSchema>
 
@@ -162,7 +187,12 @@ export const REPLY_KINDS = [
 export type ReplyKind = (typeof REPLY_KINDS)[number]
 
 export function isReply(envelope: Envelope): envelope is Extract<Envelope, { task: string }> {
-  return envelope.kind !== 'task' && envelope.kind !== 'register' && envelope.kind !== 'presence'
+  return (
+    envelope.kind !== 'task' &&
+    envelope.kind !== 'register' &&
+    envelope.kind !== 'beacon' &&
+    envelope.kind !== 'presence'
+  )
 }
 
 /**
@@ -213,6 +243,8 @@ export function summaryFor(envelope: Envelope): string {
   switch (envelope.kind) {
     case 'register':
       return `${envelope.from} joined the forum`
+    case 'beacon':
+      return `${envelope.from} is up`
     case 'presence':
       return envelope.state === 'gone'
         ? `${envelope.from} left the forum${envelope.note ? `: ${envelope.note}` : ''}`

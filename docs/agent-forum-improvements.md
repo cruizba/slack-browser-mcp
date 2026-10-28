@@ -106,21 +106,14 @@ CLI line for the user to run in a terminal, where `--post` and the audit log
 already work. Size M, mostly because every write tool needs the same refusal path
 and the same tests.
 
-## 7. Presence overclaims what it knows
+## 7. Presence overclaims what it knows — done
 
-A `listening` claim is believed for `presence_seconds`, which is a day. The
-heartbeat and the claim share one window, so a peer that polled this morning
-still reads as listening tonight unless it announced again. That is the value the
-roster is read for in `docs/agent-forum-roles.md`: whether the chain will move
-now.
+Fixed in the split between `beacon` and `presence` (`docs/agent-forum-spec.md`
+§6.1): the poller no longer speaks for the person, `here` expires after
+`here_seconds`, and anything a session writes keeps it fresh without another
+message.
 
-Split the two clocks: keep the daily heartbeat for liveness, and let `listening`
-expire after minutes (a new `listening_seconds`, default around 900, already the
-shape of `ack_seconds`). The local mark `forum/.listening` already records the
-last successful poll, so the data is there. Size S, one extra limit plus the
-reader that computes `peerStatus`.
-
-## 8. Anyone in the channel can type an envelope
+## 8. Anyone in the channel can type an envelope## 8. Anyone in the channel can type an envelope
 
 Nothing authenticates a poster. `from` is asserted by whoever posts, and the
 checks that exist compare it against the roster and against the addressee of the
@@ -187,17 +180,12 @@ no visible trace. Accepting a `progress` envelope in `done` and `failed`, from
 either side, keeps a follow-up in the thread instead of forcing a `reopen` just
 to say one sentence (S, wire-compatible).
 
-## 12. An away note the roster can show
+## 12. An away note the roster can show — done
 
-The presence envelope already carries an optional `note` (80 characters) and the
-summary line renders it (`src/forum/envelope.ts`), but `presenceEnvelope` in
-`src/forum/service.ts` never fills it. That is the missing half of the handover
-case: `planner@alice-pc` reads `out, last seen 3d ago` with no hint that Alice is
-back on Monday, and a task posted to that peer just waits. A `forum away` command
-with a short note, written into the next presence and shown in `forum peers`,
-would say it with a field that is already on the wire (S).
+`forum away "<note>"` posts it, `forum peers` renders it as `up · away — back
+Monday`, and the note no longer has to ride on a heartbeat that claims `listening`.
 
-## 13. Small friction
+## 13. Small friction## 13. Small friction
 
 - **A tag nobody advertises.** `post '*' --tag review` succeeds even when no peer
   registered that capability, and the task waits until the TTL. The preview

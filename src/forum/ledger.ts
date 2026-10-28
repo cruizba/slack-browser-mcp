@@ -183,7 +183,9 @@ export function buildLedger(args: LedgerArgs): Ledger {
       continue
     }
     // The roster kinds carry no state of their own here; they only say who exists.
-    if (envelope.kind === 'register' || envelope.kind === 'presence') continue
+    if (envelope.kind === 'register' || envelope.kind === 'beacon' || envelope.kind === 'presence') {
+      continue
+    }
     if (envelope.from !== me && !peerFor(roster, envelope.from)) {
       unvouched += 1
       continue

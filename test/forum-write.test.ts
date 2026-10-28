@@ -340,10 +340,10 @@ test('registering announces the peer name in the bound channel', async (t) => {
   assert.match(String(send?.body.get('text')), /"kind":"register"/)
 })
 
-test('presence is announced once, then throttled by the local mark', async (t) => {
+test('a session says it is here once, and the claim mark keeps it quiet', async (t) => {
   const { calls } = await setup(t)
   const { openForum } = await import('../src/forum/context.ts')
-  const { announcePresence, transportFor } = await import('../src/forum/service.ts')
+  const { announceLiveness, transportFor } = await import('../src/forum/service.ts')
   const { FileCredentialStore } = await import('../src/auth/store.ts')
   const resolver = async (teamId: string) =>
     transportFor(await new FileCredentialStore().get(teamId))
@@ -353,18 +353,57 @@ test('presence is announced once, then throttled by the local mark', async (t) =
     process.env.SLACK_BROWSER_MCP_NO_PRESENCE = '1'
   })
 
-  const first = await announcePresence(await openForum(), resolver, { force: true })
+  const first = await announceLiveness(await openForum(), resolver, { path: 'session' })
   assert.equal(first.posted, 1)
-  assert.match(String(posts(calls)[0]?.body.get('text')), /"kind":"presence"/)
-  assert.match(String(posts(calls)[0]?.body.get('text')), /"state":"idle"/)
+  const text = String(posts(calls)[0]?.body.get('text'))
+  assert.match(text, /"kind":"presence"/)
+  assert.match(text, /"state":"here"/)
+  assert.match(text, /reviewer@laptop is here/)
 
-  const second = await announcePresence(await openForum(), resolver)
-  assert.equal(second.posted, 0, 'a fresh mark keeps the channel quiet')
+  const second = await announceLiveness(await openForum(), resolver, { path: 'session' })
+  assert.equal(second.posted, 0, 'a fresh claim keeps the channel quiet')
   assert.equal(posts(calls).length, 1)
+})
+
+test('the poll path posts a beacon and can never answer', async (t) => {
+  const { calls } = await setup(t)
+  const { openForum } = await import('../src/forum/context.ts')
+  const { announceLiveness, transportFor, locateTask } = await import('../src/forum/service.ts')
+  const { loadViews } = await import('../src/forum/inbox.ts')
+  const { FileCredentialStore } = await import('../src/auth/store.ts')
+  const resolver = async (teamId: string) =>
+    transportFor(await new FileCredentialStore().get(teamId))
+
+  delete process.env.SLACK_BROWSER_MCP_NO_PRESENCE
+  t.after(() => {
+    process.env.SLACK_BROWSER_MCP_NO_PRESENCE = '1'
+  })
+
+  const context = await openForum()
+  // There is work waiting for this agent, which is exactly when an over-eager daemon
+  // would answer. It reads it and says nothing but "the machine is up".
+  const waiting = locateTask(await loadViews(context), TASK)
+  assert.equal(waiting.task.to, 'reviewer@laptop')
+
+  const first = await announceLiveness(context, resolver, { path: 'poll' })
+  assert.equal(first.posted, 1)
+  const text = String(posts(calls)[0]?.body.get('text'))
+  assert.match(text, /"kind":"beacon"/)
+  assert.match(text, /reviewer@laptop is up/)
+  assert.doesNotMatch(text, /"state"/, 'a beacon claims nothing about the person')
+
+  const second = await announceLiveness(context, resolver, { path: 'poll' })
+  assert.equal(second.posted, 0, 'the beacon window keeps the poller quiet')
+
+  const sent = posts(calls).map((call) => String(call.body.get('text')))
+  assert.equal(sent.length, 1, 'a poll writes once and only once')
+  for (const body of sent) {
+    assert.match(body, /"kind":"beacon"/)
+  }
   assert.equal(
-    calls.filter((call) => call.method === 'chat.postMessage').length,
-    1,
-    'presence is not a task post',
+    sent.filter((body) => /"kind":"(presence|accept|result|ack|progress|note)"/.test(body)).length,
+    0,
+    'the listener never answers in the user’s name',
   )
 })
 

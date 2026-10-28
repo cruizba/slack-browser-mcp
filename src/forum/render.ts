@@ -13,7 +13,7 @@ import type { InboxReport } from './inbox.ts'
 import { stateLabel, type ForumTask } from './ledger.ts'
 import type { Binding } from './binding.ts'
 import type { ForumLimits } from './limits.ts'
-import { peerStatus } from './roster.ts'
+import { humanStatus, machineStatus } from './roster.ts'
 
 export function ago(ts: string | number, now: Date): string {
   const then = typeof ts === 'number' ? ts : Number(ts) * 1000
@@ -56,20 +56,23 @@ export function renderPeers(view: BindingView, now: Date, limits: ForumLimits): 
     const caps = peer.capabilities.length > 0 ? ` [${peer.capabilities.join(', ')}]` : ''
     const person = peer.owner ? (view.people.get(peer.owner) ?? peer.owner) : undefined
     const who = person ? ` · ${person}` : ''
-    const status = peerStatus(peer, {
-      presenceSeconds: limits.presence_seconds,
+    const status = machineStatus(peer, { ttlHours: limits.peer_ttl_hours, now })
+    const human = humanStatus(peer, {
+      hereSeconds: limits.here_seconds,
       ttlHours: limits.peer_ttl_hours,
       now,
     })
     const seen = ago(peer.ts, now)
+    const note = peer.note ? ` — ${peer.note}` : ''
+    const active = ago(peer.interactiveTs ?? peer.ts, now)
     const text =
-      status === 'listening'
-        ? `listening, seen ${seen} ago`
-        : status === 'out'
-          ? `out, last seen ${seen} ago`
-          : peer.state
-            ? `idle, last seen ${seen} ago`
-            : `last seen ${seen} ago`
+      status === 'out'
+        ? `out, last seen ${seen} ago`
+        : human === 'away'
+          ? `up · away${note}`
+          : human === 'here'
+            ? `up · here, active ${active === 'now' ? 'now' : `${active} ago`}`
+            : `up, last seen ${seen} ago`
     lines.push(`  ${peer.from}${who}${caps} — ${text}`)
   }
   return lines
