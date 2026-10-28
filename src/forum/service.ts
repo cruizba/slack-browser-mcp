@@ -23,6 +23,14 @@ import { labelOf, type Identity } from './identity.ts'
 import { meLabel, reload, requireIdentity, type ForumContext } from './context.ts'
 import { loadViews, type BindingView } from './inbox.ts'
 import {
+  lastPresence,
+  markPresence,
+  presenceDisabled,
+  presenceState,
+  presenceThrottleMs,
+  type PresenceState,
+} from './presence.ts'
+import {
   assertFits,
   render,
   summaryFor,
@@ -141,6 +149,7 @@ export async function deliver(
   binding: Binding,
   envelope: Envelope,
   threadTs?: string,
+  options: { count?: boolean } = {},
 ): Promise<{ ts: string; audit: string }> {
   const summary = summaryFor(envelope)
   const text = render(summary, envelope)
@@ -165,7 +174,9 @@ export async function deliver(
     message_ts: posted.ts,
     text: signed.text,
   })
-  await context.forum.notePost(bindingKey(binding))
+  // Presence is not a post in the sense the hourly budget means: it is capped by
+  // its own throttle and must not eat the room a real task needs.
+  if (options.count !== false) await context.forum.notePost(bindingKey(binding))
   return { ts: posted.ts, audit }
 }
 
@@ -430,6 +441,7 @@ export interface BindArgs {
   reference: string
   backfill?: boolean
   unsigned?: boolean
+  noPresence?: boolean
 }
 
 export async function bindChannel(
@@ -460,6 +472,7 @@ export async function bindChannel(
     since_ts: since,
     added_at: context.now.toISOString(),
     sign: args.unsigned !== true,
+    announce: args.noPresence !== true,
   }
   const { added } = await context.forum.bind(binding)
   return { binding, added }
@@ -486,6 +499,79 @@ export async function registerIdentity(
   const label = labelOf(identity)
   const known = views.some((view) => view.roster.some((peer) => peer.from === label))
   return { identity, announce: !known }
+}
+
+export function presenceEnvelope(
+  context: ForumContext,
+  identity: Identity,
+  state: PresenceState,
+): Envelope {
+  return {
+    v: 1,
+    kind: 'presence',
+    id: newId(context.now.getTime()),
+    from: labelOf(identity),
+    sent: context.now.toISOString(),
+    name: identity.name,
+    host: identity.host,
+    state,
+    capabilities: identity.capabilities,
+  }
+}
+
+/**
+ * Says "I am here" often enough to survive Slack retention and the roster growing
+ * stale, and rarely enough not to be noise: once per third of the presence window,
+ * or immediately when the claim changes (idle to listening).
+ */
+export async function announcePresence(
+  context: ForumContext,
+  resolveTransport: TransportResolver,
+  options: { force?: boolean } = {},
+): Promise<{ posted: number; skipped: number }> {
+  if (presenceDisabled()) return { posted: 0, skipped: 0 }
+  const identity = context.identity
+  if (!identity) return { posted: 0, skipped: 0 }
+
+  const me = labelOf(identity)
+  const state = await presenceState(context.limits.presence_seconds, context.now)
+  const throttle = presenceThrottleMs(context.limits.presence_seconds)
+  const marked = await lastPresence()
+  const localAgeMs = marked === undefined ? Number.POSITIVE_INFINITY : context.now.getTime() - marked
+  const views = await loadViews(context)
+  const result = { posted: 0, skipped: 0 }
+
+  for (const view of views) {
+    if (!view.binding.announce) {
+      result.skipped += 1
+      continue
+    }
+    const seen = view.roster.find((peer) => peer.from === me)
+    const archivedAgeMs = seen
+      ? context.now.getTime() - Number(seen.ts) * 1000
+      : Number.POSITIVE_INFINITY
+    const ageMs = Math.min(localAgeMs, archivedAgeMs)
+    // No archived presence means the archive has not caught up with us yet, not
+    // that the state changed; the local mark is the source of truth for that.
+    const unchanged = seen === undefined || seen.state === undefined || seen.state === state
+    if (!options.force && unchanged && ageMs < throttle) {
+      result.skipped += 1
+      continue
+    }
+    const transport = await resolveTransport(view.binding.workspace)
+    await deliver(
+      context,
+      transport,
+      view.binding,
+      presenceEnvelope(context, identity, state),
+      undefined,
+      { count: false },
+    )
+    await markPresence(context.now)
+    result.posted += 1
+  }
+
+  return result
 }
 
 export function announceEnvelope(context: ForumContext, identity: Identity): Envelope {

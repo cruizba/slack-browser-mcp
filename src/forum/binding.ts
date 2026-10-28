@@ -30,6 +30,8 @@ const BindingSchema = z
     since_ts: z.string().min(1),
     added_at: z.string().min(1),
     sign: z.boolean().default(true),
+    /** Announce presence here without being asked. Off means read-only for this machine. */
+    announce: z.boolean().default(true),
   })
   .strict()
 

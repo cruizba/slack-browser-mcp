@@ -14,6 +14,7 @@ import type { SlackClient } from '../slack/client.ts'
 import type { Binding } from './binding.ts'
 import type { ForumContext } from './context.ts'
 import { inboxEntries, loadViews, type InboxReport } from './inbox.ts'
+import { markListening } from './presence.ts'
 
 export interface CatchUpReport {
   synced: number
@@ -53,6 +54,8 @@ export async function catchUp(args: CatchUpArgs): Promise<CatchUpReport> {
       report.errors.push('deadline reached before every channel was refreshed')
       break
     }
+    // A poll that reaches Slack is the definition of "listening" for this machine.
+    await markListening(args.now ?? new Date())
     try {
       const result = await syncAccount({
         account,
@@ -109,7 +112,10 @@ export async function waitForWork(
 
   for (;;) {
     cycles += 1
-    if (!options.offline && options.refresh) last = await options.refresh()
+    if (!options.offline && options.refresh) {
+      last = await options.refresh()
+      await markListening()
+    }
     const views = await loadViews(context)
     const report = inboxEntries(context, views)
     if (report.entries.length > 0 || Date.now() >= until) {

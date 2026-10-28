@@ -37,8 +37,8 @@ import { AuthError, SchemaError } from '../errors.ts'
 import { autoStatus } from '../forum/auto.ts'
 import { openForum, reload, type ForumContext } from '../forum/context.ts'
 import { loadViews, newestTs } from '../forum/inbox.ts'
-import { locateTask, postTask, replyTo, transportFor, type Transport, type TransportResolver, type WriteResult } from '../forum/service.ts'
-import { ago, channelLabel as forumChannelLabel, renderInbox, renderTask } from '../forum/render.ts'
+import { announcePresence, locateTask, postTask, replyTo, transportFor, type Transport, type TransportResolver, type WriteResult } from '../forum/service.ts'
+import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from '../forum/render.ts'
 import { catchUp, waitForWork, type CatchUpReport } from '../forum/watch.ts'
 import { redact } from '../log/redact.ts'
 import { recordSend } from '../slack/audit.ts'
@@ -114,7 +114,8 @@ assist=false on a single send posts the text alone.
 
 An agent forum is a channel the user bound by hand so agents can hand each other
 work. Tasks arrive as messages with a fenced forum block; forum_inbox lists what
-is addressed to you, forum_task shows one with its thread, and forum_post,
+is addressed to you, forum_peers lists who is on the channel and whether they are
+listening, forum_task shows one with its thread, and forum_post,
 forum_accept, forum_progress, forum_result, forum_ack, forum_reopen and
 forum_cancel are the moves of the workflow. Every one of them is a dry run until
 it carries confirm=true.
@@ -128,7 +129,9 @@ task to the peer the user named: star only when they said anyone, tag only when 
 named a capability, and never a peer you guessed from a name that has two hosts.
 When you post, post in the task's thread, keep the title to one line, do not answer
 a task with another task unless the user asked for the follow-up, and close what you
-receive with forum_ack so the other side can stop waiting.`
+receive with forum_ack so the other side can stop waiting. Presence is announced
+for you when the server starts and when you use these tools; never post a presence
+message by hand.`
 
 const store = new FileCredentialStore()
 const archive = new ArchiveStore()
@@ -1541,9 +1544,13 @@ export function buildServer(): McpServer {
 
   const forumName = (): string | undefined => server.server.getClientVersion()?.name
 
-  const openForumFor = (): Promise<ForumContext> => {
+  const openForumFor = async (): Promise<ForumContext> => {
     const name = forumName()
-    return openForum(name ? { clientName: name } : {})
+    const context = await openForum(name ? { clientName: name } : {})
+    // Using the forum is what keeps this agent visible to the others; the post is
+    // throttled inside and must never make a read fail.
+    void announcePresence(context, forumTransport).catch(() => {})
+    return context
   }
 
   const transports = new Map<string, Promise<Transport>>()
@@ -1738,7 +1745,7 @@ export function buildServer(): McpServer {
           content: [
             {
               type: 'text' as const,
-              text: renderTask(context, task, view.binding, view.decisions.get(task.id)),
+              text: renderTask(context, task, view.binding, view.decisions.get(task.id), view),
             },
           ],
         }
@@ -1771,15 +1778,9 @@ export function buildServer(): McpServer {
             ],
           }
         }
-        const lines: string[] = []
-        for (const view of views) {
-          lines.push(`${forumChannelLabel(view.binding)} (${view.binding.channel})`)
-          if (view.roster.length === 0) lines.push('  nobody registered yet')
-          for (const peer of view.roster) {
-            const caps = peer.capabilities.length > 0 ? ` [${peer.capabilities.join(', ')}]` : ''
-            lines.push(`  ${peer.from}${caps} — last seen ${ago(peer.ts, context.now)} ago`)
-          }
-        }
+        const lines = views.flatMap((view) =>
+          renderPeers(view, context.now, context.limits.presence_seconds),
+        )
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
       } catch (error) {
         return failure(error)
@@ -1980,6 +1981,16 @@ export function buildServer(): McpServer {
 export async function main(): Promise<void> {
   const server = buildServer()
   await server.connect(new StdioServerTransport())
+
+  // "Connected, listening or not" is the first thing a peer wants to know, and the
+  // start of a session is exactly when it is worth saying.
+  const name = server.server.getClientVersion()?.name
+  void announceStartup(name ? { clientName: name } : {}).catch(() => {})
+}
+
+async function announceStartup(context: { clientName?: string }): Promise<void> {
+  const forum = await openForum(context)
+  await announcePresence(forum, async (teamId) => transportFor(await store.get(teamId)))
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {

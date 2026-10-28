@@ -12,6 +12,7 @@ import type { Decision } from './decisions.ts'
 import type { Binding } from './binding.ts'
 import { bindingKey } from './binding.ts'
 import { meLabel, type ForumContext } from './context.ts'
+import { DirectoryStore, directoryUser } from '../slack/directory.ts'
 import { buildLedger, type ForumTask, type Ledger } from './ledger.ts'
 import { rosterFrom, type Peer } from './roster.ts'
 
@@ -21,6 +22,8 @@ export interface BindingView {
   roster: Peer[]
   ledger: Ledger
   decisions: Map<string, Decision>
+  /** Slack user id to a readable name, from the cached directory when it exists. */
+  people: Map<string, string>
 }
 
 export async function loadView(context: ForumContext, binding: Binding): Promise<BindingView> {
@@ -37,7 +40,13 @@ export async function loadView(context: ForumContext, binding: Binding): Promise
     now: context.now,
   })
   const decisions = await context.decisions.read(binding.workspace, binding.channel)
-  return { binding, key: bindingKey(binding), roster, ledger, decisions }
+  const directory = await new DirectoryStore(context.archive.root).read(binding.workspace)
+  const people = new Map<string, string>()
+  for (const peer of roster) {
+    const label = peer.owner ? directoryUser(directory, peer.owner) : undefined
+    if (peer.owner && label) people.set(peer.owner, label)
+  }
+  return { binding, key: bindingKey(binding), roster, ledger, decisions, people }
 }
 
 export async function loadViews(

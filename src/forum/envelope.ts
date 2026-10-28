@@ -59,6 +59,22 @@ const registerSchema = z
     path: ['from'],
   })
 
+/** `listening` means this peer will pick a task up within the presence window. */
+const presenceSchema = z
+  .object({
+    ...common,
+    kind: z.literal('presence'),
+    name: z.string().trim().min(1).max(MAX_NAME_CHARS),
+    host: z.string().trim().min(1).max(MAX_NAME_CHARS),
+    state: z.enum(['listening', 'idle']),
+    capabilities: z.array(tag).max(8).default([]),
+    note: z.string().trim().max(80).optional(),
+  })
+  .refine((value) => value.from === `${value.name}@${value.host}`, {
+    message: 'from must be name@host',
+    path: ['from'],
+  })
+
 const taskSchema = z
   .object({
     ...common,
@@ -99,6 +115,7 @@ const cancelSchema = z.object({ ...replyBase, kind: z.literal('cancel'), body: o
 
 export const EnvelopeSchema = z.discriminatedUnion('kind', [
   registerSchema,
+  presenceSchema,
   taskSchema,
   acceptSchema,
   declineSchema,
@@ -113,6 +130,7 @@ export const EnvelopeSchema = z.discriminatedUnion('kind', [
 export type Envelope = z.infer<typeof EnvelopeSchema>
 export type TaskEnvelope = z.infer<typeof taskSchema>
 export type RegisterEnvelope = z.infer<typeof registerSchema>
+export type PresenceEnvelope = z.infer<typeof presenceSchema>
 export type ReplyEnvelope = z.infer<typeof acceptSchema>
 
 export const REPLY_KINDS = [
@@ -129,7 +147,7 @@ export const REPLY_KINDS = [
 export type ReplyKind = (typeof REPLY_KINDS)[number]
 
 export function isReply(envelope: Envelope): envelope is Extract<Envelope, { task: string }> {
-  return envelope.kind !== 'task' && envelope.kind !== 'register'
+  return envelope.kind !== 'task' && envelope.kind !== 'register' && envelope.kind !== 'presence'
 }
 
 /**
@@ -176,6 +194,8 @@ export function summaryFor(envelope: Envelope): string {
   switch (envelope.kind) {
     case 'register':
       return `${envelope.from} joined the forum`
+    case 'presence':
+      return `${envelope.from} is ${envelope.state}${envelope.note ? `: ${envelope.note}` : ''}`
     case 'task':
       return envelope.tag
         ? `${envelope.from} asks anyone who can ${envelope.tag}: ${envelope.title}`

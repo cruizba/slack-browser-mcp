@@ -9,8 +9,8 @@ import { autoOff, autoOn, autoStatus } from './forum/auto.ts'
 import { openForum, reload, type ForumContext } from './forum/context.ts'
 import { defaultHost, normalizeCapabilities, normalizeName } from './forum/identity.ts'
 import { inboxEntries, loadViews, newestTs, type InboxEntry } from './forum/inbox.ts'
-import { locateTask, postTask, replyTo, transportFor, announce, registerIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
-import { ago, channelLabel as forumChannelLabel, renderInbox, renderTask } from './forum/render.ts'
+import { locateTask, postTask, replyTo, transportFor, announce, announcePresence, registerIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
+import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from './forum/render.ts'
 import { stateLabel } from './forum/ledger.ts'
 import { catchUp, waitForWork, type CatchUpReport } from './forum/watch.ts'
 import { Lock } from './archive/lock.ts'
@@ -64,9 +64,9 @@ Usage:
   slack-browser archive reindex
   slack-browser archive migrate
   slack-browser agent-forum [list]                 # bindings, identity, peers pending
-  slack-browser agent-forum add <channel> [--backfill] [--unsigned] [--workspace <ref>]
+  slack-browser agent-forum add <channel> [--backfill] [--unsigned] [--no-presence] [--workspace <ref>]
   slack-browser agent-forum remove <channel>
-  slack-browser agent-forum register <name> [--host <h>] [--capabilities a,b] [--post]
+  slack-browser agent-forum register <name> [--host <h>] [--capabilities a,b] [--no-post]
   slack-browser agent-forum peers
   slack-browser agent-forum inbox [--all] [--json] [--offline]
   slack-browser agent-forum task <id>
@@ -666,6 +666,9 @@ async function commandForum(args: ParsedArgs): Promise<number> {
   const confirm = args.flags.get('post') === true
   const by = 'cli' as const
   const context = await forumContext()
+  // Interacting with the forum is what keeps this machine visible; the announcement
+  // is throttled and never blocks the command.
+  void announcePresence(context, resolveTransport).catch(() => {})
 
   switch (subcommand) {
     case 'list': {
@@ -712,6 +715,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
         reference,
         backfill: args.flags.get('backfill') === true,
         unsigned: args.flags.get('unsigned') === true,
+        noPresence: args.flags.get('no-presence') === true,
       })
       console.log(
         added
@@ -723,6 +727,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
           ? 'reading the whole channel history, oldest first'
           : `reading from ts ${binding.since_ts}; pass --backfill to read what came before`,
       )
+      if (!binding.announce) console.log('this machine will not announce presence in that channel')
       if (!context.identity) {
         console.log('next: pick a name with `slack-browser agent-forum register <name>`')
       }
@@ -759,16 +764,25 @@ async function commandForum(args: ParsedArgs): Promise<number> {
         `registered ${identity.name}@${identity.host} as ${context.identityKey}` +
           (identity.capabilities.length > 0 ? ` [${identity.capabilities.join(', ')}]` : ''),
       )
+      // The one write that does not ask first: it announces this machine's own
+      // name, and a peer nobody can discover is a peer nobody can address.
+      if (args.flags.get('no-post') === true) {
+        console.log('not announced; peers will not discover this name until you post the register')
+        return 0
+      }
       if (!result.announce) {
         console.log('the roster already knows this name; nothing to announce')
         return 0
       }
-      if (!confirm) {
-        console.error('the roster does not know you yet; add --post to announce yourself in every bound channel')
+      if (context.file.channels.length === 0) {
+        console.log('no channel bound yet; the announcement goes out the next time you register')
         return 0
       }
       const announced = await announce(context, resolveTransport, identity)
-      console.log(`announced in ${announced.posted} channel(s), skipped ${announced.skipped}`)
+      console.log(
+        `announced in ${announced.posted} channel(s)` +
+          (announced.skipped > 0 ? `, ${announced.skipped} already knew` : ''),
+      )
       return 0
     }
 
@@ -781,15 +795,8 @@ async function commandForum(args: ParsedArgs): Promise<number> {
         return 0
       }
       for (const view of views) {
-        console.log(`${forumChannelLabel(view.binding)} (${view.binding.channel})`)
-        if (view.roster.length === 0) {
-          console.log('  nobody registered yet')
-          continue
-        }
-        for (const peer of view.roster) {
-          const caps = peer.capabilities.length > 0 ? ` [${peer.capabilities.join(', ')}]` : ''
-          const retired = context.file.ignored.includes(peer.from) ? ' (retired)' : ''
-          console.log(`  ${peer.from}${caps}${retired} — last seen ${ago(peer.ts, context.now)} ago`)
+        for (const line of renderPeers(view, context.now, context.limits.presence_seconds)) {
+          console.log(line)
         }
       }
       return 0
@@ -841,9 +848,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       const fresh = await reload(context)
       const views = await loadViews(fresh)
       const { view, task } = locateTask(views, id)
-      console.log(
-        renderTask(fresh, task, view.binding, view.decisions.get(task.id)),
-      )
+      console.log(renderTask(fresh, task, view.binding, view.decisions.get(task.id), view))
       return 0
     }
 

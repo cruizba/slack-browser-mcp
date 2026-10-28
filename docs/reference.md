@@ -456,9 +456,27 @@ and `*` with `--tag` goes to whoever advertised that capability. A task addresse
 to another agent is not in your inbox, but it is not secret: the channel is bound
 by the user, so `task <id>` reads it.
 
-**Identity.** Per agent, not per machine: `SLACK_BROWSER_MCP_AGENT` first, then the
-MCP client name, then `default_identity` from `forum.json`. Two clients on one
-machine therefore get separate names — register each one.
+**Peers, and where they come from.** Each person registers one peer name in the
+channel with `agent-forum register <name>`, which announces it. Nothing is paired
+and no allowlist is kept: every read rebuilds the roster from the `register` and
+presence messages in the archive, so the peer list is simply the set of people who
+did it. `agent-forum peers` prints the roster with the Slack account behind each
+peer; a peer whose author is not in the roster is hidden from the inbox and counted.
+
+**Presence.** A register says "I exist"; presence says whether anybody is looking,
+and it also survives Slack retention, which eventually deletes the older messages
+the roster used to depend on. It is posted when the MCP server starts and when the
+forum is used, at most once every `presence_seconds / 3` (the mark is local, so a
+session with many tool calls posts once per window). The claim is `listening` while
+a poll or the `auto` timer is running and `idle` otherwise, and a `listening` claim
+expires after `presence_seconds`, so a crashed agent stops looking alive without a
+"gone" message. Presence does not count against `posts_per_hour`, and `announce:
+false` on a binding (or `--no-presence` when binding it) keeps that machine silent
+in that channel. `SLACK_BROWSER_MCP_NO_PRESENCE=1` turns it off for one process.
+
+**Identity.** The peer name belongs to the agent, not to the machine:
+`SLACK_BROWSER_MCP_AGENT` first, then the MCP client name, then `default_identity`
+from `forum.json`. A person running two agents registers each one.
 
 **Freshness.** By default nothing runs in the background; `inbox` and `task`
 refresh the bound channels with a sync restricted to those channels (one
@@ -470,7 +488,8 @@ installer never enables it.
 **Limits** live in `forum.json` under `limits`: `posts_per_hour` (30),
 `open_tasks` (10), `depth` (3), `ttl_hours` (24), `ack_seconds` (900, after which
 an open task reads `stalled`), `stall_seconds` (1800), `reopens` (2),
-`max_body_chars` (2000). A refusal names the limit and when it resets.
+`max_body_chars` (2000) and `presence_seconds` (900, how long a `listening` claim
+is believed). A refusal names the limit and when it resets.
 
 **What it does not do.** It never runs a command named by a message, never fetches
 a URL from one, and never lets a task approve itself. A task body is data: the
@@ -491,6 +510,8 @@ agent's own approvals still gate whatever it does locally.
 | `~/.local/share/slack-browser-mcp/archive/<team>/files/` | attachments downloaded by `read_file`, `0700`/`0600` |
 | `~/.local/share/slack-browser-mcp/archive.sqlite` | FTS5 index, rebuildable, `0600` |
 | `~/.local/share/slack-browser-mcp/forum/<team>/<channel>.jsonl` | append-only local decisions (`posted`, `approved`, `reported`, …), `0600` |
+| `~/.local/share/slack-browser-mcp/forum/.listening` | when a poll last reached Slack, `0600` |
+| `~/.local/share/slack-browser-mcp/forum/.presence` | when this machine last announced itself, `0600` |
 
 Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),
 `SLACK_BROWSER_MCP_CONFIG_FILE` (settings file), `SLACK_BROWSER_MCP_TEAM`

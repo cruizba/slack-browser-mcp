@@ -58,7 +58,7 @@ function registers(): ArchivedMessage[] {
 }
 
 function taskAt(ts: string, overrides: Partial<Envelope> = {}): ArchivedMessage {
-  return message(ts, {
+  return { ...message(ts, {
     v: 1,
     kind: 'task',
     id: TASK,
@@ -68,7 +68,7 @@ function taskAt(ts: string, overrides: Partial<Envelope> = {}): ArchivedMessage 
     title: 'revisar el PR',
     body: 'mira el diff',
     ...overrides,
-  } as Envelope)
+  } as Envelope), user: 'U0BUILDER' }
 }
 
 function reply(ts: string, kind: Envelope['kind'], from: string, extra: object = {}): ArchivedMessage {
@@ -101,6 +101,11 @@ function only(messages: ArchivedMessage[], now = NOW): ForumTask {
   assert.equal(built.tasks.length, 1)
   return built.tasks[0]!
 }
+
+test('a task remembers whose agent posted it', () => {
+  const task = only([...registers(), taskAt(at(5))])
+  assert.equal(task.owner, 'U0BUILDER', 'the Slack account, not the asserted from')
+})
 
 test('a task walks open, accepted, done and acknowledged', () => {
   const messages = [

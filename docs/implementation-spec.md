@@ -39,18 +39,45 @@ during normal tool calls, which keeps latency, memory and failure modes small.
 
 ## 4. Architecture
 
-```
-CLI (src/cli.ts) ─┐
-                  ├─→ auth/store.ts ──→ ~/.config/slack-browser-mcp/accounts/*.json (0600)
-MCP (src/mcp) ────┘          │              config/settings.ts ──→ …/config.json (default workspace)
-                             ↓
-                    slack/client.ts ──→ https://slack.com/api (xoxc + d cookie)
-                             ↑
-auth/login.ts (Playwright, login only)
+```mermaid
+flowchart TD
+    CLI["CLI<br/>src/cli.ts"]
+    MCP["MCP server<br/>src/mcp"]
+    FORUM["agent forum<br/>src/forum"]
+    STORE["credential store<br/>auth/store.ts"]
+    SETTINGS["settings<br/>config/settings.ts"]
+    LOGIN["login<br/>auth/login.ts<br/>Playwright, login only"]
+    CLIENT["Slack API client<br/>slack/client.ts"]
+    API["https://slack.com/api<br/>xoxc + d cookie"]
+    ACCOUNTS[("accounts/*.json<br/>0600")]
+    CONFIG[("config.json<br/>default workspace")]
+    FORUMFILE[("forum.json<br/>0600")]
+    SYNC["archive/sync.ts"]
+    ARCHIVE["archive/store.ts"]
+    INDEX["archive/index.ts"]
+    JSONL[("archive/TEAM/CHANNEL.jsonl")]
+    STATE[("archive/state.json")]
+    SQLITE[("archive.sqlite<br/>FTS5, rebuildable")]
 
-archive/sync.ts ──→ archive/store.ts ──→ archive/<TEAM>/<CHANNEL>.jsonl
-        │                   └─────────→ archive/state.json
-        └─────────→ archive/index.ts ──→ archive.sqlite (FTS5, rebuildable)
+    CLI --> STORE
+    CLI --> SETTINGS
+    CLI --> FORUM
+    MCP --> STORE
+    MCP --> SETTINGS
+    MCP --> FORUM
+    LOGIN --> STORE
+    STORE --> ACCOUNTS
+    SETTINGS --> CONFIG
+    FORUM --> FORUMFILE
+    STORE --> CLIENT
+    FORUM --> CLIENT
+    CLIENT --> API
+    SYNC --> ARCHIVE
+    ARCHIVE --> JSONL
+    ARCHIVE --> STATE
+    SYNC --> INDEX
+    INDEX --> SQLITE
+    FORUM --> ARCHIVE
 ```
 
 Rules that hold across layers:

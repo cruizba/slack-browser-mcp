@@ -7,6 +7,7 @@
  */
 
 import { meLabel, type ForumContext } from './context.ts'
+import type { BindingView } from './inbox.ts'
 import type { Decision } from './decisions.ts'
 import type { InboxReport } from './inbox.ts'
 import { stateLabel, type ForumTask } from './ledger.ts'
@@ -27,6 +28,42 @@ export function decisionLabel(decision: Decision | undefined): string {
   if (!decision) return 'local:-'
   const self = decision.self_approved ? '(self)' : ''
   return `local:${decision.decision}${self}`
+}
+
+/**
+ * An agent label as a person reads it: the agent name, plus the person behind it
+ * when the cached directory can name the Slack account that registered it.
+ */
+export function peerLabel(from: string, view?: BindingView): string {
+  const owner = view?.roster.find((peer) => peer.from === from)?.owner
+  const person = owner ? (view?.people.get(owner) ?? owner) : undefined
+  return person ? `${from} (${person})` : from
+}
+
+/**
+ * The roster as each surface prints it. Peers are discovered from the channel, so
+ * this is what "who is on the forum" looks like after a plain read.
+ */
+export function renderPeers(view: BindingView, now: Date, presenceSeconds = 900): string[] {
+  const lines = [`${channelLabel(view.binding)} (${view.binding.channel})`]
+  if (view.roster.length === 0) {
+    lines.push('  nobody registered yet')
+    return lines
+  }
+  for (const peer of view.roster) {
+    const caps = peer.capabilities.length > 0 ? ` [${peer.capabilities.join(', ')}]` : ''
+    const person = peer.owner ? (view.people.get(peer.owner) ?? peer.owner) : undefined
+    const who = person ? ` · ${person}` : ''
+    const fresh = now.getTime() - Number(peer.ts) * 1000 < presenceSeconds * 1000
+    const status =
+      peer.state === 'listening' && fresh
+        ? `listening, seen ${ago(peer.ts, now)} ago`
+        : peer.state
+          ? `idle, last seen ${ago(peer.ts, now)} ago`
+          : `last seen ${ago(peer.ts, now)} ago`
+    lines.push(`  ${peer.from}${who}${caps} — ${status}`)
+  }
+  return lines
 }
 
 export function channelLabel(binding: Binding): string {
@@ -98,11 +135,15 @@ export function renderTask(
   task: ForumTask,
   binding: Binding,
   decision: Decision | undefined,
+  view?: BindingView,
 ): string {
   const header =
     `${task.id}  ${stateLabel(task, context.now)}  ${decisionLabel(decision)}  ` +
     `${binding.workspace}/${channelLabel(binding)}`
-  const route = `${task.from} -> ${task.to}${task.tag ? `#${task.tag}` : ''} · sent ${task.sent}` +
+  const person = task.owner ? (view?.people.get(task.owner) ?? task.owner) : undefined
+  const route = `${task.from}${person ? ` (${person})` : ''} -> ${task.to}${
+    task.tag ? `#${task.tag}` : ''
+  } · sent ${task.sent}` +
     (task.deadline ? ` · deadline ${task.deadline}` : '') +
     (task.reopens > 0 ? ` · reopened ${task.reopens}x` : '')
   const thread = task.events.length > 0 ? `\n\n${eventLine(task, context.now)}` : ''

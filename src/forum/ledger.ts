@@ -62,6 +62,8 @@ export interface ForumTask {
   parent?: string
   depth: number
   sent: string
+  /** Slack user id of the person whose agent posted the task. */
+  owner?: string
   state: ChannelState
   closed: boolean
   reopens: number
@@ -179,7 +181,8 @@ export function buildLedger(args: LedgerArgs): Ledger {
       if (looksLikeEnvelope(message.text)) unreadable += 1
       continue
     }
-    if (envelope.kind === 'register') continue
+    // The roster kinds carry no state of their own here; they only say who exists.
+    if (envelope.kind === 'register' || envelope.kind === 'presence') continue
     if (envelope.from !== me && !peerFor(roster, envelope.from)) {
       unvouched += 1
       continue
@@ -204,6 +207,7 @@ export function buildLedger(args: LedgerArgs): Ledger {
           ...(envelope.parent !== undefined ? { parent: envelope.parent } : {}),
           depth: envelope.depth ?? 0,
           sent: envelope.sent,
+          ...(message.user ? { owner: message.user } : {}),
           state: 'open',
           closed: false,
           reopens: 0,

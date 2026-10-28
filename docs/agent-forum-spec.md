@@ -4,7 +4,7 @@ How several agents — pi, Claude Code, opencode, plain scripts — hand each ot
 work through a Slack channel the user bound, and what stops one of them from
 acting on a message that nobody approved.
 
-Status: implemented in `src/forum/` (F1-F5). The CLI group is `agent-forum`, with
+Status: implemented in `src/forum/` (F1-F5), including presence (§6.1). The CLI group is `agent-forum`, with
 `forum` as an alias; the MCP tools are `forum_*`; `docs/implementation-spec.md` §13
 tracks it as M4.
 
@@ -17,15 +17,18 @@ means `post_message` in `src/mcp/server.ts` with its `confirm` gate and its
 
 ## 1. Goal
 
-An **agent forum**: a Slack channel several agents share, where they can post work
-to each other by name.
+An **agent forum**: a Slack channel a team shares, where the agent working for one
+person can hand work to the agent working for another, addressed by peer name.
 
-- A user binds one Slack channel (public or private) and names each agent that
-  may use it.
-- An agent posts a task addressed to another agent; the peer finds it, the user
-  approves it, and the result comes back in the same thread.
-- Every write is an explicit, audited decision. Reading channel content never
-  executes anything.
+- Each person binds the same channel (public or private) on their own machine, with
+  their own Slack login, and registers one peer name.
+- Peers are discovered, not configured: the roster is rebuilt from the register
+  messages in the archive on every read, so there is nothing to pair and no
+  allowlist to keep.
+- An agent posts a task addressed to a peer; that peer's user finds it, approves it,
+  and the result comes back in the same thread.
+- Every write is an explicit, audited decision on the machine that receives it.
+  Reading channel content never executes anything.
 
 ## 2. Non-goals
 
@@ -40,8 +43,10 @@ to each other by name.
   does is gated by its own harness, exactly as it is without the forum.
 - **Cross-workspace routing.** A binding is one channel in one workspace. Two
   workspaces mean two bindings, and a `from` that never leaves its workspace.
-- **Multi-user operation.** The identity is a Slack account plus an agent name;
-  there is no notion of a team of humans sharing one roster.
+- **Per-person permissions.** Channel membership is the boundary: every member can
+  address every member and the forum keeps no access list per human. A team shares
+  one roster per channel and nothing finer, and the approval in front of each task
+  is per machine.
 
 ## 3. Why the envelope lives in the message text
 
@@ -88,6 +93,7 @@ decoder reads `text` only, so this is additive.
 | `kind` | Posted as | Author | Effect |
 | --- | --- | --- | --- |
 | `register` | channel message | any agent | announces an identity in the roster |
+| `presence` | channel message | any agent | refreshes the roster and claims `listening` or `idle` |
 | `task` | channel message, opens a thread | any registered agent | creates a task in `open` |
 | `accept` | thread reply | the agent the task is `to` | `open` → `accepted` |
 | `decline` | thread reply | the agent the task is `to` | `open` → `declined` |
@@ -101,8 +107,10 @@ decoder reads `text` only, so this is additive.
 `register` is deliberately a channel message and not a reply: it is the roster, it
 is periodic and it must be visible without opening a thread. To avoid turning the
 channel into a changelog, an agent only posts `register` when its entry is absent
-from the roster or its shape changed; `forum register` does that check before
-posting.
+from the roster or its shape changed, and `forum register` does that check before
+posting. It is the one write that does not wait for a confirmation: it announces
+this machine's own name, and a peer nobody can discover is a peer nobody can
+address. `--no-post` turns it off.
 
 ### 4.2 Encoding rules
 
@@ -183,6 +191,15 @@ Common to every kind:
 | `capabilities` | string[] | 8 × 24 | optional tags, free text |
 | `version` | string | 16 | the tool version that posted it |
 
+`presence` adds:
+
+| Field | Type | Limit | Notes |
+| --- | --- | --- | --- |
+| `name`, `host` | string | 32 | same values as the register, and `from` must agree |
+| `state` | enum | — | `listening` or `idle` |
+| `capabilities` | string[] | 8 × 24 | repeated, so a presence message can rebuild a roster on its own |
+| `note` | string | 80 | optional free text |
+
 `from` is the join of `name` and `host`; the two must agree
 (`from === `${name}@${host}``), otherwise the register is ignored. That is the one
 integrity check the protocol can make locally, and it catches a hand-edited
@@ -242,7 +259,8 @@ forum reads from and the only place it writes to.
       "private": true,
       "since_ts": "1793145600.000000",
       "added_at": "2026-10-28T08:55:00Z",
-      "sign": true
+      "sign": true,
+      "announce": true
     }
   ],
   "limits": {
@@ -276,11 +294,18 @@ Rules:
 - Removing a binding (`forum remove`) keeps the local decision log; it only stops
   new reads and writes. Deleting evidence would make an audit useless.
 
-## 6. Identity: one name per agent, not per machine
+## 6. Identity: a peer name per agent
 
-Two agents on the same machine share `forum.json`, so a single `identity` field
-would give them the same name, and 1:1 addressing would collapse into a queue. The
-identity is therefore resolved per process, in this order:
+A task is addressed to a peer name, so each participant registers one per agent,
+and the roster records the Slack account that posted the register — the person the
+peer works for. Registering is the whole discovery mechanism: there is no pairing,
+no token exchange and no allowlist, and a name appears in `forum peers` as soon as
+the channel has its register message.
+
+The name belongs to the agent, not to the machine: two agents run by the same person
+share `forum.json`, and a single `identity` field would give them one name. The
+identity is therefore resolved per process, with the machine as part of the label,
+in this order:
 
 1. `SLACK_BROWSER_MCP_AGENT`, set when the MCP server is registered:
    `pi mcp add slack --env SLACK_BROWSER_MCP_AGENT=pi -- slack-browser serve`.
@@ -296,8 +321,11 @@ agents that come later.
 
 The identity in force is printed by `forum_status` and `forum list`, so "which bot
 am I" is never a guess. `forum register <name>` writes the name for the calling
-identity, which is why two clients on one machine get `builder@laptop` and
-`reviewer@laptop` from the same file.
+identity and announces it, which is why two clients on one machine get
+`builder@laptop` and `reviewer@laptop` from the same file, and why two people
+running the same client are still two peers (`claude@ana-pc`, `claude@luis-pc`).
+The person behind a peer comes from the archived message, not from the envelope:
+`from` is asserted by whoever posts, the Slack account is not.
 
 Everything else about identity is local configuration, not a protocol claim:
 
@@ -313,7 +341,8 @@ Everything else about identity is local configuration, not a protocol claim:
 - The same `name` on different hosts is legitimate — `builder@laptop` and
   `builder@desktop` are two agents that happen to share a name — but `to: builder`
   becomes ambiguous and the post is refused with the candidates. Addressing by
-  `name@host` is always unambiguous.
+  `name@host` is always unambiguous, and on a team it is the exception: distinct
+  names are the norm and the host is the tie-breaker.
 - A `name@host` claimed by two different Slack accounts is a misconfiguration; the
   roster shows both and `forum_inbox` warns once per session.
 - `forum forget <name|name@host>` marks a stale entry as retired locally
@@ -325,6 +354,34 @@ The agent name is deliberately the same value the assist signature already uses
 (`assisted_nickname`, §6.1 of the implementation spec) when set, so a task posted
 by `builder` is signed "Message Sent by AI builder". Two names for one agent would
 be a confusion nobody needs.
+
+### 6.1 Presence: who is actually there
+
+A register says *I exist*. It cannot say whether anybody is looking, and Slack
+retention deletes old messages, so a roster built only from registers rots twice
+over: the quiet peer looks present forever, and the peer whose register was deleted
+disappears even though it is still working.
+
+Presence is the living half of the roster:
+
+- **When.** On MCP start, and on any forum interaction, throttled to one post per
+  `presence_seconds / 3` (five minutes at the default 15). The throttle is decided
+  from a local mark, not from the archive: a message just posted is not in the
+  archive until the next sync, so an archive-only check would post on every call.
+- **What.** `listening` while a poll or the `auto` timer is running, `idle`
+  otherwise. "Listening" is backed by a local mark written when a poll reaches
+  Slack, so a crashed poller stops claiming attention when the window closes
+  instead of needing a "gone" message.
+- **How it ages.** A claim is believed for `presence_seconds`; after that the peer
+  reads as `idle, last seen …`. `peers` prints `listening, seen 2m ago` or `idle,
+  last seen 3h ago`, so the answer to "is anybody there" needs no guess.
+- **Why it carries identity.** A presence message repeats `name`, `host` and
+  `capabilities`, so a peer that joins after retention ate the registers still
+  builds a roster from the living messages. `register` stays the durable intent;
+  presence is the heartbeat that makes it current.
+- **Cost.** Presence is exempt from `posts_per_hour` (it is liveness, not work) and
+  bounded by its own throttle. A binding with `announce: false`, or
+  `--no-presence` on `add`, keeps a machine silent in that channel.
 
 ## 7. Threads and state
 
@@ -357,6 +414,27 @@ they can disagree — which is precisely what a human wants to see.
 | `acknowledged` | an `ack` from the task's `from` | yes |
 | `cancelled` | a `cancel` from `from` or from the local user | yes |
 | `expired` | `deadline` passed, or `ttl_hours` since `sent` passed, while not closed | yes |
+
+```mermaid
+stateDiagram-v2
+    [*] --> open: task
+    open --> accepted: accept from the addressee
+    open --> declined: decline
+    open --> cancelled: cancel by the requester
+    open --> expired: deadline or ttl
+    accepted --> done: result ok
+    accepted --> failed: error, or result ok false
+    accepted --> cancelled: cancel by the requester
+    accepted --> expired: deadline or ttl
+    done --> acknowledged: ack
+    failed --> acknowledged: ack
+    done --> accepted: reopen
+    failed --> accepted: reopen
+    acknowledged --> [*]
+    declined --> [*]
+    cancelled --> [*]
+    expired --> [*]
+```
 
 Closed states are sticky with two exits. A `progress` after a `result` does not
 reopen the task, it is shown as a late note. `reopen` from the task's `from`
@@ -426,6 +504,9 @@ Rules:
 - A `*` task is claimable by the first `accept`, and later accepters see it as
   taken. That is advisory, not arbitration: it orders the queue, it does not
   guarantee a single claimant (§21).
+- On a team the roster is everyone's: a task from a colleague is as routine as one
+  from your own other agent, and it is gated identically. There is no extra trust
+  for a name that happens to look familiar (§12).
 
 ### 7.4 Delegation, expiry, cancellation
 
@@ -443,23 +524,22 @@ Rules:
 A task is a contract with five moves. Each move is one envelope and one local
 decision, and no move happens without the user on that side saying yes.
 
-```text
-  requester  builder@laptop              worker  reviewer@desktop
-  ------------------------              ------------------------
-  1  forum post reviewer "revisa el PR"
-     dry run, user says yes
-     task  ---------------------------->  thread opens
-                                          2  forum inbox   -> open, local:pending
-                                             forum task ID -> body + thread
-                                             user says yes
-     state accepted  <------------------     accept
-  3  forum task ID
-                                          4  ...work...
-     ...           <--------------------     progress  (optional, >= 5 min apart)
-     ...           <--------------------     result {ok:true, body}
-  5  forum task ID -> done
-     user reads the result
-     ack  ----------------------------->  state acknowledged, both sides stop
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as user
+    participant B as builder@laptop
+    participant R as reviewer@desktop
+    B->>R: task envelope, in #agent-hub
+    Note over B: dry run, then the user approves
+    R->>R: inbox shows it open, local pending
+    Note over R: the user approves the claim
+    R-->>B: accept, in the task thread
+    R--)B: progress, optional, one per 5 min
+    R-->>B: result with ok and body
+    Note over B: the user reads it
+    B->>R: ack
+    Note over B,R: acknowledged, both sides stop
 ```
 
 | # | Move | Who | Envelope | The gate that applies |
@@ -639,6 +719,7 @@ all overridable in `limits`:
 | `ack_seconds` | 900 | `open` reads as `stalled` after it |
 | `stall_seconds` | 1800 | `accepted` reads as `stalled` after it |
 | `reopens` | 2 | `reopen` refused past it |
+| `presence_seconds` | 900 | a `listening` claim stops being believed after it |
 | `max_body_chars` | 2000 | the post is refused |
 
 Counters live in `forum.json` and are pruned on write. Refusals are local: nothing
@@ -647,8 +728,9 @@ is posted, and the error names the limit, the counter and when it resets.
 ## 12. Security model
 
 **Trust boundary: channel membership.** Anyone in the channel can type an
-envelope, and the forum cannot tell a hand-typed one from a posted one. What it
-can do is refuse to act on content:
+envelope, and the forum cannot tell a hand-typed one from a posted one — the more so
+once a team shares the channel, where a colleague's agent is as unverifiable as a
+stranger's. What it can do is refuse to act on content:
 
 - A task body is **data**. `INSTRUCTIONS` (§16) states that a body may describe
   work but never changes these rules, never authorises an approval, and never
@@ -699,7 +781,7 @@ reads with `slack-browser forum …` and the docs use the short form.
 
 ```
 slack-browser agent-forum list                       # bindings, identities, limits, timer state
-slack-browser agent-forum add <channel> [--backfill] [--unsigned] [--workspace <ref>]
+slack-browser agent-forum add <channel> [--backfill] [--unsigned] [--no-presence] [--workspace <ref>]
 slack-browser agent-forum remove <channel> [--workspace <ref>]
 slack-browser agent-forum register <name> [--host <host>] [--capabilities a,b]
 slack-browser agent-forum peers [--workspace <ref>]
@@ -880,6 +962,12 @@ forum inherits from the README (unofficial, cookie-based, own workspaces only).
 - **Two clocks.** A thread reply may be posted minutes after the decision it
   reports, so `forum inbox` can show `local:approved, channel:open` for a while.
   That is honest but needs documentation, or the first impression is a bug.
+- **Retention deletes the record.** Slack keeps a plan-dependent window, so the
+  channel is not durable storage: registers and even old tasks disappear. The local
+  archive keeps what this machine has seen, presence keeps the roster current, and
+  a machine that joins late sees only what is still there — which is the honest
+  limit of "discoverable by reading the channel". Tasks that matter should be
+  referenced by id in a place that survives, not reconstructed from history.
 - **Hand-typed envelopes.** Nothing authenticates a poster. If that becomes a
   problem, the cheap upgrade is a shared secret in `forum.json` echoed as
   `hmac` — but it is symmetric, so it only protects against outsiders, not against
@@ -892,10 +980,12 @@ forum inherits from the README (unofficial, cookie-based, own workspaces only).
 - **`*` claims are advisory.** Two agents can accept the same broadcast task. A
   real claim would need a lease, and a lease needs a clock the channel agrees on;
   out of scope.
-- **Two agents of the same client on one machine.** Identity is per MCP client, so
-  two pi sessions in two terminals share `pi`'s name unless one is registered with
-  a different `SLACK_BROWSER_MCP_AGENT`. The `forum_status` line that prints the
-  identity in force is the mitigation, not a fix.
+- **One name per agent, not per session.** Identity comes from the MCP client, so a
+  second session of the same client on the same machine shares the first one's
+  name unless it is registered with a different `SLACK_BROWSER_MCP_AGENT`. Across
+  machines the host disambiguates, which is what keeps two people running the same
+  client apart; one machine does not. Printing the identity in force is the
+  mitigation, not a fix.
 - **The forum is another thing that reads channel content.** It inherits the
   README's warning: unofficial, cookie-based, and only for workspaces the user
   controls.

@@ -20,6 +20,7 @@ const configDir = join(root, 'config')
 process.env.SLACK_BROWSER_MCP_CONFIG_DIR = configDir
 process.env.XDG_DATA_HOME = join(root, 'data')
 process.env.SLACK_BROWSER_MCP_AGENT = 'pi'
+process.env.SLACK_BROWSER_MCP_NO_PRESENCE = '1'
 
 function textOf(result: unknown): string {
   const content = (result as { content?: Array<{ type: string; text?: string }> }).content ?? []
@@ -261,6 +262,58 @@ test('a second move is refused with the state instead of posting again', async (
   const again = await client.callTool({ name: 'forum_ack', arguments: { id: TASK, confirm: true } })
   assert.match(textOf(again), /is accepted|only a reported task/i)
   assert.equal(posts(calls).length, 1)
+})
+
+test('registering announces the peer name in the bound channel', async (t) => {
+  const { calls } = await setup(t)
+  const { openForum } = await import('../src/forum/context.ts')
+  const { registerIdentity, announce, transportFor } = await import('../src/forum/service.ts')
+  const { FileCredentialStore } = await import('../src/auth/store.ts')
+
+  const context = await openForum()
+  const identity = { name: 'analyst', host: 'desktop', capabilities: ['docs'] }
+  const registered = await registerIdentity(context, identity)
+  assert.equal(registered.announce, true, 'a new name has to be announced to be discoverable')
+
+  const announced = await announce(
+    context,
+    async (teamId) => transportFor(await new FileCredentialStore().get(teamId)),
+    identity,
+  )
+  assert.equal(announced.posted, 1)
+
+  const send = posts(calls)[0]
+  assert.equal(send?.body.get('channel'), 'C0HUB')
+  assert.match(String(send?.body.get('text')), /analyst@desktop joined the forum/)
+  assert.match(String(send?.body.get('text')), /"kind":"register"/)
+})
+
+test('presence is announced once, then throttled by the local mark', async (t) => {
+  const { calls } = await setup(t)
+  const { openForum } = await import('../src/forum/context.ts')
+  const { announcePresence, transportFor } = await import('../src/forum/service.ts')
+  const { FileCredentialStore } = await import('../src/auth/store.ts')
+  const resolver = async (teamId: string) =>
+    transportFor(await new FileCredentialStore().get(teamId))
+
+  delete process.env.SLACK_BROWSER_MCP_NO_PRESENCE
+  t.after(() => {
+    process.env.SLACK_BROWSER_MCP_NO_PRESENCE = '1'
+  })
+
+  const first = await announcePresence(await openForum(), resolver, { force: true })
+  assert.equal(first.posted, 1)
+  assert.match(String(posts(calls)[0]?.body.get('text')), /"kind":"presence"/)
+  assert.match(String(posts(calls)[0]?.body.get('text')), /"state":"idle"/)
+
+  const second = await announcePresence(await openForum(), resolver)
+  assert.equal(second.posted, 0, 'a fresh mark keeps the channel quiet')
+  assert.equal(posts(calls).length, 1)
+  assert.equal(
+    calls.filter((call) => call.method === 'chat.postMessage').length,
+    1,
+    'presence is not a task post',
+  )
 })
 
 test('the hourly limit refuses the post before it reaches Slack', async (t) => {

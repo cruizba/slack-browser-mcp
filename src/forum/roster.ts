@@ -18,7 +18,14 @@ export interface Peer {
   capabilities: string[]
   sent: string
   ts: string
-  account?: string
+  /**
+   * The Slack user that posted the register: the person this agent works for. It
+   * comes from the archived message, not from the envelope, because the envelope
+   * is asserted by whoever posts and this field has to be the account.
+   */
+  owner?: string
+  /** What the peer last claimed about itself; `ts` is when, so a reader can age it. */
+  state?: 'listening' | 'idle'
 }
 
 export function rosterFrom(
@@ -27,12 +34,13 @@ export function rosterFrom(
 ): Peer[] {
   const retired = new Set(ignored)
   const byFrom = new Map<string, Peer>()
-  // The archive hands messages back oldest first, so a later register overwrites.
+  // The archive hands messages back oldest first, so a later announcement wins.
   for (const message of messages) {
     if (message.deleted_at) continue
     const envelope = decode(message.text)
-    if (envelope?.kind !== 'register') continue
+    if (envelope?.kind !== 'register' && envelope?.kind !== 'presence') continue
     if (retired.has(envelope.from)) continue
+    const previous = byFrom.get(envelope.from)
     byFrom.set(envelope.from, {
       from: envelope.from,
       name: envelope.name,
@@ -40,7 +48,14 @@ export function rosterFrom(
       capabilities: envelope.capabilities,
       sent: envelope.sent,
       ts: message.ts,
-      ...(message.user ? { account: message.user } : {}),
+      // A presence message may drop the owner when its account is unnamed; the
+      // person behind the peer does not disappear because one message did.
+      ...(message.user ? { owner: message.user } : previous?.owner ? { owner: previous.owner } : {}),
+      ...(envelope.kind === 'presence'
+        ? { state: envelope.state }
+        : previous?.state
+          ? { state: previous.state }
+          : {}),
     })
   }
   return [...byFrom.values()].sort((left, right) => left.from.localeCompare(right.from))
@@ -52,6 +67,11 @@ export function peerFor(roster: readonly Peer[], from: string): Peer | undefined
 
 export function hostsOf(roster: readonly Peer[], name: string): string[] {
   return roster.filter((peer) => peer.name === name).map((peer) => peer.host)
+}
+
+export function isListening(peer: Peer, presenceSeconds: number, now: Date): boolean {
+  if (peer.state !== 'listening') return false
+  return now.getTime() - Number(peer.ts) * 1000 < presenceSeconds * 1000
 }
 
 export function peerLabel(peer: Peer): string {
