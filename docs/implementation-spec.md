@@ -667,6 +667,19 @@ Manual checklist for the login path (cannot be automated without a real account)
 - [ ] Skill with the operational habits: which channels matter, how to summarise
       a thread, when not to post
 
+**M4 — agent relay (designed, not built)**
+
+Design of record: [relay-spec.md](relay-spec.md). Agents hand each other work
+through a channel the user bound by hand, with every task approved locally and
+every write going through the same `confirm` gate as `post_message`.
+
+- [ ] R1 — envelope, ids, bindings, roster, ledger and inbox; reads only
+- [ ] R2 — `relay post|accept|decline|result|cancel` plus the MCP tools, the
+      audit entry and the limits
+- [ ] R3 — targeted sync of bound channels, `relay watch`, `relay poll`
+- [ ] R4 — opt-in `slack-browser-relay.timer` through `relay auto on`
+- [ ] R5 — slash command, instruction addendum, reference section, warning
+
 ## 14. Risks and open questions
 
 - **Private API.** `xoxc` + `d` is undocumented; Slack can rotate or restrict it.
