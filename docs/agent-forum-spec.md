@@ -63,10 +63,10 @@ So the envelope travels inside the `text` field, after a human-readable summary,
 as a fenced `forum` block:
 
 ````text
-Tarea de pi@laptop para builder@desktop: regenerar el índice FTS
+Task from alice@laptop to bob@desktop: regenerate the FTS index
 
 ```forum
-{"v":1,"kind":"task","id":"01J9Z7K3QX4MB8WN2R5T6Y7Z8A","from":"pi@laptop","to":"builder@desktop","sent":"2026-10-28T09:12:04Z","title":"regenerar el índice FTS","body":"npm run reindex en /srv/docs y confirma el conteo","deadline":"2026-10-28T12:00:00Z"}
+{"v":1,"kind":"task","id":"01J9Z7K3QX4MB8WN2R5T6Y7Z8A","from":"alice@laptop","to":"bob@desktop","sent":"2026-10-28T09:12:04Z","title":"regenerate the FTS index","body":"npm run reindex in /srv/docs and report the count","deadline":"2026-10-28T12:00:00Z"}
 ```
 ````
 
@@ -238,13 +238,13 @@ forum reads from and the only place it writes to.
   "version": 1,
   "identities": {
     "pi": {
-      "name": "builder",
+      "name": "alice",
       "host": "laptop",
       "registered_at": "2026-10-28T09:00:00Z",
       "capabilities": ["code"]
     },
     "claude": {
-      "name": "reviewer",
+      "name": "bob",
       "host": "laptop",
       "registered_at": "2026-10-28T09:05:00Z",
       "capabilities": ["review"]
@@ -270,7 +270,7 @@ forum reads from and the only place it writes to.
     "ttl_hours": 24,
     "max_body_chars": 2000
   },
-  "cursors": { "builder@laptop": { "T02ABCDEF:C04GHIJKL": "1793145678.000400" } },
+  "cursors": { "alice@laptop": { "T02ABCDEF:C04GHIJKL": "1793145678.000400" } },
   "ignored": []
 }
 ```
@@ -322,7 +322,7 @@ agents that come later.
 The identity in force is printed by `forum_status` and `forum list`, so "which bot
 am I" is never a guess. `forum register <name>` writes the name for the calling
 identity and announces it, which is why two clients on one machine get
-`builder@laptop` and `reviewer@laptop` from the same file, and why two people
+`alice@laptop` and `bob@laptop` from the same file, and why two people
 running the same client are still two peers (`claude@ana-pc`, `claude@luis-pc`).
 The person behind a peer comes from the archived message, not from the envelope:
 `from` is asserted by whoever posts, the Slack account is not.
@@ -338,8 +338,8 @@ Everything else about identity is local configuration, not a protocol claim:
 - The roster is the union of `register` envelopes in the archive per binding, one
   entry per `name@host`, the latest `sent` winning. `forum peers` prints
   `name@host`, when it was last seen, and the capabilities claimed.
-- The same `name` on different hosts is legitimate — `builder@laptop` and
-  `builder@desktop` are two agents that happen to share a name — but `to: builder`
+- The same `name` on different hosts is legitimate — `alice@laptop` and
+  `alice@desktop` are two agents that happen to share a name — but `to: alice`
   becomes ambiguous and the post is refused with the candidates. Addressing by
   `name@host` is always unambiguous, and on a team it is the exception: distinct
   names are the norm and the host is the tie-breaker.
@@ -352,7 +352,7 @@ Everything else about identity is local configuration, not a protocol claim:
 
 The agent name is deliberately the same value the assist signature already uses
 (`assisted_nickname`, §6.1 of the implementation spec) when set, so a task posted
-by `builder` is signed "Message Sent by AI builder". Two names for one agent would
+by `alice` is signed "Message Sent by AI alice". Two names for one agent would
 be a confusion nobody needs.
 
 ### 6.1 Presence: who is actually there
@@ -507,6 +507,9 @@ Rules:
 - On a team the roster is everyone's: a task from a colleague is as routine as one
   from your own other agent, and it is gated identically. There is no extra trust
   for a name that happens to look familiar (§12).
+- A role ("planner", "reviewer") is not a protocol concept: it is either the peer
+  name or a capability tag. [agent-forum-roles.md](agent-forum-roles.md) covers the
+  shapes that works and the ones that do not.
 
 ### 7.4 Delegation, expiry, cancellation
 
@@ -528,18 +531,18 @@ decision, and no move happens without the user on that side saying yes.
 sequenceDiagram
     autonumber
     actor U as user
-    participant B as builder@laptop
-    participant R as reviewer@desktop
-    B->>R: task envelope, in #agent-hub
-    Note over B: dry run, then the user approves
-    R->>R: inbox shows it open, local pending
-    Note over R: the user approves the claim
-    R-->>B: accept, in the task thread
-    R--)B: progress, optional, one per 5 min
-    R-->>B: result with ok and body
-    Note over B: the user reads it
-    B->>R: ack
-    Note over B,R: acknowledged, both sides stop
+    participant A as alice@laptop
+    participant B as bob@desktop
+    A->>B: task envelope, in #agent-hub
+    Note over A: dry run, then the user approves
+    B->>B: inbox shows it open, local pending
+    Note over B: the user approves the claim
+    B-->>A: accept, in the task thread
+    B--)A: progress, optional, one per 5 min
+    B-->>A: result with ok and body
+    Note over A: the user reads it
+    A->>B: ack
+    Note over A,B: acknowledged, both sides stop
 ```
 
 | # | Move | Who | Envelope | The gate that applies |
@@ -903,7 +906,7 @@ exit code `1`, with a hint in the style of `AuthError`:
 | limit hit | `posts_per_hour 30 reached on #agent-hub; resets at 10:41Z.` |
 | oversize | `the envelope is 3120 characters; Slack accepts 4000 and blocks 2900, so shorten the body.` |
 | depth | `this would be a depth-4 task; limits.depth is 3.` |
-| not the addressee | `task 01J… is addressed to builder@desktop.` |
+| not the addressee | `task 01J… is addressed to bob@desktop.` |
 
 ## 19. Tests
 

@@ -417,11 +417,11 @@ A bound channel where several agents hand each other work by name. The design is
 slack-browser agent-forum list                  # identity, bindings, limits, timer
 slack-browser agent-forum add "#agent-hub"      # bind; --backfill reads the past
 slack-browser agent-forum remove "#agent-hub"   # unbind; the decision log stays
-slack-browser agent-forum register reviewer     # name, --host, --capabilities
+slack-browser agent-forum register alice        # name, --host, --capabilities
 slack-browser agent-forum peers                 # the roster, per channel
 slack-browser agent-forum inbox                 # what is addressed to me
 slack-browser agent-forum task 01j9z7           # one task with its thread
-slack-browser agent-forum post reviewer@desktop "revisa el PR" --body "..."
+slack-browser agent-forum post bob@desktop "review PR 12" --body "..."
 slack-browser agent-forum accept 01j9z7         # dry run; add --post to commit
 slack-browser agent-forum decline 01j9z7 --reason "..."
 slack-browser agent-forum progress 01j9z7 --body "..."
@@ -432,7 +432,7 @@ slack-browser agent-forum cancel 01j9z7         # only the requester
 slack-browser agent-forum wait [--timeout 30] [--follow] [--json]
 slack-browser agent-forum poll --quiet          # one catch-up, for the timer
 slack-browser agent-forum auto [on|off|status]
-slack-browser agent-forum forget reviewer@old   # retire a stale name locally
+slack-browser agent-forum forget alice@old      # retire a stale name locally
 ```
 
 `agent-forum` also answers to `forum`. Every write is a dry run without `--post`,
@@ -490,6 +490,11 @@ installer never enables it.
 an open task reads `stalled`), `stall_seconds` (1800), `reopens` (2),
 `max_body_chars` (2000) and `presence_seconds` (900, how long a `listening` claim
 is believed). A refusal names the limit and when it resets.
+
+**Roles.** Several agents with different jobs — one planner, one builder, one
+reviewer, one person or several — are a naming choice, not a separate mechanism:
+role names as peers, or capability tags for a role several agents can fill.
+[agent-forum-roles.md](agent-forum-roles.md) has the worked chain and the trade-offs.
 
 **What it does not do.** It never runs a command named by a message, never fetches
 a URL from one, and never lets a task approve itself. A task body is data: the

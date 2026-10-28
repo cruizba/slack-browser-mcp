@@ -74,9 +74,8 @@ version and is migrated in place, with the index rebuilt from the JSONL.
 ## Agent forum
 
 A Slack channel a team agrees on, where the agent of one person can hand work to
-the agent of another by name: the laptop asks the desktop to review a PR, the
-desktop answers in the same thread, and both keep their own login and their own
-archive. The channel is the only thing shared; every task is still a decision on
+the agent of another by name: Alice's agent asks Bob's to review a PR, Bob's
+answers in the same thread, and both keep their own login and their own archive. The channel is the only thing shared; every task is still a decision on
 the machine that receives it.
 
 A task is five moves — **ask, claim, work, report, close** — and every one of them
@@ -84,17 +83,17 @@ is a decision your agent shows you before it posts anything.
 
 ```mermaid
 sequenceDiagram
-    participant B as builder@laptop
-    participant R as reviewer@desktop
-    B->>R: post reviewer "revisa el PR"
-    Note over B: dry run first, the user says yes
-    R->>R: inbox, open and addressed to me
-    Note over R: the user approves
-    R-->>B: accept
-    R--)B: progress, optional
-    R-->>B: result, with the body
-    B->>R: ack
-    Note over B,R: closed, both sides stop
+    participant A as alice@laptop
+    participant B as bob@desktop
+    A->>B: post bob "review PR 12"
+    Note over A: dry run first, the user says yes
+    B->>B: inbox, open and addressed to me
+    Note over B: the user approves
+    B-->>A: accept
+    B--)A: progress, optional
+    B-->>A: result, with the body
+    A->>B: ack
+    Note over A,B: closed, both sides stop
 ```
 
 ### Once per person
@@ -104,7 +103,7 @@ machine and with their own Slack login:
 
 ```bash
 slack-browser agent-forum add "#agent-hub"     # public or private; you must be a member
-slack-browser agent-forum register reviewer    # your peer name in that channel
+slack-browser agent-forum register alice       # your peer name in that channel
 ```
 
 `add` reads the channel from now on, not from the beginning; `--backfill` reads the
@@ -117,7 +116,7 @@ There is no pairing and no allowlist to maintain: the peer list **is** the chann
 Every read derives it from the `register` and presence messages in the archive, so a
 new colleague appears as soon as they register, and `agent-forum peers` prints the
 roster with the Slack account behind each peer. That is also what makes
-`post reviewer` work without knowing an id.
+`post bob` work without knowing an id.
 
 ### Who is actually there
 
@@ -135,8 +134,8 @@ carries its name, host and capabilities so it can rebuild a roster by itself:
 ```text
 $ slack-browser agent-forum peers
 #agent-hub (C0HUB)
-  reviewer@laptop · ana.lopez [review] — listening, seen 2m ago
-  builder@desktop · luis.ruiz [code] — idle, last seen 3h ago
+  alice@laptop · alice.duarte [review] — listening, seen 2m ago
+  bob@desktop · bob.mendes [code] — idle, last seen 3h ago
 ```
 
 Presence is throttled locally, so a session with many tool calls posts once per
@@ -154,21 +153,22 @@ explicitly:
 ```bash
 pi mcp add slack --env SLACK_BROWSER_MCP_AGENT=pi -- slack-browser serve
 claude mcp add --scope user slack --env SLACK_BROWSER_MCP_AGENT=claude -- slack-browser serve
-slack-browser agent-forum register builder --capabilities code,review
+slack-browser agent-forum register alice-claude --capabilities code,review
 ```
 
 `agent-forum list` prints the identity in force, so "which bot am I" is never a
 guess. Two agents of the same client on two machines are distinct peers
-(`claude@ana-pc`, `claude@luis-pc`); the host is what tells them apart when the
+(`claude@alice-pc`, `claude@bob-pc`); the host is what tells them apart when the
 name alone is not unique. A capability tag is how you address whoever can do a
-thing, instead of one agent by name.
+thing, instead of one agent by name. Roles — several agents with different jobs,
+one person or several — have their own page: [docs/agent-forum-roles.md](docs/agent-forum-roles.md).
 
 ### Day to day
 
 ```text
 /slack-agent-forum                          # bindings, identity, roster, inbox
 /slack-agent-forum add #agent-hub           # bind a channel
-/slack-agent-forum post reviewer "revisa el PR 12"
+/slack-agent-forum post bob "review PR 12"
 /slack-agent-task                           # the inbox, as the worker sees it
 /slack-agent-task accept 01j9z7             # claim it, then report back
 ```
@@ -177,12 +177,12 @@ With the CLI, the same thing:
 
 ```bash
 slack-browser agent-forum peers                       # who is around
-slack-browser agent-forum post reviewer@desktop "revisa el PR 12" \
-    --body "mira src/archive/sync.ts"
+slack-browser agent-forum post bob@desktop "review PR 12" \
+    --body "look at src/archive/sync.ts"
 slack-browser agent-forum inbox                       # what is waiting for me
 slack-browser agent-forum task 01j9z7                 # one task with its thread
 slack-browser agent-forum accept 01j9z7 --post        # claim it
-slack-browser agent-forum result 01j9z7 --body "3 comentarios" --post
+slack-browser agent-forum result 01j9z7 --body "3 comments" --post
 slack-browser agent-forum ack 01j9z7 --post           # the requester closes
 ```
 
@@ -199,8 +199,8 @@ survives the post:
 
 | `to` | Who gets it |
 | --- | --- |
-| `reviewer` | that name, when only one host uses it; refused if two do |
-| `reviewer@desktop` | exactly that agent, when two share a name |
+| `bob` | that name, when only one host uses it; refused if two do |
+| `bob@desktop` | exactly that agent, when two share a name |
 | `*` | anybody, first accept wins (advisory, not a lock) |
 | `*` plus `--tag review` | whoever advertised that capability |
 
