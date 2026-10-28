@@ -29,14 +29,28 @@ export const MAX_NAME_CHARS = 32
 export const MAX_TAG_CHARS = 24
 export const MAX_DEADLINE_CHARS = 24
 
-const FENCE = /(?:^|\n)[ \t]*```forum[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```/
+/**
+ * Slack flattens `text` to a single line when the message carries `blocks`: the
+ * stored fallback joins every section with spaces, so a line-anchored fence stops
+ * matching on the very messages this tool posts. The fence is therefore found by
+ * its delimiters and its JSON braces, not by its newlines.
+ */
+const FENCE = /```forum[ \t\r\n]*(\{[\s\S]*?\})[ \t\r\n]*```/
 
 const idSchema = z.string().length(ID_LENGTH).refine(isId, 'not a forum id')
 
 const who = z.string().trim().min(1).max(MAX_FROM_CHARS)
 const when = z.string().trim().min(10).max(MAX_DEADLINE_CHARS)
 const tag = z.string().trim().min(1).max(MAX_TAG_CHARS)
-const body = z.string().trim().min(1).max(MAX_BODY_CHARS)
+
+/** A field carrying a fence would end the envelope early and unparse the message. */
+function fenceFree<T extends z.ZodType<string>>(schema: T) {
+  return schema.refine((value) => !value.includes('```'), {
+    message: 'no triple backticks inside a field: they end the envelope fence',
+  })
+}
+
+const body = fenceFree(z.string().trim().min(1).max(MAX_BODY_CHARS))
 
 const common = {
   v: z.literal(1),
@@ -68,7 +82,7 @@ const presenceSchema = z
     host: z.string().trim().min(1).max(MAX_NAME_CHARS),
     state: z.enum(['listening', 'idle']),
     capabilities: z.array(tag).max(8).default([]),
-    note: z.string().trim().max(80).optional(),
+    note: fenceFree(z.string().trim().max(80)).optional(),
   })
   .refine((value) => value.from === `${value.name}@${value.host}`, {
     message: 'from must be name@host',
@@ -80,7 +94,7 @@ const taskSchema = z
     ...common,
     kind: z.literal('task'),
     to: z.string().trim().min(1).max(MAX_TARGET_CHARS),
-    title: z.string().trim().min(1).max(MAX_TITLE_CHARS),
+    title: fenceFree(z.string().trim().min(1).max(MAX_TITLE_CHARS)),
     body,
     tag: tag.optional(),
     deadline: when.optional(),
@@ -162,9 +176,13 @@ export function render(summary: string, envelope: Envelope): string {
   return `${summary}\n\n\`\`\`${FORUM_FENCE}\n${encode(envelope)}\n\`\`\``
 }
 
-/** True when the text carries a fence at all, readable or not; used to count failures. */
+/**
+ * True when the text carries the marker at all, readable or not: this is what counts
+ * "there is an envelope here I could not understand" instead of pretending the
+ * message was prose.
+ */
 export function looksLikeEnvelope(text: string | undefined): boolean {
-  return text !== undefined && FENCE.test(text)
+  return text !== undefined && text.includes('```forum')
 }
 
 export function decode(text: string | undefined): Envelope | undefined {

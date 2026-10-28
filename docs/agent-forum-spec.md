@@ -122,6 +122,11 @@ address. `--no-post` turns it off.
   ordering that matters for the ledger is the thread's.
 - Unknown keys are ignored by the decoder and preserved nowhere: the envelope is
   re-derived from the archive on every read.
+- **Newlines do not survive.** Slack rewrites `text` to a single line when the
+  message carries `blocks`, joining every section with spaces: a line-anchored
+  fence stops matching on the very messages this tool posts. The decoder therefore
+  finds the fence by its delimiters and its braces, and the fields refuse a literal
+  triple backtick so a body cannot end the envelope early.
 
 ### 4.3 Parsing and forward compatibility
 

@@ -107,6 +107,27 @@ test('prose, malformed JSON and unknown versions are not envelopes', () => {
   assert.equal(looksLikeEnvelope('no fence here'), false)
 })
 
+test('a message Slack has flattened to one line still decodes', () => {
+  // What chat.postMessage stores when the message carries blocks: every newline
+  // becomes a space, so a line-anchored fence would never match.
+  const envelope = task()
+  const flattened = render(summaryFor(envelope), envelope)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(' ')
+  assert.equal(flattened.includes('\n'), false)
+  assert.deepEqual(decode(flattened), envelope)
+})
+
+test('a field cannot smuggle a fence', () => {
+  assert.throws(
+    () => encode(task({ body: 'texto ``` forum \n{"v":1}' } as Partial<Envelope>)),
+    /triple backticks/,
+  )
+  assert.throws(() => encode(task({ title: 'a ```b' } as Partial<Envelope>)), /triple backticks/)
+})
+
 test('a fence in the middle of prose is found, and the first one wins', () => {
   const first = task()
   const second = task({ title: 'second' } as Partial<Envelope>)
