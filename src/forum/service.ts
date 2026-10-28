@@ -59,6 +59,22 @@ export async function transportFor(account: SlackAccount): Promise<Transport> {
 /** Resolved per channel, because a task's channel decides which workspace answers. */
 export type TransportResolver = (teamId: string) => Promise<Transport>
 
+/**
+ * A write decides against the thread, so it has to look at it first: the other side
+ * may have accepted, reported or reopened since this machine last synced. The
+ * caller supplies the catch-up it already knows how to run; without one the service
+ * answers from the archive alone, which is what the tests want.
+ */
+export interface RefreshHook {
+  refresh?: () => Promise<unknown>
+}
+
+async function freshen(context: ForumContext, hook?: RefreshHook): Promise<ForumContext> {
+  if (!hook?.refresh) return context
+  await hook.refresh()
+  return reload(context)
+}
+
 export type WriteResult =
   | {
       kind: 'preview'
@@ -345,7 +361,9 @@ export async function postTask(
   context: ForumContext,
   resolveTransport: TransportResolver,
   args: PostTaskArgs,
+  hook?: RefreshHook,
 ): Promise<WriteResult> {
+  context = await freshen(context, hook)
   const identity = requireIdentity(context)
   const me = labelOf(identity)
   const views = await loadViews(context)
@@ -440,7 +458,9 @@ export async function replyTo(
   context: ForumContext,
   resolveTransport: TransportResolver,
   args: ReplyArgs,
+  hook?: RefreshHook,
 ): Promise<WriteResult> {
+  context = await freshen(context, hook)
   const identity = requireIdentity(context)
   const me = labelOf(identity)
   const views = await loadViews(context)

@@ -671,7 +671,10 @@ visible in `forum task`.
 Three modes, one of which is on by default.
 
 **`on-demand` (default).** Nothing runs in the background. `forum_inbox` performs
-a *targeted* catch-up of the bound channels before answering: one
+a *targeted* catch-up of the bound channels before answering, and so does every
+write: a reply is judged against the thread as it is now, not as this machine last
+saw it, because the other side may have claimed or reopened it since. A preview
+refreshes too, so what it shows is the state the send would act on. one
 `conversations.history` call per channel with `oldest=<cursor>`, plus
 `conversations.replies` for parents with new replies. It takes the existing
 `SyncLock`; if a full sync holds it, the read proceeds with the archive as it is

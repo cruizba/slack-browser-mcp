@@ -493,8 +493,8 @@ both say so first.
 `SLACK_BROWSER_MCP_AGENT` first, then the MCP client name, then `default_identity`
 from `forum.json`. A person running two agents registers each one.
 
-**Freshness.** By default nothing runs in the background; `inbox` and `task`
-refresh the bound channels with a sync restricted to those channels (one
+**Freshness.** By default nothing runs in the background; `inbox`, `task` and every
+write refresh the bound channels with a sync restricted to those channels (one
 `conversations.history` per channel) unless `--offline`. `wait` polls for a bounded
 time and stops as soon as something arrives. `auto on` installs
 `slack-browser-forum.timer` (one poll a minute) and `auto off` removes it; the

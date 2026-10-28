@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +26,19 @@ process.env.SLACK_BROWSER_MCP_NO_PRESENCE = '1'
 function textOf(result: unknown): string {
   const content = (result as { content?: Array<{ type: string; text?: string }> }).content ?? []
   return content.map((part) => part.text ?? '').join('\n')
+}
+
+function archived(): Array<{ ts: string; text?: string; user?: string }> {
+  const file = join(root, 'data', 'slack-browser-mcp', 'archive', 'T0TEST', 'C0HUB.jsonl')
+  if (!existsSync(file)) return []
+  const byTs = new Map<string, { ts: string; text?: string; user?: string }>()
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    if (line.trim() === '') continue
+    const record = JSON.parse(line) as { ts: string; text?: string; user?: string; deleted_at?: string }
+    if (record.deleted_at) continue
+    byTs.set(record.ts, record)
+  }
+  return [...byTs.values()]
 }
 
 function json(body: unknown): Response {
@@ -154,7 +168,19 @@ async function setup(
       return json({ ok: true, channels: [{ id: 'C0HUB', name: 'agent-hub', is_private: true }] })
     }
     if (method === 'conversations.history') {
-      return json({ ok: true, messages: [{ ts: TASK_TS, text: 'x' }] })
+      // A write refreshes before deciding, and the reconcile pass marks as deleted
+      // whatever the channel no longer returns. The archive *is* the channel here:
+      // mirroring it keeps both passes honest without inventing messages.
+      const oldest = Number(body.get('oldest') ?? 0)
+      const messages = archived()
+        .filter((record) => Number(record.ts) > oldest)
+        .sort((left, right) => Number(right.ts) - Number(left.ts))
+        .map((record) => ({
+          ts: record.ts,
+          ...(record.text !== undefined ? { text: record.text } : {}),
+          ...(record.user ? { user: record.user } : {}),
+        }))
+      return json({ ok: true, messages })
     }
     if (method === 'chat.postMessage') {
       return json({

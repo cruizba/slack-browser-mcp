@@ -880,17 +880,22 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       if (!to || !title) throw new Error('agent-forum post needs a destination and a title')
       const body = stringFlag(args, 'body') ?? rest.slice(2).join(' ')
       if (!body) throw new Error('agent-forum post needs a body: pass --body "<text>"')
-      const result = await postTask(context, resolveTransport, {
-        to,
-        title,
-        body,
-        ...(stringFlag(args, 'tag') ? { tag: stringFlag(args, 'tag')! } : {}),
-        ...(stringFlag(args, 'deadline') ? { deadline: stringFlag(args, 'deadline')! } : {}),
-        ...(stringFlag(args, 'parent') ? { parent: stringFlag(args, 'parent')! } : {}),
-        ...(stringFlag(args, 'binding') ? { binding: stringFlag(args, 'binding')! } : {}),
-        confirm,
-        by,
-      })
+      const result = await postTask(
+        context,
+        resolveTransport,
+        {
+          to,
+          title,
+          body,
+          ...(stringFlag(args, 'tag') ? { tag: stringFlag(args, 'tag')! } : {}),
+          ...(stringFlag(args, 'deadline') ? { deadline: stringFlag(args, 'deadline')! } : {}),
+          ...(stringFlag(args, 'parent') ? { parent: stringFlag(args, 'parent')! } : {}),
+          ...(stringFlag(args, 'binding') ? { binding: stringFlag(args, 'binding')! } : {}),
+          confirm,
+          by,
+        },
+        { refresh: () => forumRefresh(context, 10_000) },
+      )
       return printWrite(result)
     }
 
@@ -905,14 +910,19 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       if (!id) throw new Error(`agent-forum ${subcommand} needs a task id`)
       const body = stringFlag(args, 'body') ?? (subcommand === 'progress' || subcommand === 'result' ? rest.slice(1).join(' ') : undefined)
       const ok = subcommand === 'result' ? args.flags.get('fail') !== true : undefined
-      const result = await replyTo(context, resolveTransport, {
-        id,
-        kind: subcommand,
-        ...(body ? { body } : {}),
-        ...(ok === undefined ? {} : { ok }),
-        confirm,
-        by,
-      })
+      const result = await replyTo(
+        context,
+        resolveTransport,
+        {
+          id,
+          kind: subcommand,
+          ...(body ? { body } : {}),
+          ...(ok === undefined ? {} : { ok }),
+          confirm,
+          by,
+        },
+        { refresh: () => forumRefresh(context, 10_000) },
+      )
       return printWrite(result)
     }
 

@@ -1818,17 +1818,22 @@ export function buildServer(): McpServer {
     async ({ to, title, body, tag, deadline, parent, binding, confirm }) => {
       try {
         const context = await openForumFor()
-        const result = await postTask(context, forumTransport, {
-          to,
-          title,
-          body,
-          ...(tag ? { tag } : {}),
-          ...(deadline ? { deadline } : {}),
-          ...(parent ? { parent } : {}),
-          ...(binding ? { binding } : {}),
-          confirm,
-          by: 'agent',
-        })
+        const result = await postTask(
+          context,
+          forumTransport,
+          {
+            to,
+            title,
+            body,
+            ...(tag ? { tag } : {}),
+            ...(deadline ? { deadline } : {}),
+            ...(parent ? { parent } : {}),
+            ...(binding ? { binding } : {}),
+            confirm,
+            by: 'agent',
+          },
+          { refresh: () => refreshForum(context) },
+        )
         return writeResult(result)
       } catch (error) {
         return failure(error)
@@ -1851,14 +1856,19 @@ export function buildServer(): McpServer {
   }) => {
     try {
       const context = await openForumFor()
-      const result = await replyTo(context, forumTransport, {
-        id,
-        kind,
-        ...(body ? { body } : {}),
-        ...(ok === undefined ? {} : { ok }),
-        confirm,
-        by: 'agent',
-      })
+      const result = await replyTo(
+        context,
+        forumTransport,
+        {
+          id,
+          kind,
+          ...(body ? { body } : {}),
+          ...(ok === undefined ? {} : { ok }),
+          confirm,
+          by: 'agent',
+        },
+        { refresh: () => refreshForum(context) },
+      )
       return writeResult(result)
     } catch (error) {
       return failure(error)
