@@ -444,6 +444,13 @@ and the MCP tools take `confirm: true` for the same step.
 more. `cancel` withdraws a task that is still open or accepted. A task past its
 deadline, or older than `limits.ttl_hours`, reads as `expired`.
 
+**No AI header.** Envelopes are posted bare: the header's divider blocks make Slack
+rewrite the message text to a single line, and that text is where the envelope
+lives. The envelope names its sender anyway (`from`, plus a summary line reading
+"alice@laptop asks bob@desktop: …"). `--signed` on `add`, or `sign: true` in
+`forum.json`, puts the header back on one binding at a time; `forum list` shows
+which ones carry it.
+
 **Two axes, on purpose.** `agent-forum task <id>` shows the channel state
 (`open`, `accepted`, `done`, `acknowledged`, …) and the local decision
 (`local:approved`, `local:rejected`, …) separately, because they can disagree:

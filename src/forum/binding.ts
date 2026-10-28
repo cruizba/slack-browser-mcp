@@ -29,7 +29,12 @@ const BindingSchema = z
     private: z.boolean().default(false),
     since_ts: z.string().min(1),
     added_at: z.string().min(1),
-    sign: z.boolean().default(true),
+    /**
+     * The AI-assisted header. Off for the forum: the envelope already names the
+     * sender, and the header's blocks make Slack flatten the message text, which
+     * is where the envelope itself lives.
+     */
+    sign: z.boolean().default(false),
     /** Announce presence here without being asked. Off means read-only for this machine. */
     announce: z.boolean().default(true),
   })

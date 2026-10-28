@@ -64,7 +64,7 @@ Usage:
   slack-browser archive reindex
   slack-browser archive migrate
   slack-browser agent-forum [list]                 # bindings, identity, peers pending
-  slack-browser agent-forum add <channel> [--backfill] [--unsigned] [--no-presence] [--workspace <ref>]
+  slack-browser agent-forum add <channel> [--backfill] [--signed] [--no-presence] [--workspace <ref>]
   slack-browser agent-forum remove <channel>
   slack-browser agent-forum register <name> [--host <h>] [--capabilities a,b] [--no-post]
   slack-browser agent-forum peers
@@ -714,7 +714,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       const { binding, added } = await bindChannel(context, transport, {
         reference,
         backfill: args.flags.get('backfill') === true,
-        unsigned: args.flags.get('unsigned') === true,
+        signed: args.flags.get('signed') === true,
         noPresence: args.flags.get('no-presence') === true,
       })
       console.log(

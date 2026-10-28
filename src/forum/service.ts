@@ -472,7 +472,7 @@ export async function replyTo(
 export interface BindArgs {
   reference: string
   backfill?: boolean
-  unsigned?: boolean
+  signed?: boolean
   noPresence?: boolean
 }
 
@@ -503,7 +503,7 @@ export async function bindChannel(
     private: channel.is_private === true,
     since_ts: since,
     added_at: context.now.toISOString(),
-    sign: args.unsigned !== true,
+    sign: args.signed === true,
     announce: args.noPresence !== true,
   }
   const { added } = await context.forum.bind(binding)

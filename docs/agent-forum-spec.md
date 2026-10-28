@@ -291,9 +291,13 @@ Rules:
   channel does not deliver a month of tasks. `forum add --backfill` opts into
   reading the existing history; it is a separate flag because it is a separate
   decision.
-- `sign: true` posts envelopes through the AI-assisted header, like every other
-  send (§11 of the implementation spec). Turning it off per binding is allowed and
-  visible in `forum list`.
+- Envelopes are posted **without** the AI-assisted header by default. The header
+  exists so a human in a normal channel knows a message was written by an agent;
+  in the forum every message is an envelope, and its `from` plus the summary line
+  say exactly who is asking whom. The header also costs the thing the protocol
+  runs on: its `blocks` make Slack flatten the message text to one line.
+  `--signed` on `add` (or `sign: true` in `forum.json`) opts back in, and
+  `forum list` shows which bindings do it.
 - One channel may be bound per workspace at most once. `forum add` on an existing
   binding is a no-op that says so.
 - Removing a binding (`forum remove`) keeps the local decision log; it only stops
@@ -789,7 +793,7 @@ reads with `slack-browser forum …` and the docs use the short form.
 
 ```
 slack-browser agent-forum list                       # bindings, identities, limits, timer state
-slack-browser agent-forum add <channel> [--backfill] [--unsigned] [--no-presence] [--workspace <ref>]
+slack-browser agent-forum add <channel> [--backfill] [--signed] [--no-presence] [--workspace <ref>]
 slack-browser agent-forum remove <channel> [--workspace <ref>]
 slack-browser agent-forum register <name> [--host <host>] [--capabilities a,b]
 slack-browser agent-forum peers [--workspace <ref>]

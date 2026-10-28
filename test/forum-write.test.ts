@@ -57,7 +57,7 @@ async function writeForum(limits: Record<string, number> = {}): Promise<void> {
           private: true,
           since_ts: '0',
           added_at: '2026-10-28T09:00:00Z',
-          sign: true,
+          sign: false,
         },
       ],
       limits,
@@ -213,6 +213,12 @@ test('forum_post is a dry run until confirm, then posts once and audits it', asy
   assert.equal(sends.length, 1)
   assert.equal(sends[0]?.body.get('channel'), 'C0HUB')
   assert.match(String(sends[0]?.body.get('text')), /```forum/)
+  assert.equal(
+    sends[0]?.body.get('blocks'),
+    null,
+    'an envelope is not wrapped in the AI block: its blocks flatten the text',
+  )
+  assert.doesNotMatch(String(sends[0]?.body.get('text')), /Message Sent by AI/)
 
   const audit = await readFile(join(root, 'data', 'slack-browser-mcp', 'audit.jsonl'), 'utf8')
   assert.match(audit, /agent-hub/)
