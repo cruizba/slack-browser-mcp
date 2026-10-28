@@ -2,6 +2,29 @@
 
 Slack read and write for pi, Claude Code and opencode, from a normal browser login.
 
+> [!WARNING]
+> **Unofficial, and used at your own risk.** This is not a Slack product and Slack
+> provides no support for it. It drives the private API behind Slack's web client,
+> which Slack may change, rate-limit or block at any time.
+>
+> **Authentication is by browser session cookie.** `slack-browser login` opens Chrome,
+> captures the `xoxc-…` token and the `xoxd-…` `d` cookie of a session that is already
+> signed in, and stores them at `~/.config/slack-browser-mcp/accounts` (`0600`). That
+> pair is not scoped like a bot token: it carries everything your account can do,
+> including reading every private channel you belong to and posting as you. Treat the
+> store like a password and never copy it anywhere else.
+>
+> **Use it only on workspaces you control or are explicitly authorised to automate.**
+> Do not point it at an enterprise or corporate workspace you do not own, and do not
+> use it to get around an administrator's rules on integrations or automation: that
+> can breach your employer's policies and get the account deactivated. If you are an
+> admin in the workspace, a Slack app with a real token is the better option — this
+> tool exists for the cases where you cannot install one. See the caveats in
+> [docs/reference.md](docs/reference.md).
+>
+> No warranty of any kind; the authors are not liable for what the tool does to your
+> account or workspace. Published under the [MIT license](LICENSE).
+
 **Linux only.** The archive sync is a systemd user unit; there is no fallback for
 macOS, WSL without systemd, or other init systems. Needs Node.js 22 or newer and
 Google Chrome.
@@ -9,7 +32,7 @@ Google Chrome.
 ## Install
 
 ```bash
-git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp ~/slack-browser-mcp && ~/slack-browser-mcp/install.sh
+git clone https://github.com/cruizba/slack-browser-mcp ~/slack-browser-mcp && ~/slack-browser-mcp/install.sh
 ```
 
 It pulls `main`, builds the checkout, puts `slack-browser` on your PATH, and then

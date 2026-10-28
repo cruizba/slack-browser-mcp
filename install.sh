@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-REPO_URL="${SLACK_BROWSER_MCP_REPO:-https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp}"
+REPO_URL="${SLACK_BROWSER_MCP_REPO:-https://github.com/cruizba/slack-browser-mcp}"
 BRANCH=main
 DIR="${HOME}/slack-browser-mcp"
 DIR_GIVEN=0

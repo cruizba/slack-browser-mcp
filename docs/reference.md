@@ -45,7 +45,7 @@ on its branch). That re-run is also the update: there is no separate command.
 The README has the one-liner. Step by step, it is:
 
 ```bash
-git clone https://gitea.infra.cruizba.dev/cruizba/slack-browser-mcp
+git clone https://github.com/cruizba/slack-browser-mcp
 cd slack-browser-mcp
 npm install && npm run build
 npm link          # puts `slack-browser` on PATH
@@ -456,6 +456,10 @@ background sync a read may start), `CHROME_PATH` (Chrome binary),
 | `nothing sent; add --send to commit` | Expected: `send` is a dry run by default. |
 
 ## Caveats
+
+The warning at the top of [README.md](../README.md) applies to everything below: this
+is an unofficial tool, it authenticates with a browser session cookie, and it belongs
+only on workspaces you control or are authorised to automate.
 
 `xoxc` + `d` is the private API of Slack's web client, not a documented public
 surface. It works, it is what this tool is built on, and Slack can change it. For
