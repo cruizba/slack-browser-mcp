@@ -14,6 +14,7 @@ import type { SlackAccount } from '../auth/store.ts'
 import { FileSettingsStore } from '../config/settings.ts'
 import { resolveNickname, signingFor, type Signing } from '../config/assist.ts'
 import { ForumError } from '../errors.ts'
+import { toRecord } from '../archive/record.ts'
 import { recordSend } from '../slack/audit.ts'
 import { signedMessage } from '../slack/assist.ts'
 import { SlackClient, type SlackChannel } from '../slack/client.ts'
@@ -174,10 +175,41 @@ export async function deliver(
     message_ts: posted.ts,
     text: signed.text,
   })
+  // The poster's own archive has to know immediately: deriving the state from a copy
+  // that only catches up on the next sync makes "accept, then report" fail with
+  // "still open" in the same session.
+  await rememberOwn(context, binding, posted.ts, signed.text, transport.account.user_id, threadTs)
+
   // Presence is not a post in the sense the hourly budget means: it is capped by
   // its own throttle and must not eat the room a real task needs.
   if (options.count !== false) await context.forum.notePost(bindingKey(binding))
   return { ts: posted.ts, audit }
+}
+
+/**
+ * Files the message this machine just posted. The cursor is left alone on purpose:
+ * moving `newest_ts` here would make the next backfill skip the gap between its own
+ * cursor and this message.
+ */
+async function rememberOwn(
+  context: ForumContext,
+  binding: Binding,
+  ts: string,
+  text: string,
+  user: string | undefined,
+  threadTs: string | undefined,
+): Promise<void> {
+  try {
+    await context.archive.append(binding.workspace, binding.channel, [
+      toRecord(
+        { id: binding.channel, name: binding.name },
+        { ts, text, ...(user ? { user } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) },
+        new Date(),
+      ),
+    ])
+  } catch {
+    // A failed cache write must never fail a send that already reached Slack.
+  }
 }
 
 /** The agent name to sign with: the forum name, not the MCP client key. */

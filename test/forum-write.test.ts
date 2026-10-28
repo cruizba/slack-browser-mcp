@@ -246,6 +246,14 @@ test('forum_accept claims in the task thread and records the agent decision', as
   const send = posts(calls)[0]
   assert.equal(send?.body.get('thread_ts'), TASK_TS, 'the accept belongs in the task thread')
 
+  // The poster's own archive knows at once: `accept` then `result` in the same
+  // session must not come back "still open" for lack of a sync.
+  const after = await client.callTool({
+    name: 'forum_task',
+    arguments: { id: TASK, offline: true },
+  })
+  assert.match(textOf(after), /accepted/, 'the local state has to move without a sync')
+
   const decisions = await readFile(
     join(root, 'data', 'slack-browser-mcp', 'forum', 'T0TEST', 'C0HUB.jsonl'),
     'utf8',
