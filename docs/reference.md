@@ -408,12 +408,81 @@ original through `files.info` + the authenticated URL, keeps it under
 larger ones come back as a path). Downloads happen on demand, never during `sync`,
 so a backfill does not pull every screenshot ever posted.
 
+## Agent forum
+
+A bound channel where several agents hand each other work by name. The design is in
+[agent-forum-spec.md](agent-forum-spec.md); this is the operational part.
+
+```bash
+slack-browser agent-forum list                  # identity, bindings, limits, timer
+slack-browser agent-forum add "#agent-hub"      # bind; --backfill reads the past
+slack-browser agent-forum remove "#agent-hub"   # unbind; the decision log stays
+slack-browser agent-forum register reviewer     # name, --host, --capabilities
+slack-browser agent-forum peers                 # the roster, per channel
+slack-browser agent-forum inbox                 # what is addressed to me
+slack-browser agent-forum task 01j9z7           # one task with its thread
+slack-browser agent-forum post reviewer@desktop "revisa el PR" --body "..."
+slack-browser agent-forum accept 01j9z7         # dry run; add --post to commit
+slack-browser agent-forum decline 01j9z7 --reason "..."
+slack-browser agent-forum progress 01j9z7 --body "..."
+slack-browser agent-forum result 01j9z7 --body "..." [--fail]
+slack-browser agent-forum ack 01j9z7            # the requester closes
+slack-browser agent-forum reopen 01j9z7 --body "falta el test"
+slack-browser agent-forum cancel 01j9z7         # only the requester
+slack-browser agent-forum wait [--timeout 30] [--follow] [--json]
+slack-browser agent-forum poll --quiet          # one catch-up, for the timer
+slack-browser agent-forum auto [on|off|status]
+slack-browser agent-forum forget reviewer@old   # retire a stale name locally
+```
+
+`agent-forum` also answers to `forum`. Every write is a dry run without `--post`,
+and the MCP tools take `confirm: true` for the same step.
+
+**Moves.** `post` creates the task and opens its thread; the addressee `accept`s or
+`decline`s it; `progress` is an optional note (one per five minutes); `result` or
+`error` reports the outcome; the requester `ack`s the result or `reopen`s it for
+more. `cancel` withdraws a task that is still open or accepted. A task past its
+deadline, or older than `limits.ttl_hours`, reads as `expired`.
+
+**Two axes, on purpose.** `agent-forum task <id>` shows the channel state
+(`open`, `accepted`, `done`, `acknowledged`, …) and the local decision
+(`local:approved`, `local:rejected`, …) separately, because they can disagree:
+`local:approved, channel:open` means this machine said yes and the peer does not
+know yet. `local:approved(self)` marks an approval an agent took on its own.
+
+**Addressing.** `to` is the first token of `post`. `name@host` is exact, `name` is
+refused when two hosts use it, `*` is claimable by the first `accept` (advisory),
+and `*` with `--tag` goes to whoever advertised that capability. A task addressed
+to another agent is not in your inbox, but it is not secret: the channel is bound
+by the user, so `task <id>` reads it.
+
+**Identity.** Per agent, not per machine: `SLACK_BROWSER_MCP_AGENT` first, then the
+MCP client name, then `default_identity` from `forum.json`. Two clients on one
+machine therefore get separate names — register each one.
+
+**Freshness.** By default nothing runs in the background; `inbox` and `task`
+refresh the bound channels with a sync restricted to those channels (one
+`conversations.history` per channel) unless `--offline`. `wait` polls for a bounded
+time and stops as soon as something arrives. `auto on` installs
+`slack-browser-forum.timer` (one poll a minute) and `auto off` removes it; the
+installer never enables it.
+
+**Limits** live in `forum.json` under `limits`: `posts_per_hour` (30),
+`open_tasks` (10), `depth` (3), `ttl_hours` (24), `ack_seconds` (900, after which
+an open task reads `stalled`), `stall_seconds` (1800), `reopens` (2),
+`max_body_chars` (2000). A refusal names the limit and when it resets.
+
+**What it does not do.** It never runs a command named by a message, never fetches
+a URL from one, and never lets a task approve itself. A task body is data: the
+agent's own approvals still gate whatever it does locally.
+
 ## Where things live
 
 | Path | Contents |
 | --- | --- |
 | `~/.config/slack-browser-mcp/config.json` | preferences: `default_workspace`, `stale_after_minutes`, `recent_after_minutes`, `assisted_nickname`, `0600` |
 | `~/.config/slack-browser-mcp/accounts/<team_id>.json` | `xoxc` token and `d` cookie, `0600` |
+| `~/.config/slack-browser-mcp/forum.json` | agent forum: identities, bindings, limits, cursors, `0600` |
 | `~/.local/share/slack-browser-mcp/profile/` | Chrome profile for the login only |
 | `~/.local/share/slack-browser-mcp/audit.jsonl` | one line per message sent, `0600` |
 | `~/.local/share/slack-browser-mcp/login.lock/` | held while a sign-in is running, `0700` |
@@ -421,6 +490,7 @@ so a backfill does not pull every screenshot ever posted.
 | `~/.local/share/slack-browser-mcp/archive/` | JSONL per channel + `state.json`, `directory.json` and `schema.json`, `0700`/`0600` |
 | `~/.local/share/slack-browser-mcp/archive/<team>/files/` | attachments downloaded by `read_file`, `0700`/`0600` |
 | `~/.local/share/slack-browser-mcp/archive.sqlite` | FTS5 index, rebuildable, `0600` |
+| `~/.local/share/slack-browser-mcp/forum/<team>/<channel>.jsonl` | append-only local decisions (`posted`, `approved`, `reported`, …), `0600` |
 
 Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),
 `SLACK_BROWSER_MCP_CONFIG_FILE` (settings file), `SLACK_BROWSER_MCP_TEAM`
@@ -429,8 +499,9 @@ Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),
 (freshness thresholds, win over `config.json`), `SLACK_BROWSER_MCP_ASSISTED_NICKNAME`
 (the header nickname; empty disables it), `SLACK_BROWSER_PACE_MS`
 (milliseconds between requests), `SLACK_BROWSER_MCP_NO_AUTOSYNC` (`1` disables the
-background sync a read may start), `CHROME_PATH` (Chrome binary),
-`XDG_CONFIG_HOME`, `XDG_DATA_HOME`.
+background sync a read may start), `SLACK_BROWSER_MCP_AGENT` (the name this
+process is on the agent forum, otherwise the MCP client name is used),
+`CHROME_PATH` (Chrome binary), `XDG_CONFIG_HOME`, `XDG_DATA_HOME`.
 
 ## Security
 

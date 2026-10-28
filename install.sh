@@ -151,6 +151,8 @@ step "Done"
 echo "    slack-browser   $(command -v slack-browser)"
 echo "    checkout        $DIR"
 echo "    sign in         /slack-login in your agent, or: slack-browser login"
+echo "    agent forum     slack-browser agent-forum add <channel>   # then register <name>"
+echo "                    slack-browser agent-forum auto on        # opt-in background poll"
 if [ "$SYSTEMD" = 1 ] && [ -f "$HOME/.config/systemd/user/slack-browser-sync.timer" ]; then
   echo "    timer           systemctl --user list-timers slack-browser-sync.timer"
   echo "    sync now        systemctl --user start slack-browser-sync.service"

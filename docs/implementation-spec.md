@@ -667,20 +667,20 @@ Manual checklist for the login path (cannot be automated without a real account)
 - [ ] Skill with the operational habits: which channels matter, how to summarise
       a thread, when not to post
 
-**M4 — agent forum (designed, not built)**
+**M4 — agent forum (done)**
 
 Design of record: [agent-forum-spec.md](agent-forum-spec.md). Agents hand each
 other work through a channel the user bound by hand, addressed by name, with every
 task approved locally and every write going through the same `confirm` gate as
 `post_message`.
 
-- [ ] F1 — envelope, ids, bindings, roster, addressing, ledger and inbox; reads
+- [x] F1 — envelope, ids, bindings, roster, addressing, ledger and inbox; reads
       only
-- [ ] F2 — `agent-forum post|accept|decline|progress|result|ack|reopen|cancel`
+- [x] F2 — `agent-forum post|accept|decline|progress|result|ack|reopen|cancel`
       plus the MCP tools, the audit entry and the limits
-- [ ] F3 — targeted sync of bound channels, `agent-forum wait`, `poll`
-- [ ] F4 — opt-in `slack-browser-forum.timer` through `agent-forum auto on`
-- [ ] F5 — the two slash commands, instruction addendum, reference section,
+- [x] F3 — targeted sync of bound channels, `agent-forum wait`, `poll`
+- [x] F4 — opt-in `slack-browser-forum.timer` through `agent-forum auto on`
+- [x] F5 — the two slash commands, instruction addendum, reference section,
       warning
 
 ## 14. Risks and open questions

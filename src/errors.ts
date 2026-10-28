@@ -49,3 +49,18 @@ export class SchemaError extends Error {
     this.hint = hint
   }
 }
+
+/**
+ * A refusal from the agent forum: a channel that is not bound, a peer that is
+ * ambiguous, a limit that was reached. Always safe to print, and always says
+ * what to do next.
+ */
+export class ForumError extends Error {
+  readonly hint?: string
+
+  constructor(message: string, hint?: string) {
+    super(message)
+    this.name = 'ForumError'
+    if (hint !== undefined) this.hint = hint
+  }
+}

@@ -44,6 +44,18 @@ test('exposes the Slack tools and survives an empty store', async (t) => {
       'archive_messages',
       'archive_status',
       'auth_status',
+      'forum_accept',
+      'forum_ack',
+      'forum_cancel',
+      'forum_decline',
+      'forum_inbox',
+      'forum_peers',
+      'forum_post',
+      'forum_progress',
+      'forum_reopen',
+      'forum_result',
+      'forum_status',
+      'forum_task',
       'get_thread',
       'list_conversations',
       'list_workspaces',
@@ -59,7 +71,20 @@ test('exposes the Slack tools and survives an empty store', async (t) => {
   for (const tool of tools) {
     assert.ok((tool.description ?? '').length > 30, `${tool.name} needs a description`)
   }
-  const writes = new Set(['login_workspace', 'post_message', 'set_assisted_nickname', 'set_default_workspace'])
+  const writes = new Set([
+    'login_workspace',
+    'post_message',
+    'set_assisted_nickname',
+    'set_default_workspace',
+    'forum_post',
+    'forum_accept',
+    'forum_decline',
+    'forum_progress',
+    'forum_result',
+    'forum_ack',
+    'forum_reopen',
+    'forum_cancel',
+  ])
   for (const tool of tools.filter((tool) => !writes.has(tool.name))) {
     assert.equal(tool.annotations?.readOnlyHint, true, `${tool.name} must be read-only`)
   }

@@ -64,6 +64,16 @@ export function auditLogPath(): string {
   return join(dataDir(), 'audit.jsonl')
 }
 
+/** Bindings, identities, limits and cursors for the agent forum. No secrets. */
+export function forumPath(): string {
+  return join(configDir(), 'forum.json')
+}
+
+/** Local approval log for the agent forum, one JSONL file per bound channel. */
+export function forumDir(): string {
+  return join(dataDir(), 'forum')
+}
+
 /** Plain-text mirror of the conversations, one JSONL file per channel. */
 export function archiveDir(): string {
   return join(dataDir(), 'archive')

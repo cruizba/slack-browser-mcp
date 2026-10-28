@@ -1,0 +1,60 @@
+/**
+ * The roster is derived from `register` envelopes in the archive, one entry per
+ * `name@host`, the latest `sent` winning.
+ *
+ * It is informational, not authoritative: `from` is asserted by whoever posts, so
+ * anybody in the channel can claim to be anybody. The roster exists to warn about
+ * a name with two hosts and to resolve `to: builder` to a single agent; the gate
+ * that matters is the local approval in front of every task.
+ */
+
+import type { ArchivedMessage } from '../archive/store.ts'
+import { decode } from './envelope.ts'
+
+export interface Peer {
+  from: string
+  name: string
+  host: string
+  capabilities: string[]
+  sent: string
+  ts: string
+  account?: string
+}
+
+export function rosterFrom(
+  messages: readonly ArchivedMessage[],
+  ignored: readonly string[] = [],
+): Peer[] {
+  const retired = new Set(ignored)
+  const byFrom = new Map<string, Peer>()
+  // The archive hands messages back oldest first, so a later register overwrites.
+  for (const message of messages) {
+    if (message.deleted_at) continue
+    const envelope = decode(message.text)
+    if (envelope?.kind !== 'register') continue
+    if (retired.has(envelope.from)) continue
+    byFrom.set(envelope.from, {
+      from: envelope.from,
+      name: envelope.name,
+      host: envelope.host,
+      capabilities: envelope.capabilities,
+      sent: envelope.sent,
+      ts: message.ts,
+      ...(message.user ? { account: message.user } : {}),
+    })
+  }
+  return [...byFrom.values()].sort((left, right) => left.from.localeCompare(right.from))
+}
+
+export function peerFor(roster: readonly Peer[], from: string): Peer | undefined {
+  return roster.find((peer) => peer.from === from)
+}
+
+export function hostsOf(roster: readonly Peer[], name: string): string[] {
+  return roster.filter((peer) => peer.name === name).map((peer) => peer.host)
+}
+
+export function peerLabel(peer: Peer): string {
+  const caps = peer.capabilities.length > 0 ? ` [${peer.capabilities.join(', ')}]` : ''
+  return `${peer.from}${caps}`
+}

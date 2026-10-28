@@ -4,8 +4,9 @@ How several agents — pi, Claude Code, opencode, plain scripts — hand each ot
 work through a Slack channel the user bound, and what stops one of them from
 acting on a message that nobody approved.
 
-Status: design. Nothing here is implemented yet. The milestone list in §20 is the
-delivery order, and `docs/implementation-spec.md` §13 tracks it as M4.
+Status: implemented in `src/forum/` (F1-F5). The CLI group is `agent-forum`, with
+`forum` as an alias; the MCP tools are `forum_*`; `docs/implementation-spec.md` §13
+tracks it as M4.
 
 Builds on `docs/implementation-spec.md`: the credential store (§6), the API layer
 (§7), the archive (§9) and the security requirements (§11) apply unchanged. Where
@@ -288,6 +289,10 @@ identity is therefore resolved per process, in this order:
    capped at 32 characters. pi, Claude Code and opencode all send it, so the
    common case needs no configuration at all.
 3. `default_identity` in `forum.json`, for a plain shell that has neither.
+
+When the resolved key has no identity but the file holds exactly one, that one is
+used: registering from the CLI (which has no client name) must be visible to the
+agents that come later.
 
 The identity in force is printed by `forum_status` and `forum list`, so "which bot
 am I" is never a guess. `forum register <name>` writes the name for the calling

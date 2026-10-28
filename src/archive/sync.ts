@@ -49,6 +49,8 @@ export interface SyncOptions {
   reconcileDays?: number
   deadlineMs?: number
   maxThreadsPerChannel?: number
+  /** Restrict the run to these channel ids; the forum polls one or two at a time. */
+  channels?: readonly string[]
   now?: Date
   onProgress?: (line: string) => void
 }
@@ -129,8 +131,10 @@ export async function syncAccount(args: {
 
   try {
     const channels = await args.client.listMyChannels()
-    report.channels_seen = channels.length
-    const ordered = [...channels].sort((left, right) => {
+    const wanted = options.channels ? new Set(options.channels) : undefined
+    const scoped = wanted ? channels.filter((channel) => wanted.has(channel.id)) : channels
+    report.channels_seen = scoped.length
+    const ordered = [...scoped].sort((left, right) => {
       const leftSync = teamState.channels[left.id]?.last_sync ?? ''
       const rightSync = teamState.channels[right.id]?.last_sync ?? ''
       return leftSync.localeCompare(rightSync)

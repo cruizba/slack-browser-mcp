@@ -5,6 +5,14 @@
  */
 
 import { login } from './auth/login.ts'
+import { autoOff, autoOn, autoStatus } from './forum/auto.ts'
+import { openForum, reload, type ForumContext } from './forum/context.ts'
+import { defaultHost, normalizeCapabilities, normalizeName } from './forum/identity.ts'
+import { inboxEntries, loadViews, newestTs, type InboxEntry } from './forum/inbox.ts'
+import { locateTask, postTask, replyTo, transportFor, announce, registerIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
+import { ago, channelLabel as forumChannelLabel, renderInbox, renderTask } from './forum/render.ts'
+import { stateLabel } from './forum/ledger.ts'
+import { catchUp, waitForWork, type CatchUpReport } from './forum/watch.ts'
 import { Lock } from './archive/lock.ts'
 import {
   FileCredentialStore,
@@ -19,7 +27,7 @@ import { DEFAULT_BACKFILL_DAYS, syncAccount } from './archive/sync.ts'
 import { ASSISTED_NICKNAME_ENV, resolveNickname, signingFor } from './config/assist.ts'
 import { FileSettingsStore, ensureDefaultWorkspace } from './config/settings.ts'
 import { loginLockPath } from './config/paths.ts'
-import { AuthError, SchemaError, StoreError } from './errors.ts'
+import { AuthError, ForumError, SchemaError, StoreError } from './errors.ts'
 import { main as serve } from './mcp/server.ts'
 import { recordSend } from './slack/audit.ts'
 import { ASSISTED_HEADER, describeSigning, signedMessage } from './slack/assist.ts'
@@ -55,6 +63,19 @@ Usage:
   slack-browser archive stats [--workspace <ref>]
   slack-browser archive reindex
   slack-browser archive migrate
+  slack-browser agent-forum [list]                 # bindings, identity, peers pending
+  slack-browser agent-forum add <channel> [--backfill] [--unsigned] [--workspace <ref>]
+  slack-browser agent-forum remove <channel>
+  slack-browser agent-forum register <name> [--host <h>] [--capabilities a,b] [--post]
+  slack-browser agent-forum peers
+  slack-browser agent-forum inbox [--all] [--json] [--offline]
+  slack-browser agent-forum task <id>
+  slack-browser agent-forum post <to> <title> --body <text> [--tag <cap>] [--parent <id>] [--binding <name>] [--post]
+  slack-browser agent-forum accept|decline|progress|result|ack|reopen|cancel <id> [--body <text>] [--post]
+  slack-browser agent-forum wait [--timeout <s>] [--follow] [--json] [--offline]
+  slack-browser agent-forum poll [--quiet] [--deadline <s>]
+  slack-browser agent-forum auto [on|off|status]
+  slack-browser agent-forum forget <name|name@host>
   slack-browser serve
 
 The browser opens once, during login. Everything else talks to the Slack Web API
@@ -68,7 +89,11 @@ saved by "workspace use", then the only stored session. "sync" without
 With nothing configured, every sent message is still marked: the header reads
 "*Message Sent by AI Agent '<client>' of <account>*", naming the MCP client and the
 account it goes out from. Set your own with "assist <nickname>"; --no-assist posts
-the text alone, and ${ASSISTED_NICKNAME_ENV} wins over config.json.`
+the text alone, and ${ASSISTED_NICKNAME_ENV} wins over config.json.
+
+"agent-forum" (alias "forum") is the channel where agents hand each other work:
+bind a channel once, register a name, then post tasks to a peer by name. Every
+write is a dry run unless --post, and every post is audited.`
 
 interface ParsedArgs {
   positional: string[]
@@ -573,6 +598,384 @@ async function commandArchive(args: ParsedArgs): Promise<number> {
   }
 }
 
+// --- agent forum ---------------------------------------------------------
+//
+// The group is `agent-forum`, with `forum` as an alias. Every write is a dry run
+// unless `--post` says otherwise, exactly like `send`.
+
+async function forumContext(): Promise<ForumContext> {
+  return openForum()
+}
+
+async function resolveTransport(teamId: string): Promise<Transport> {
+  const account = await new FileCredentialStore().get(teamId)
+  return transportFor(account)
+}
+
+async function forumRefresh(context: ForumContext, deadlineMs = 25_000): Promise<CatchUpReport> {
+  const store = new FileCredentialStore()
+  const accounts = await Promise.all(
+    (await store.list()).map((summary) => store.get(summary.team_id)),
+  )
+  if (accounts.length === 0) {
+    return { synced: 0, locked: false, errors: ['no stored Slack session; reading the archive only'] }
+  }
+  const byTeam = new Map(accounts.map((account) => [account.team_id, account]))
+  const clients = new Map<string, SlackClient>()
+  const clientFor = (teamId: string): SlackClient | undefined => {
+    const account = byTeam.get(teamId)
+    if (!account) return undefined
+    let client = clients.get(teamId)
+    if (!client) {
+      client = new SlackClient(account)
+      clients.set(teamId, client)
+    }
+    return client
+  }
+  return catchUp({
+    bindings: context.file.channels,
+    clientFor,
+    accountFor: (teamId) => byTeam.get(teamId),
+    deadlineMs,
+    ...(process.stderr.isTTY
+      ? { onProgress: (line: string) => console.error(`    ${line}`) }
+      : {}),
+  })
+}
+
+function printWrite(result: WriteResult): number {
+  const where = forumChannelLabel(result.binding)
+  if (result.kind === 'preview') {
+    console.log(`dry run — would post to ${where} (${result.target}):`)
+    console.log(result.text)
+    console.error('nothing sent; add --post to commit')
+    return 0
+  }
+  console.log(`sent ts ${result.ts} to ${where}; audit: ${result.audit}`)
+  return 0
+}
+
+function forumInboxLine(entry: InboxEntry, now: Date): string {
+  const decision = entry.decision ? `local:${entry.decision.decision}` : 'local:-'
+  return `${entry.task.id}  ${stateLabel(entry.task, now)}  ${decision}  ${entry.task.from}: ${entry.task.title}`
+}
+
+async function commandForum(args: ParsedArgs): Promise<number> {
+  const subcommand = args.positional[0] ?? 'list'
+  const rest = args.positional.slice(1)
+  const confirm = args.flags.get('post') === true
+  const by = 'cli' as const
+  const context = await forumContext()
+
+  switch (subcommand) {
+    case 'list': {
+      const identity = context.identity
+      console.log(
+        `agent forum as ${
+          identity ? `${identity.name}@${identity.host}` : 'unregistered'
+        } (${context.identityKey})`,
+      )
+      if (context.file.channels.length === 0) {
+        console.log('no channel bound; add one with `slack-browser agent-forum add <channel>`')
+      }
+      const names = await workspaceLabels(new FileCredentialStore())
+      for (const binding of context.file.channels) {
+        const scope = names.get(binding.workspace) ?? binding.workspace
+        const flags = [
+          binding.private ? 'private' : 'public',
+          scope,
+          binding.sign ? 'signed' : 'unsigned',
+          `since ${binding.since_ts}`,
+        ].join(' · ')
+        console.log(`  ${forumChannelLabel(binding)} (${binding.channel}) — ${flags}`)
+      }
+      const limits = context.limits
+      console.log(
+        `limits: ${limits.posts_per_hour}/h posts · ${limits.open_tasks} open · depth ${limits.depth} · ` +
+          `ttl ${limits.ttl_hours}h · ack ${Math.round(limits.ack_seconds / 60)}m · ` +
+          `stall ${Math.round(limits.stall_seconds / 60)}m`,
+      )
+      const auto = await autoStatus()
+      console.log(`auto: ${auto.detail}${auto.enabled ? ' (enabled)' : ''}`)
+      if (context.file.ignored.length > 0) {
+        console.log(`retired: ${context.file.ignored.join(', ')}`)
+      }
+      return 0
+    }
+
+    case 'add': {
+      const reference = rest[0]
+      if (!reference) throw new Error('agent-forum add needs a channel name or id')
+      const account = await new FileCredentialStore().resolve(stringFlag(args, 'workspace'))
+      const transport = await transportFor(account)
+      const { binding, added } = await bindChannel(context, transport, {
+        reference,
+        backfill: args.flags.get('backfill') === true,
+        unsigned: args.flags.get('unsigned') === true,
+      })
+      console.log(
+        added
+          ? `bound ${forumChannelLabel(binding)} (${binding.channel}) in ${account.team_name}`
+          : `${forumChannelLabel(binding)} was already bound in ${account.team_name}`,
+      )
+      console.log(
+        args.flags.get('backfill') === true
+          ? 'reading the whole channel history, oldest first'
+          : `reading from ts ${binding.since_ts}; pass --backfill to read what came before`,
+      )
+      if (!context.identity) {
+        console.log('next: pick a name with `slack-browser agent-forum register <name>`')
+      }
+      return 0
+    }
+
+    case 'remove': {
+      const reference = rest[0]
+      if (!reference) throw new Error('agent-forum remove needs a channel name or id')
+      const binding = context.file.channels.find(
+        (entry) => entry.name === reference || entry.channel === reference,
+      )
+      if (!binding) throw new Error(`no binding matches "${reference}"; agent-forum list shows them`)
+      await context.forum.unbind(binding)
+      console.log(`unbound ${forumChannelLabel(binding)} (${binding.channel}); the decision log is kept`)
+      return 0
+    }
+
+    case 'register': {
+      const name = rest[0]
+      if (!name) throw new Error('agent-forum register needs a name')
+      const capabilities = (stringFlag(args, 'capabilities') ?? '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+      const identity = {
+        name: normalizeName(name),
+        host: normalizeName(stringFlag(args, 'host') ?? defaultHost()),
+        capabilities: normalizeCapabilities(capabilities),
+      }
+      if (!identity.name) throw new Error(`"${name}" is not a usable name`)
+      const result = await registerIdentity(context, identity)
+      console.log(
+        `registered ${identity.name}@${identity.host} as ${context.identityKey}` +
+          (identity.capabilities.length > 0 ? ` [${identity.capabilities.join(', ')}]` : ''),
+      )
+      if (!result.announce) {
+        console.log('the roster already knows this name; nothing to announce')
+        return 0
+      }
+      if (!confirm) {
+        console.error('the roster does not know you yet; add --post to announce yourself in every bound channel')
+        return 0
+      }
+      const announced = await announce(context, resolveTransport, identity)
+      console.log(`announced in ${announced.posted} channel(s), skipped ${announced.skipped}`)
+      return 0
+    }
+
+    case 'peers': {
+      const views = await loadViews(context, {
+        ...(stringFlag(args, 'workspace') ? { workspace: stringFlag(args, 'workspace')! } : {}),
+      })
+      if (views.length === 0) {
+        console.log('no channel bound; add one with `slack-browser agent-forum add <channel>`')
+        return 0
+      }
+      for (const view of views) {
+        console.log(`${forumChannelLabel(view.binding)} (${view.binding.channel})`)
+        if (view.roster.length === 0) {
+          console.log('  nobody registered yet')
+          continue
+        }
+        for (const peer of view.roster) {
+          const caps = peer.capabilities.length > 0 ? ` [${peer.capabilities.join(', ')}]` : ''
+          const retired = context.file.ignored.includes(peer.from) ? ' (retired)' : ''
+          console.log(`  ${peer.from}${caps}${retired} — last seen ${ago(peer.ts, context.now)} ago`)
+        }
+      }
+      return 0
+    }
+
+    case 'inbox': {
+      const offline = args.flags.get('offline') === true
+      let note = ''
+      if (!offline) {
+        const result = await forumRefresh(context)
+        if (result.errors.length > 0) note = ` · ${result.errors[0]}`
+        else if (result.locked) note = ' · a sync holds the lock'
+      }
+      const fresh = await reload(context)
+      const views = await loadViews(fresh)
+      const report = inboxEntries(fresh, views, { all: args.flags.get('all') === true })
+      if (args.flags.get('json') === true) {
+        for (const entry of report.entries) {
+          console.log(
+            JSON.stringify({
+              id: entry.task.id,
+              state: entry.task.state,
+              local: entry.decision?.decision ?? null,
+              self_approved: entry.decision?.self_approved ?? false,
+              from: entry.task.from,
+              to: entry.task.to,
+              title: entry.task.title,
+              channel: entry.view.binding.name,
+              ts: entry.task.ts,
+            }),
+          )
+        }
+      } else {
+        console.log(renderInbox(fresh, report, { offline, note }))
+      }
+      const newest = newestTs(report)
+      if (newest && !offline) {
+        for (const view of new Set(report.entries.map((entry) => entry.view))) {
+          await fresh.forum.setCursor(fresh.identityKey, view.key, newest)
+        }
+      }
+      return 0
+    }
+
+    case 'task': {
+      const id = rest[0]
+      if (!id) throw new Error('agent-forum task needs an id (or a unique prefix)')
+      if (!args.flags.get('offline')) await forumRefresh(context, 10_000)
+      const fresh = await reload(context)
+      const views = await loadViews(fresh)
+      const { view, task } = locateTask(views, id)
+      console.log(
+        renderTask(fresh, task, view.binding, view.decisions.get(task.id)),
+      )
+      return 0
+    }
+
+    case 'post': {
+      const to = rest[0]
+      const title = rest[1]
+      if (!to || !title) throw new Error('agent-forum post needs a destination and a title')
+      const body = stringFlag(args, 'body') ?? rest.slice(2).join(' ')
+      if (!body) throw new Error('agent-forum post needs a body: pass --body "<text>"')
+      const result = await postTask(context, resolveTransport, {
+        to,
+        title,
+        body,
+        ...(stringFlag(args, 'tag') ? { tag: stringFlag(args, 'tag')! } : {}),
+        ...(stringFlag(args, 'deadline') ? { deadline: stringFlag(args, 'deadline')! } : {}),
+        ...(stringFlag(args, 'parent') ? { parent: stringFlag(args, 'parent')! } : {}),
+        ...(stringFlag(args, 'binding') ? { binding: stringFlag(args, 'binding')! } : {}),
+        confirm,
+        by,
+      })
+      return printWrite(result)
+    }
+
+    case 'accept':
+    case 'decline':
+    case 'progress':
+    case 'result':
+    case 'ack':
+    case 'reopen':
+    case 'cancel': {
+      const id = rest[0]
+      if (!id) throw new Error(`agent-forum ${subcommand} needs a task id`)
+      const body = stringFlag(args, 'body') ?? (subcommand === 'progress' || subcommand === 'result' ? rest.slice(1).join(' ') : undefined)
+      const ok = subcommand === 'result' ? args.flags.get('fail') !== true : undefined
+      const result = await replyTo(context, resolveTransport, {
+        id,
+        kind: subcommand,
+        ...(body ? { body } : {}),
+        ...(ok === undefined ? {} : { ok }),
+        confirm,
+        by,
+      })
+      return printWrite(result)
+    }
+
+    case 'wait':
+    case 'poll': {
+      const offline = args.flags.get('offline') === true
+      const deadline = numberFlag(args, 'deadline', 25)
+      const refresh = () => forumRefresh(context, deadline * 1000)
+      if (subcommand === 'poll') {
+        const result = await refresh()
+        if (args.flags.get('quiet') !== true) {
+          console.log(
+            `refreshed ${result.synced} channel(s)${result.errors.length > 0 ? ` · ${result.errors.join(' · ')}` : ''}`,
+          )
+        }
+        return result.errors.length > 0 ? 1 : 0
+      }
+
+      const timeout = numberFlag(args, 'timeout', args.flags.get('follow') === true ? 30 : 0)
+      const follow = args.flags.get('follow') === true
+      let seen = new Set<string>()
+      let rounds = 0
+      for (;;) {
+        rounds += 1
+        const result = await waitForWork(context, { waitSeconds: timeout, offline, refresh })
+        for (const entry of result.report.entries) {
+          if (seen.has(entry.task.id)) continue
+          seen.add(entry.task.id)
+          if (args.flags.get('json') === true) {
+            console.log(
+              JSON.stringify({
+                event: 'task',
+                id: entry.task.id,
+                from: entry.task.from,
+                to: entry.task.to,
+                title: entry.task.title,
+                channel: entry.view.binding.name,
+                ts: entry.task.ts,
+              }),
+            )
+          } else {
+            console.log(forumInboxLine(entry, context.now))
+          }
+        }
+        if (!follow) {
+          if (result.report.entries.length === 0) console.log('nothing pending')
+          return 0
+        }
+        await new Promise((done) => setTimeout(done, Math.max(5, timeout) * 1000))
+      }
+    }
+
+    case 'auto': {
+      const action = rest[0] ?? 'status'
+      if (action === 'on') {
+        console.log(await autoOn())
+        return 0
+      }
+      if (action === 'off') {
+        console.log(await autoOff())
+        return 0
+      }
+      if (action !== 'status') throw new Error(`unknown auto action: ${action}`)
+      const status = await autoStatus()
+      console.log(`auto: ${status.detail}${status.enabled ? ' (enabled)' : ''}`)
+      return 0
+    }
+
+    case 'forget': {
+      const label = rest[0]
+      if (!label) throw new Error('agent-forum forget needs a name or name@host')
+      const [rawName, rawHost] = label.split('@')
+      const retired = normalizeName(rawName ?? '') + (rawHost ? `@${normalizeName(rawHost)}` : '')
+      const added = await context.forum.ignore(retired)
+      console.log(
+        added
+          ? `retired ${label} locally; its tasks stop showing up in the inbox`
+          : `${label} was already retired`,
+      )
+      return 0
+    }
+
+    default:
+      throw new Error(
+        `unknown agent-forum subcommand: ${subcommand}\n` +
+          'try list, add, remove, register, peers, inbox, task, post, accept, decline, progress, result, ack, reopen, cancel, wait, poll, auto, forget',
+      )
+  }
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2)
   const command = argv[0] ?? 'help'
@@ -600,6 +1003,9 @@ async function main(): Promise<number> {
       return commandSync(args)
     case 'archive':
       return commandArchive(args)
+    case 'agent-forum':
+    case 'forum':
+      return commandForum(args)
     case 'serve':
       await serve()
       return 0
@@ -623,6 +1029,11 @@ main()
     if (error instanceof AuthError || error instanceof SchemaError) {
       console.error(`${error.message}\n${error.hint}`)
       process.exitCode = 2
+      return
+    }
+    if (error instanceof ForumError) {
+      console.error(error.hint ? `${error.message}\n${error.hint}` : error.message)
+      process.exitCode = 1
       return
     }
     console.error(error instanceof Error ? error.message : String(error))
