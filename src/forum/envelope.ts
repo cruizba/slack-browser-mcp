@@ -80,7 +80,8 @@ const presenceSchema = z
     kind: z.literal('presence'),
     name: z.string().trim().min(1).max(MAX_NAME_CHARS),
     host: z.string().trim().min(1).max(MAX_NAME_CHARS),
-    state: z.enum(['listening', 'idle']),
+    /** `gone` retires the peer: readers drop it from the roster. */
+    state: z.enum(['listening', 'idle', 'gone']),
     capabilities: z.array(tag).max(8).default([]),
     note: fenceFree(z.string().trim().max(80)).optional(),
   })
@@ -213,7 +214,9 @@ export function summaryFor(envelope: Envelope): string {
     case 'register':
       return `${envelope.from} joined the forum`
     case 'presence':
-      return `${envelope.from} is ${envelope.state}${envelope.note ? `: ${envelope.note}` : ''}`
+      return envelope.state === 'gone'
+        ? `${envelope.from} left the forum${envelope.note ? `: ${envelope.note}` : ''}`
+        : `${envelope.from} is ${envelope.state}${envelope.note ? `: ${envelope.note}` : ''}`
     case 'task':
       return envelope.tag
         ? `${envelope.from} asks anyone who can ${envelope.tag}: ${envelope.title}`

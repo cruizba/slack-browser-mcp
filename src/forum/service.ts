@@ -18,7 +18,7 @@ import { toRecord } from '../archive/record.ts'
 import { recordSend } from '../slack/audit.ts'
 import { signedMessage } from '../slack/assist.ts'
 import { SlackClient, type SlackChannel } from '../slack/client.ts'
-import { candidates, parseTarget, resolvePeer, targetLabel } from './addressing.ts'
+import { candidates, parseTarget, resolvePeer, targetLabel, type Target } from './addressing.ts'
 import { bindingKey, type Binding } from './binding.ts'
 import { labelOf, type Identity } from './identity.ts'
 import { meLabel, reload, requireIdentity, type ForumContext } from './context.ts'
@@ -40,6 +40,7 @@ import {
 } from './envelope.ts'
 import { newId } from './id.ts'
 import { matchesId } from './id.ts'
+import { peerStatus, type Peer } from './roster.ts'
 import { stateLabel, type ForumTask } from './ledger.ts'
 import type { DecidedBy, DecisionName } from './decisions.ts'
 
@@ -58,7 +59,14 @@ export async function transportFor(account: SlackAccount): Promise<Transport> {
 export type TransportResolver = (teamId: string) => Promise<Transport>
 
 export type WriteResult =
-  | { kind: 'preview'; envelope: Envelope; binding: Binding; text: string; target: string }
+  | {
+      kind: 'preview'
+      envelope: Envelope
+      binding: Binding
+      text: string
+      target: string
+      warning?: string
+    }
   | {
       kind: 'posted'
       envelope: Envelope
@@ -66,6 +74,7 @@ export type WriteResult =
       ts: string
       audit: string
       target: string
+      warning?: string
     }
 
 export interface Located {
@@ -221,10 +230,41 @@ function preview(
   binding: Binding,
   envelope: Envelope,
   target: string,
+  warning?: string,
 ): WriteResult {
   const text = render(summaryFor(envelope), envelope)
   assertFits(text)
-  return { kind: 'preview', envelope, binding, text, target }
+  return { kind: 'preview', envelope, binding, text, target, ...(warning ? { warning } : {}) }
+}
+
+/**
+ * Sending work to a peer that has been quiet for a day is allowed — it will read
+ * the task when it comes back — but pretending it is there would be a lie the
+ * requester's user pays for.
+ */
+function targetWarning(
+  context: ForumContext,
+  target: Target,
+  roster: readonly Peer[],
+  chosen: Peer | undefined,
+): string | undefined {
+  const options = {
+    presenceSeconds: context.limits.presence_seconds,
+    ttlHours: context.limits.peer_ttl_hours,
+    now: context.now,
+  }
+  if (chosen) {
+    return peerStatus(chosen, options) === 'out'
+      ? `${chosen.from} has not announced anything for ${Math.round((context.now.getTime() - Number(chosen.ts) * 1000) / 3_600_000)}h and reads as out; the task will wait for it`
+      : undefined
+  }
+  if (target.kind !== 'anyone') return undefined
+  const matching = candidates(roster, target)
+  if (matching.length === 0) return undefined
+  const listening = matching.filter((peer) => peerStatus(peer, options) === 'listening').length
+  return listening > 0
+    ? undefined
+    : `${matching.length} peer(s) match, none listening: the task is claimed when one of them looks`
 }
 
 export interface PostTaskArgs {
@@ -249,7 +289,7 @@ function pickBinding(
   to: string,
   tag: string | undefined,
   only: string | undefined,
-): { view: BindingView; toValue: string; target: string } {
+): { view: BindingView; toValue: string; target: string; peer?: Peer } {
   if (only) {
     const view = views.find((entry) => entry.binding.name === only || entry.key === only)
     if (!view) fail(`No bound channel called "${only}".`, '`agent-forum list` shows the bindings.')
@@ -257,8 +297,7 @@ function pickBinding(
     if (target.kind === 'anyone') {
       return { view, toValue: '*', target: tag ? `*#${tag}` : '*' }
     }
-    resolvePeer(view.roster, target)
-    return { view, toValue: targetLabel(target), target: targetLabel(target) }
+    return { view, toValue: targetLabel(target), target: targetLabel(target), peer: resolvePeer(view.roster, target) }
   }
 
   const target = parseTarget(to)
@@ -293,8 +332,12 @@ function pickBinding(
     )
   }
   const view = knowing[0]!
-  resolvePeer(view.roster, target)
-  return { view, toValue: targetLabel(target), target: targetLabel(target) }
+  return {
+    view,
+    toValue: targetLabel(target),
+    target: targetLabel(target),
+    peer: resolvePeer(view.roster, target),
+  }
 }
 
 export async function postTask(
@@ -315,7 +358,8 @@ export async function postTask(
     )
   }
 
-  const { view, toValue, target } = pickBinding(views, args.to, args.tag, args.binding)
+  const { view, toValue, target, peer } = pickBinding(views, args.to, args.tag, args.binding)
+  const warning = targetWarning(context, parseTarget(args.to), view.roster, peer)
   const meOpen = view.ledger.tasks.filter(
     (task) => task.from === me && !task.closed && task.state !== 'done' && task.state !== 'failed',
   )
@@ -354,7 +398,7 @@ export async function postTask(
     ...(depth > 0 ? { depth } : {}),
   }
 
-  if (!args.confirm) return preview(view.binding, envelope, target)
+  if (!args.confirm) return preview(view.binding, envelope, target, warning)
 
   const transport = await resolveTransport(view.binding.workspace)
   const posted = await deliver(context, transport, view.binding, envelope)
@@ -363,7 +407,15 @@ export async function postTask(
     decision: 'posted',
     by: args.by,
   })
-  return { kind: 'posted', envelope, binding: view.binding, ts: posted.ts, audit: posted.audit, target }
+  return {
+    kind: 'posted',
+    envelope,
+    binding: view.binding,
+    ts: posted.ts,
+    audit: posted.audit,
+    target,
+    ...(warning ? { warning } : {}),
+  }
 }
 
 const DECISION_OF: Partial<Record<ReplyKind, DecisionName>> = {
@@ -536,7 +588,7 @@ export async function registerIdentity(
 export function presenceEnvelope(
   context: ForumContext,
   identity: Identity,
-  state: PresenceState,
+  state: PresenceState | 'gone',
 ): Envelope {
   return {
     v: 1,
@@ -604,6 +656,40 @@ export async function announcePresence(
   }
 
   return result
+}
+
+/**
+ * Leaves the forum: says so in every bound channel, then forgets the identity
+ * locally and retires the label so its inbox stops filling with work it will never
+ * do. Re-registering is all it takes to come back.
+ */
+export async function unregisterIdentity(
+  context: ForumContext,
+  resolveTransport: TransportResolver,
+  options: { announce?: boolean } = {},
+): Promise<{ label: string; posted: number }> {
+  const identity = requireIdentity(context)
+  const label = labelOf(identity)
+  let posted = 0
+
+  if (options.announce !== false) {
+    const views = await loadViews(context)
+    for (const view of views) {
+      const transport = await resolveTransport(view.binding.workspace)
+      await deliver(
+        context,
+        transport,
+        view.binding,
+        presenceEnvelope(context, identity, 'gone'),
+        undefined,
+        { count: false },
+      )
+      posted += 1
+    }
+  }
+
+  await context.forum.unregister(context.identityKey, label)
+  return { label, posted }
 }
 
 export function announceEnvelope(context: ForumContext, identity: Identity): Envelope {

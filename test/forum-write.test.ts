@@ -330,6 +330,67 @@ test('presence is announced once, then throttled by the local mark', async (t) =
   )
 })
 
+test('unregistering says goodbye, forgets the identity and retires the label', async (t) => {
+  const { calls } = await setup(t)
+  const { openForum } = await import('../src/forum/context.ts')
+  const { unregisterIdentity, transportFor } = await import('../src/forum/service.ts')
+  const { FileCredentialStore } = await import('../src/auth/store.ts')
+  const { ForumStore } = await import('../src/forum/binding.ts')
+  const resolver = async (teamId: string) =>
+    transportFor(await new FileCredentialStore().get(teamId))
+
+  delete process.env.SLACK_BROWSER_MCP_NO_PRESENCE
+  t.after(() => {
+    process.env.SLACK_BROWSER_MCP_NO_PRESENCE = '1'
+  })
+
+  const result = await unregisterIdentity(await openForum(), resolver)
+  assert.equal(result.label, 'reviewer@laptop')
+  assert.equal(result.posted, 1)
+  assert.match(String(posts(calls)[0]?.body.get('text')), /"state":"gone"/)
+  assert.match(String(posts(calls)[0]?.body.get('text')), /left the forum/)
+
+  const file = await new ForumStore(join(configDir, 'forum.json')).read()
+  assert.deepEqual(Object.keys(file.identities), [], 'the identity is gone')
+  assert.equal(file.default_identity, undefined)
+  assert.ok(file.ignored.includes('reviewer@laptop'), 'its own label is retired')
+})
+
+test('posting to a peer that has been quiet for a day warns but still works', async (t) => {
+  const { calls, client } = await setup(t)
+  const { ArchiveStore } = await import('../src/archive/store.ts')
+  const { render, summaryFor } = await import('../src/forum/envelope.ts')
+  const { newId } = await import('../src/forum/id.ts')
+
+  const archive = new ArchiveStore(join(root, 'data', 'slack-browser-mcp', 'archive'))
+  const envelope = {
+    v: 1 as const,
+    kind: 'register' as const,
+    id: newId(),
+    from: 'ghost@desktop',
+    sent: '2026-10-26T09:00:00Z',
+    name: 'ghost',
+    host: 'desktop',
+    capabilities: ['code'],
+  }
+  await archive.append('T0TEST', 'C0HUB', [
+    {
+      ts: '1792972800.000100',
+      channel: 'C0HUB',
+      text: render(summaryFor(envelope), envelope),
+      synced_at: '2026-10-26T09:00:00Z',
+    },
+  ])
+
+  const preview = await client.callTool({
+    name: 'forum_post',
+    arguments: { to: 'ghost@desktop', title: 'are you there', body: 'ping' },
+  })
+  assert.match(textOf(preview), /Nothing sent/)
+  assert.match(textOf(preview), /reads as out/)
+  assert.equal(posts(calls).length, 0)
+})
+
 test('the hourly limit refuses the post before it reaches Slack', async (t) => {
   const { calls, client } = await setup(t, { posts_per_hour: 1 })
 

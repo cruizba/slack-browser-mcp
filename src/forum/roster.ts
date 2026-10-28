@@ -40,6 +40,10 @@ export function rosterFrom(
     const envelope = decode(message.text)
     if (envelope?.kind !== 'register' && envelope?.kind !== 'presence') continue
     if (retired.has(envelope.from)) continue
+    if (envelope.kind === 'presence' && envelope.state === 'gone') {
+      byFrom.delete(envelope.from)
+      continue
+    }
     const previous = byFrom.get(envelope.from)
     byFrom.set(envelope.from, {
       from: envelope.from,
@@ -51,7 +55,7 @@ export function rosterFrom(
       // A presence message may drop the owner when its account is unnamed; the
       // person behind the peer does not disappear because one message did.
       ...(message.user ? { owner: message.user } : previous?.owner ? { owner: previous.owner } : {}),
-      ...(envelope.kind === 'presence'
+      ...(envelope.kind === 'presence' && envelope.state !== 'gone'
         ? { state: envelope.state }
         : previous?.state
           ? { state: previous.state }
@@ -69,9 +73,23 @@ export function hostsOf(roster: readonly Peer[], name: string): string[] {
   return roster.filter((peer) => peer.name === name).map((peer) => peer.host)
 }
 
-export function isListening(peer: Peer, presenceSeconds: number, now: Date): boolean {
-  if (peer.state !== 'listening') return false
-  return now.getTime() - Number(peer.ts) * 1000 < presenceSeconds * 1000
+export type PeerStatus = 'listening' | 'idle' | 'out'
+
+/**
+ * Where a peer stands, from the only evidence the channel carries: when it last
+ * said anything and what it said. `out` is the honest end of the scale — a machine
+ * that has not announced itself in a day is not there to answer, whether it is off,
+ * asleep or the person stopped using it — and it is time-based rather than
+ * message-based so nothing has to be posted to make it true.
+ */
+export function peerStatus(
+  peer: Peer,
+  options: { presenceSeconds: number; ttlHours: number; now: Date },
+): PeerStatus {
+  const ageMs = options.now.getTime() - Number(peer.ts) * 1000
+  if (ageMs > options.ttlHours * 3_600_000) return 'out'
+  if (peer.state === 'listening' && ageMs < options.presenceSeconds * 1000) return 'listening'
+  return 'idle'
 }
 
 export function peerLabel(peer: Peer): string {

@@ -1591,6 +1591,7 @@ export function buildServer(): McpServer {
 
   const writeResult = (result: WriteResult): { content: Array<{ type: 'text'; text: string }> } => {
     const where = forumChannelLabel(result.binding)
+    const warning = result.warning ? `\nnote: ${result.warning}` : ''
     if (result.kind === 'preview') {
       return {
         content: [
@@ -1598,7 +1599,7 @@ export function buildServer(): McpServer {
             type: 'text' as const,
             text:
               `Nothing sent. Show this to the user and post it only after they say yes.\n` +
-              `target: ${where} (${result.target})\n\n${result.text}`,
+              `target: ${where} (${result.target})${warning}\n\n${result.text}`,
           },
         ],
       }
@@ -1607,7 +1608,7 @@ export function buildServer(): McpServer {
       content: [
         {
           type: 'text' as const,
-          text: `Posted to ${where} at ts ${result.ts}; audit: ${result.audit}`,
+          text: `Posted to ${where} at ts ${result.ts}; audit: ${result.audit}${warning}`,
         },
       ],
     }
@@ -1779,7 +1780,7 @@ export function buildServer(): McpServer {
           }
         }
         const lines = views.flatMap((view) =>
-          renderPeers(view, context.now, context.limits.presence_seconds),
+          renderPeers(view, context.now, context.limits),
         )
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
       } catch (error) {

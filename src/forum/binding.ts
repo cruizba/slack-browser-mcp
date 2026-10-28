@@ -179,6 +179,24 @@ export class ForumStore {
     return file
   }
 
+  /** Drops the identity and retires the label, so its own inbox stops filling up. */
+  async unregister(key: string, label: string): Promise<boolean> {
+    const file = await this.read()
+    if (!file.identities[key]) return false
+    delete file.identities[key]
+    if (file.default_identity === key) {
+      const remaining = Object.keys(file.identities).sort()
+      if (remaining.length > 0) {
+        file.default_identity = remaining[0]!
+      } else {
+        delete file.default_identity
+      }
+    }
+    if (!file.ignored.includes(label)) file.ignored.push(label)
+    await this.write(file)
+    return true
+  }
+
   async bind(binding: Binding): Promise<{ file: ForumFile; added: boolean }> {
     const file = await this.read()
     const key = bindingKey(binding)

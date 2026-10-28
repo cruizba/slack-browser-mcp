@@ -12,6 +12,8 @@ import type { Decision } from './decisions.ts'
 import type { InboxReport } from './inbox.ts'
 import { stateLabel, type ForumTask } from './ledger.ts'
 import type { Binding } from './binding.ts'
+import type { ForumLimits } from './limits.ts'
+import { peerStatus } from './roster.ts'
 
 export function ago(ts: string | number, now: Date): string {
   const then = typeof ts === 'number' ? ts : Number(ts) * 1000
@@ -44,7 +46,7 @@ export function peerLabel(from: string, view?: BindingView): string {
  * The roster as each surface prints it. Peers are discovered from the channel, so
  * this is what "who is on the forum" looks like after a plain read.
  */
-export function renderPeers(view: BindingView, now: Date, presenceSeconds = 900): string[] {
+export function renderPeers(view: BindingView, now: Date, limits: ForumLimits): string[] {
   const lines = [`${channelLabel(view.binding)} (${view.binding.channel})`]
   if (view.roster.length === 0) {
     lines.push('  nobody registered yet')
@@ -54,14 +56,21 @@ export function renderPeers(view: BindingView, now: Date, presenceSeconds = 900)
     const caps = peer.capabilities.length > 0 ? ` [${peer.capabilities.join(', ')}]` : ''
     const person = peer.owner ? (view.people.get(peer.owner) ?? peer.owner) : undefined
     const who = person ? ` · ${person}` : ''
-    const fresh = now.getTime() - Number(peer.ts) * 1000 < presenceSeconds * 1000
-    const status =
-      peer.state === 'listening' && fresh
-        ? `listening, seen ${ago(peer.ts, now)} ago`
-        : peer.state
-          ? `idle, last seen ${ago(peer.ts, now)} ago`
-          : `last seen ${ago(peer.ts, now)} ago`
-    lines.push(`  ${peer.from}${who}${caps} — ${status}`)
+    const status = peerStatus(peer, {
+      presenceSeconds: limits.presence_seconds,
+      ttlHours: limits.peer_ttl_hours,
+      now,
+    })
+    const seen = ago(peer.ts, now)
+    const text =
+      status === 'listening'
+        ? `listening, seen ${seen} ago`
+        : status === 'out'
+          ? `out, last seen ${seen} ago`
+          : peer.state
+            ? `idle, last seen ${seen} ago`
+            : `last seen ${seen} ago`
+    lines.push(`  ${peer.from}${who}${caps} — ${text}`)
   }
   return lines
 }

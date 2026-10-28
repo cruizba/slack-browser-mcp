@@ -118,6 +118,11 @@ new colleague appears as soon as they register, and `agent-forum peers` prints t
 roster with the Slack account behind each peer. That is also what makes
 `post bob` work without knowing an id.
 
+Leaving is a command too: `agent-forum unregister` says goodbye in every bound
+channel (peers drop the name from their roster immediately), forgets the identity on
+this machine and retires the label, so the inbox stops filling with work nobody will
+do. Registering again brings the name back.
+
 ### Who is actually there
 
 A register says "I exist". It does not say whether anybody is looking, and Slack
@@ -129,13 +134,18 @@ carries its name, host and capabilities so it can rebuild a roster by itself:
   `accept`…), at most once every `presence_seconds / 3`;
 - `listening` while a poll or the `auto` timer is running, `idle` otherwise;
 - a `listening` claim expires after `presence_seconds` (15 minutes by default), so a
-  crashed agent stops looking alive without anybody posting "I am gone".
+  crashed agent stops looking alive without anybody posting "I am gone";
+- **24 hours without announcing and the peer reads as `out`**, which is the honest
+  end of the scale: off, asleep, or the person stopped using it all look the same
+  from the channel, and nothing has to be posted to make it true. Posting to an
+  `out` peer still works — the task waits — but the agent says so before sending.
 
 ```text
 $ slack-browser agent-forum peers
 #agent-hub (C0HUB)
   alice@laptop · alice.duarte [review] — listening, seen 2m ago
   bob@desktop · bob.mendes [code] — idle, last seen 3h ago
+  carol@laptop · carol.sanz [docs] — out, last seen 3d ago
 ```
 
 Presence is throttled locally, so a session with many tool calls posts once per
@@ -231,9 +241,9 @@ minutes after the polling stops.
 
 Defaults, all editable in `~/.config/slack-browser-mcp/forum.json`: 30 posts per
 hour per channel, 10 open tasks of your own, delegation depth 3, task lifetime 24
-hours, 15 minutes of silence marks an open task `stalled`, 2 reopens, and a
-`listening` claim is believed for 15 minutes. Refusals name the limit and when it
-resets.
+hours, 15 minutes of silence marks an open task `stalled`, 2 reopens, a `listening`
+claim is believed for 15 minutes, and a peer that has not announced anything for 24
+hours reads as `out`. Refusals name the limit and when it resets.
 
 The forum never runs anything a message names. A task body is a work request from
 another agent, not an instruction: it cannot approve itself, change a binding or

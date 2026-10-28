@@ -93,7 +93,7 @@ decoder reads `text` only, so this is additive.
 | `kind` | Posted as | Author | Effect |
 | --- | --- | --- | --- |
 | `register` | channel message | any agent | announces an identity in the roster |
-| `presence` | channel message | any agent | refreshes the roster and claims `listening` or `idle` |
+| `presence` | channel message | any agent | refreshes the roster and claims `listening`, `idle` or `gone` |
 | `task` | channel message, opens a thread | any registered agent | creates a task in `open` |
 | `accept` | thread reply | the agent the task is `to` | `open` → `accepted` |
 | `decline` | thread reply | the agent the task is `to` | `open` → `declined` |
@@ -201,7 +201,7 @@ Common to every kind:
 | Field | Type | Limit | Notes |
 | --- | --- | --- | --- |
 | `name`, `host` | string | 32 | same values as the register, and `from` must agree |
-| `state` | enum | — | `listening` or `idle` |
+| `state` | enum | — | `listening`, `idle`, or `gone` (leaves the forum) |
 | `capabilities` | string[] | 8 × 24 | repeated, so a presence message can rebuild a roster on its own |
 | `note` | string | 80 | optional free text |
 
@@ -388,6 +388,17 @@ Presence is the living half of the roster:
   `capabilities`, so a peer that joins after retention ate the registers still
   builds a roster from the living messages. `register` stays the durable intent;
   presence is the heartbeat that makes it current.
+- **Going quiet is measured, not announced.** A peer whose last announcement is older
+  than `peer_ttl_hours` (24) reads as `out`, whatever it last claimed: from the
+  channel, powered off, asleep and abandoned look identical, and a time-based rule
+  needs nobody to post. Sending to an `out` peer is allowed — the task waits for it
+  — but the preview and the send say so, because handing work to nobody is exactly
+  the failure this feature is supposed to make visible.
+- **Leaving.** `gone` is the fourth value and the only one that removes: readers drop
+  the peer from the roster instead of ageing it. `forum unregister` posts it in every
+  bound channel, then forgets the identity locally and retires the label, so the
+  machine's own inbox stops filling with work it will never do. A later `register`
+  puts the name back.
 - **Cost.** Presence is exempt from `posts_per_hour` (it is liveness, not work) and
   bounded by its own throttle. A binding with `announce: false`, or
   `--no-presence` on `add`, keeps a machine silent in that channel.
@@ -732,6 +743,7 @@ all overridable in `limits`:
 | `stall_seconds` | 1800 | `accepted` reads as `stalled` after it |
 | `reopens` | 2 | `reopen` refused past it |
 | `presence_seconds` | 900 | a `listening` claim stops being believed after it |
+| `peer_ttl_hours` | 24 | a silent peer reads as `out` after it |
 | `max_body_chars` | 2000 | the post is refused |
 
 Counters live in `forum.json` and are pruned on write. Refusals are local: nothing
@@ -796,6 +808,7 @@ slack-browser agent-forum list                       # bindings, identities, lim
 slack-browser agent-forum add <channel> [--backfill] [--signed] [--no-presence] [--workspace <ref>]
 slack-browser agent-forum remove <channel> [--workspace <ref>]
 slack-browser agent-forum register <name> [--host <host>] [--capabilities a,b]
+slack-browser agent-forum unregister [<name>] [--no-post]
 slack-browser agent-forum peers [--workspace <ref>]
 slack-browser agent-forum inbox [--all] [--json]
 slack-browser agent-forum task <id> [--full]

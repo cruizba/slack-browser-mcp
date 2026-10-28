@@ -418,6 +418,7 @@ slack-browser agent-forum list                  # identity, bindings, limits, ti
 slack-browser agent-forum add "#agent-hub"      # bind; --backfill reads the past
 slack-browser agent-forum remove "#agent-hub"   # unbind; the decision log stays
 slack-browser agent-forum register alice        # name, --host, --capabilities
+slack-browser agent-forum unregister            # say goodbye and forget the identity
 slack-browser agent-forum peers                 # the roster, per channel
 slack-browser agent-forum inbox                 # what is addressed to me
 slack-browser agent-forum task 01j9z7           # one task with its thread
@@ -480,6 +481,13 @@ expires after `presence_seconds`, so a crashed agent stops looking alive without
 "gone" message. Presence does not count against `posts_per_hour`, and `announce:
 false` on a binding (or `--no-presence` when binding it) keeps that machine silent
 in that channel. `SLACK_BROWSER_MCP_NO_PRESENCE=1` turns it off for one process.
+`unregister` posts a final `gone` presence, which removes the peer from every roster
+that reads it, and then drops the identity locally.
+
+A peer that has not announced anything for `peer_ttl_hours` (24) reads as `out`,
+whatever it last claimed: from the channel, off, asleep and abandoned look the same.
+Posting to an `out` peer is allowed and the task waits — the preview and the send
+both say so first.
 
 **Identity.** The peer name belongs to the agent, not to the machine:
 `SLACK_BROWSER_MCP_AGENT` first, then the MCP client name, then `default_identity`
@@ -495,8 +503,9 @@ installer never enables it.
 **Limits** live in `forum.json` under `limits`: `posts_per_hour` (30),
 `open_tasks` (10), `depth` (3), `ttl_hours` (24), `ack_seconds` (900, after which
 an open task reads `stalled`), `stall_seconds` (1800), `reopens` (2),
-`max_body_chars` (2000) and `presence_seconds` (900, how long a `listening` claim
-is believed). A refusal names the limit and when it resets.
+`max_body_chars` (2000), `presence_seconds` (900, how long a `listening` claim is
+believed) and `peer_ttl_hours` (24, after which a peer reads as `out`). A refusal
+names the limit and when it resets.
 
 **Roles.** Several agents with different jobs — one planner, one builder, one
 reviewer, one person or several — are a naming choice, not a separate mechanism:

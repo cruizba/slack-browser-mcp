@@ -6,10 +6,10 @@
 
 import { login } from './auth/login.ts'
 import { autoOff, autoOn, autoStatus } from './forum/auto.ts'
-import { openForum, reload, type ForumContext } from './forum/context.ts'
+import { openForum, reload, requireIdentity, type ForumContext } from './forum/context.ts'
 import { defaultHost, normalizeCapabilities, normalizeName } from './forum/identity.ts'
 import { inboxEntries, loadViews, newestTs, type InboxEntry } from './forum/inbox.ts'
-import { locateTask, postTask, replyTo, transportFor, announce, announcePresence, registerIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
+import { locateTask, postTask, replyTo, transportFor, announce, announcePresence, registerIdentity, unregisterIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
 import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from './forum/render.ts'
 import { stateLabel } from './forum/ledger.ts'
 import { catchUp, waitForWork, type CatchUpReport } from './forum/watch.ts'
@@ -67,6 +67,7 @@ Usage:
   slack-browser agent-forum add <channel> [--backfill] [--signed] [--no-presence] [--workspace <ref>]
   slack-browser agent-forum remove <channel>
   slack-browser agent-forum register <name> [--host <h>] [--capabilities a,b] [--no-post]
+  slack-browser agent-forum unregister [<name>] [--no-post]
   slack-browser agent-forum peers
   slack-browser agent-forum inbox [--all] [--json] [--offline]
   slack-browser agent-forum task <id>
@@ -645,6 +646,7 @@ async function forumRefresh(context: ForumContext, deadlineMs = 25_000): Promise
 
 function printWrite(result: WriteResult): number {
   const where = forumChannelLabel(result.binding)
+  if (result.warning) console.error(`note: ${result.warning}`)
   if (result.kind === 'preview') {
     console.log(`dry run — would post to ${where} (${result.target}):`)
     console.log(result.text)
@@ -786,6 +788,26 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       return 0
     }
 
+    case 'unregister': {
+      const identity = requireIdentity(context)
+      const named = rest[0]
+      if (named && normalizeName(named) !== identity.name) {
+        throw new Error(
+          `this machine is ${identity.name}@${identity.host}; unregister "${named}" is a different peer`,
+        )
+      }
+      const quiet = args.flags.get('no-post') === true
+      const result = await unregisterIdentity(context, resolveTransport, { announce: !quiet })
+      console.log(`unregistered ${result.label}`)
+      console.log(
+        result.posted > 0
+          ? `announced the departure in ${result.posted} channel(s); peers drop it from their roster`
+          : 'nothing announced; peers keep it in the roster until the claim expires',
+      )
+      console.log('register again with `slack-browser agent-forum register <name>` whenever you want')
+      return 0
+    }
+
     case 'peers': {
       const views = await loadViews(context, {
         ...(stringFlag(args, 'workspace') ? { workspace: stringFlag(args, 'workspace')! } : {}),
@@ -795,7 +817,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
         return 0
       }
       for (const view of views) {
-        for (const line of renderPeers(view, context.now, context.limits.presence_seconds)) {
+        for (const line of renderPeers(view, context.now, context.limits)) {
           console.log(line)
         }
       }

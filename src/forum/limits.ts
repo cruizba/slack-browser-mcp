@@ -20,6 +20,7 @@ export const LimitsSchema = z
     stall_seconds: z.number().int().min(60).max(7 * 86_400),
     reopens: z.number().int().min(0).max(9),
     presence_seconds: z.number().int().min(60).max(24 * 3600),
+    peer_ttl_hours: z.number().int().min(1).max(24 * 30),
     max_body_chars: z.number().int().min(100).max(2000),
   })
   .strict()
@@ -35,6 +36,7 @@ export const DEFAULT_LIMITS: ForumLimits = {
   stall_seconds: 1800,
   reopens: 2,
   presence_seconds: 900,
+  peer_ttl_hours: 24,
   max_body_chars: 2000,
 }
 

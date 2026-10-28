@@ -14,9 +14,13 @@ import {
   presenceState,
   presenceThrottleMs,
 } from '../src/forum/presence.ts'
-import { isListening, rosterFrom } from '../src/forum/roster.ts'
+import { peerStatus, rosterFrom } from '../src/forum/roster.ts'
 
 const NOW = new Date('2026-10-28T10:00:00Z')
+
+function statusAt(peer: { ts: string }, now: Date) {
+  return peerStatus(peer as never, { presenceSeconds: 900, ttlHours: 24, now })
+}
 
 function message(ts: string, envelope: Envelope): ArchivedMessage {
   return {
@@ -44,7 +48,7 @@ function register(ts: string, from: string): ArchivedMessage {
   }
 }
 
-function presence(ts: string, from: string, state: 'listening' | 'idle'): ArchivedMessage {
+function presence(ts: string, from: string, state: 'listening' | 'idle' | 'gone'): ArchivedMessage {
   const [name, host] = from.split('@') as [string, string]
   return {
     ...message(ts, {
@@ -75,9 +79,11 @@ test('a presence message keeps the peer in the roster and says how alive it is',
   assert.equal(peer.capabilities.length, 1)
 
   const now = new Date(Number(peer.ts) * 1000 + 60_000)
-  assert.equal(isListening(peer, 900, now), true)
+  assert.equal(statusAt(peer, now), 'listening')
   const later = new Date(Number(peer.ts) * 1000 + 20 * 60_000)
-  assert.equal(isListening(peer, 900, later), false, 'a listening claim expires')
+  assert.equal(statusAt(peer, later), 'idle', 'a listening claim expires into idle')
+  const gone = new Date(Number(peer.ts) * 1000 + 25 * 3_600_000)
+  assert.equal(statusAt(peer, gone), 'out', 'a day of silence is out')
 })
 
 test('a peer that went idle stops claiming attention', () => {
@@ -88,7 +94,25 @@ test('a peer that went idle stops claiming attention', () => {
   ])
   const peer = roster[0]!
   assert.equal(peer.state, 'idle')
-  assert.equal(isListening(peer, 900, new Date(Number(peer.ts) * 1000 + 60_000)), false)
+  assert.equal(statusAt(peer, new Date(Number(peer.ts) * 1000 + 60_000)), 'idle')
+})
+
+test('a peer that leaves stops being a peer, and can come back', () => {
+  const retired = rosterFrom([
+    register('1793145600.000100', 'builder@laptop'),
+    presence('1793149000.000200', 'builder@laptop', 'listening'),
+    presence('1793152600.000300', 'builder@laptop', 'gone'),
+  ])
+  assert.deepEqual(retired, [], 'a retired peer is not in the roster')
+
+  const back = rosterFrom([
+    register('1793145600.000100', 'builder@laptop'),
+    presence('1793149000.000200', 'builder@laptop', 'gone'),
+    register('1793156200.000400', 'builder@laptop'),
+  ])
+  assert.equal(back.length, 1)
+  assert.equal(back[0]?.state, undefined, 'a register after a departure brings the name back')
+  assert.equal(statusAt(back[0]!, NOW), 'idle')
 })
 
 test('the listening mark is a claim with an expiry', async (t) => {
