@@ -111,7 +111,7 @@ function isAddressee(task: ForumTask, from: string): boolean {
   return task.to === '*' || task.to === from
 }
 
-function applyEvent(task: ForumTask, event: TaskEvent, limits: ForumLimits): boolean {
+function applyEvent(task: ForumTask, event: TaskEvent): boolean {
   const addressee = isAddressee(task, event.from)
   const requester = event.from === task.from
 
@@ -153,7 +153,6 @@ function applyEvent(task: ForumTask, event: TaskEvent, limits: ForumLimits): boo
       return false
     case 'reopen':
       if (REPORTED.has(task.state) && requester) {
-        if (task.reopens >= limits.reopens) return false
         task.state = 'accepted'
         task.reopens += 1
         return true
@@ -235,7 +234,7 @@ export function buildLedger(args: LedgerArgs): Ledger {
       ...(envelope.body !== undefined ? { body: envelope.body } : {}),
       ...('ok' in envelope && envelope.ok !== undefined ? { ok: envelope.ok } : {}),
     }
-    if (applyEvent(task, event, limits)) {
+    if (applyEvent(task, event)) {
       task.events.push(event)
       task.lastActivityTs = message.ts
     } else {

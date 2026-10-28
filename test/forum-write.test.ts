@@ -432,8 +432,8 @@ test('unregistering says goodbye, forgets the identity and retires the label', a
   assert.ok(file.ignored.includes('reviewer@laptop'), 'its own label is retired')
 })
 
-test('posting to a peer that has been quiet for a day warns but still works', async (t) => {
-  const { calls, client } = await setup(t)
+test('posting to a peer past its ttl warns but still works', async (t) => {
+  const { calls, client } = await setup(t, { peer_ttl_hours: 24 })
   const { ArchiveStore } = await import('../src/archive/store.ts')
   const { render, summaryFor } = await import('../src/forum/envelope.ts')
   const { newId } = await import('../src/forum/id.ts')
@@ -467,19 +467,18 @@ test('posting to a peer that has been quiet for a day warns but still works', as
   assert.equal(posts(calls).length, 0)
 })
 
-test('the hourly limit refuses the post before it reaches Slack', async (t) => {
-  const { calls, client } = await setup(t, { posts_per_hour: 1 })
+test('there is no hourly budget: back-to-back posts both go out', async (t) => {
+  const { calls, client } = await setup(t)
 
-  const first = await client.callTool({
-    name: 'forum_post',
-    arguments: { to: 'reviewer@laptop', title: 'uno', body: 'a', confirm: true },
-  })
-  assert.match(textOf(first), /Posted to/)
-
-  const second = await client.callTool({
-    name: 'forum_post',
-    arguments: { to: 'reviewer@laptop', title: 'dos', body: 'b', confirm: true },
-  })
-  assert.match(textOf(second), /posts_per_hour 1 reached/)
-  assert.equal(posts(calls).length, 1)
+  for (const [title, body] of [
+    ['uno', 'a'],
+    ['dos', 'b'],
+  ] as const) {
+    const result = await client.callTool({
+      name: 'forum_post',
+      arguments: { to: 'reviewer@laptop', title, body, confirm: true },
+    })
+    assert.match(textOf(result), /Posted to/)
+  }
+  assert.equal(posts(calls).length, 2)
 })

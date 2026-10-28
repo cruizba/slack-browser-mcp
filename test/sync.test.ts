@@ -71,7 +71,7 @@ const parent: SlackMessage = {
   ts: '1792500000.000100',
   user: 'U0AUTHOR',
   text: 'despliegue terminado',
-  reply_count: 2,
+  reply_count: 1,
 }
 
 const reply: SlackMessage = {
@@ -137,7 +137,7 @@ test('a reply_count change refetches the thread on the next reconcile', async (t
   await store.saveState(state)
 
   const extra: SlackMessage = { ts: '1792500120.000400', user: 'U0ANA', text: 'y otra', thread_ts: parent.ts }
-  client.messages = [{ ...parent, reply_count: 3 }]
+  client.messages = [{ ...parent, reply_count: 2 }]
   client.threads[parent.ts] = [parent, reply, extra]
   client.repliesCalls.length = 0
 
@@ -223,6 +223,50 @@ test('the channel file stays one line per state change, not per run', async (t) 
   assert.equal(raw.trim().split('\n').length, 2, 'no rewrite when nothing changed')
 })
 
+test('a refresh window notices a reply on a parent older than the cursor', async (t) => {
+  const { store, index } = await scratch(t)
+  const client = new FakeClient([parent], { [parent.ts]: [parent, reply] })
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+
+  const extra: SlackMessage = { ts: '1792500120.000400', user: 'U0ANA', text: 'y otra', thread_ts: parent.ts }
+  client.messages = [{ ...parent, reply_count: 2 }]
+  client.threads[parent.ts] = [parent, reply, extra]
+  client.historyCalls.length = 0
+  client.repliesCalls.length = 0
+
+  const report = await syncAccount({
+    account,
+    client,
+    store,
+    index,
+    options: { now: at(5), refreshDays: 1 },
+  })
+
+  const oldest = Number(client.historyCalls[0]?.oldest)
+  assert.ok(
+    Math.abs(at(5).getTime() / 1000 - oldest - 86_400) < 1,
+    'the window has to reach the parent, not only messages after the cursor',
+  )
+  assert.deepEqual(client.repliesCalls, [parent.ts], 'the changed reply_count re-reads the thread')
+  assert.equal(report.replies_added, 2, 'thread reads are idempotent by ts')
+})
+
+test('a thread that came back short stays queued until Slack shows the reply', async (t) => {
+  const { store, index } = await scratch(t)
+  const client = new FakeClient([{ ...parent, reply_count: 2 }], { [parent.ts]: [parent, reply] })
+
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+  let entry = (await store.loadState()).teams[account.team_id]?.channels[channel.id]
+  assert.deepEqual(entry?.pending_threads, [parent.ts], 'one reply short is not a whole thread')
+
+  const extra: SlackMessage = { ts: '1792500120.000400', user: 'U0ANA', text: 'y otra', thread_ts: parent.ts }
+  client.threads[parent.ts] = [parent, reply, extra]
+  await syncAccount({ account, client, store, index, options: { now: at(5) } })
+
+  entry = (await store.loadState()).teams[account.team_id]?.channels[channel.id]
+  assert.deepEqual(entry?.pending_threads ?? [], [])
+})
+
 test('a channel fetch turns a search hit into real history', async (t) => {
   const { store, index } = await scratch(t)
   await store.append(account.team_id, channel.id, [
@@ -270,7 +314,13 @@ test('a workspace seen for the first time is read back 90 days by default', asyn
   const { store, index } = await scratch(t)
   const client = new FakeClient([parent])
 
-  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+  await syncAccount({
+    account,
+    client,
+    store,
+    index,
+    options: { now: at(0), refreshDays: 1 },
+  })
 
   const oldest = Number(client.historyCalls[0]?.oldest)
   assert.ok(Number.isFinite(oldest), 'the first run must page from a window, not from nothing')

@@ -27,6 +27,8 @@ export interface CatchUpArgs {
   clientFor: (teamId: string) => SlackClient | undefined
   accountFor: (teamId: string) => SlackAccount | undefined
   deadlineMs?: number
+  /** Re-read this window so replies on older parents are noticed; see `refreshWindowDays`. */
+  refreshDays?: number
   now?: Date
   onProgress?: (line: string) => void
 }
@@ -63,6 +65,8 @@ export async function catchUp(args: CatchUpArgs): Promise<CatchUpReport> {
         options: {
           channels,
           deadlineMs: remaining,
+          maxThreadsPerChannel: 25,
+          ...(args.refreshDays ? { refreshDays: args.refreshDays } : {}),
           ...(args.now ? { now: args.now } : {}),
           ...(args.onProgress ? { onProgress: args.onProgress } : {}),
         },

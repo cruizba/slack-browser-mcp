@@ -67,6 +67,7 @@ const ForumFileSchema = z
     /** Kept so a file written by an earlier build still parses; nothing reads it. */
     cursors: z.record(z.string(), z.record(z.string(), z.string())).default({}),
     ignored: z.array(z.string()).default([]),
+    /** Kept so a file written by an earlier build still parses; nothing counts posts any more. */
     posting: z.record(z.string(), CounterSchema).default({}),
   })
   .strict()
@@ -94,10 +95,6 @@ export function limitsOf(file: ForumFile): ForumLimits {
     Object.entries(file.limits).filter(([, value]) => value !== undefined),
   ) as Partial<ForumLimits>
   return { ...DEFAULT_LIMITS, ...defined }
-}
-
-function hourOf(when: Date): string {
-  return when.toISOString().slice(0, 13)
 }
 
 export class ForumStore {
@@ -234,20 +231,5 @@ export class ForumStore {
     file.ignored = kept
     await this.write(file)
     return true
-  }
-
-  async postingThisHour(binding: string, when: Date = new Date()): Promise<number> {
-    const counter = (await this.read()).posting[binding]
-    return counter && counter.hour === hourOf(when) ? counter.count : 0
-  }
-
-  async notePost(binding: string, when: Date = new Date()): Promise<number> {
-    const file = await this.read()
-    const hour = hourOf(when)
-    const counter = file.posting[binding]
-    const next = counter && counter.hour === hour ? counter.count + 1 : 1
-    file.posting[binding] = { hour, count: next }
-    await this.write(file)
-    return next
   }
 }

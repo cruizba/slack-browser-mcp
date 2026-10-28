@@ -49,6 +49,12 @@ export interface SyncOptions {
   reconcileDays?: number
   deadlineMs?: number
   maxThreadsPerChannel?: number
+  /**
+   * Always re-read this window, even when the cursor is newer. Replies never show
+   * up in channel history, so a parent older than the cursor is only seen again
+   * when a read reaches back to it; the forum uses this to keep live tasks current.
+   */
+  refreshDays?: number
   /** Restrict the run to these channel ids; the forum polls one or two at a time. */
   channels?: readonly string[]
   now?: Date
@@ -74,6 +80,7 @@ interface ResolvedOptions {
   backfillDays: number
   reconcileDays: number
   maxThreadsPerChannel: number
+  refreshDays?: number
   now: Date
 }
 
@@ -83,6 +90,12 @@ function slackTs(date: Date): string {
 
 function daysAgo(now: Date, days: number): string {
   return slackTs(new Date(now.getTime() - days * 86_400_000))
+}
+
+/** The older of two Slack ts values, so one history call answers both questions. */
+function olderTs(left: string, right: string | undefined): string {
+  if (right === undefined) return left
+  return Number(right) < Number(left) ? right : left
 }
 
 export async function syncAccount(args: {
@@ -98,6 +111,7 @@ export async function syncAccount(args: {
     backfillDays: options.backfillDays ?? DEFAULT_BACKFILL_DAYS,
     reconcileDays: options.reconcileDays ?? 7,
     maxThreadsPerChannel: options.maxThreadsPerChannel ?? 10,
+    ...(options.refreshDays !== undefined ? { refreshDays: options.refreshDays } : {}),
     now: options.now ?? new Date(),
   }
   // Real clock for the budget; `now` only stamps records, and tests inject a fixed one.
@@ -226,11 +240,15 @@ async function syncChannel(args: {
   }
 
   const incrementalFrom = options.full ? undefined : args.entry.newest_ts
-  await collect(
-    incrementalFrom
-      ? { oldest: incrementalFrom }
-      : { oldest: daysAgo(options.now, options.backfillDays) },
-  )
+  const refreshFrom =
+    !options.full && options.refreshDays !== undefined && options.refreshDays > 0
+      ? daysAgo(options.now, options.refreshDays)
+      : undefined
+  // One walk covers both questions: the window that catches edits and new replies
+  // is the older of the cursor and the refresh start, so a poll stays one call. A
+  // channel with no cursor still gets the full backfill, refresh window or not.
+  const cursor = incrementalFrom ?? daysAgo(options.now, options.backfillDays)
+  await collect({ oldest: olderTs(cursor, refreshFrom) })
 
   const reconcileDue =
     options.reconcileDays > 0 &&
@@ -275,13 +293,22 @@ async function syncChannel(args: {
   let replies = 0
   for (const parentTs of threadParents) {
     if (Date.now() > args.deadline) break
-    pending.delete(parentTs)
     const thread = await client.replies({ channel: channel.id, thread_ts: parentTs, limit: 200 })
     for (const message of thread) {
       if (message.ts === parentTs) continue
       records.push(toRecord(channel, message, options.now))
       replies += 1
     }
+    // Slack can serve a thread a moment before its newest reply is visible. Keeping
+    // the parent queued retries it on the next run instead of trusting a half
+    // thread forever, which would leave a task stuck one state behind.
+    const expected = Math.min(
+      fetched.get(parentTs)?.reply_count ?? cachedByTs.get(parentTs)?.reply_count ?? 0,
+      199,
+    )
+    const got = thread.filter((message) => message.ts !== parentTs).length
+    pending.delete(parentTs)
+    if (got < expected) pending.add(parentTs)
   }
 
   if (records.length > 0) {

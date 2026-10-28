@@ -190,7 +190,7 @@ test('the requester can answer in the thread without moving the state', () => {
   assert.equal(task.ignored.length, 0, 'a note from the requester is not a spoof')
 })
 
-test('reopen returns to accepted and respects the limit', () => {
+test('reopen returns to accepted every time it is asked for', () => {
   const once = only([
     ...registers(),
     taskAt(at(5)),
@@ -201,7 +201,7 @@ test('reopen returns to accepted and respects the limit', () => {
   assert.equal(once.state, 'accepted')
   assert.equal(once.reopens, 1)
 
-  const exhausted = only([
+  const repeated = only([
     ...registers(),
     taskAt(at(5)),
     reply(at(10), 'accept', ME),
@@ -212,9 +212,9 @@ test('reopen returns to accepted and respects the limit', () => {
     reply(at(60), 'result', ME, { body: 'ok' }),
     reply(at(70), 'reopen', PEER, { body: 'tres' }),
   ])
-  assert.equal(exhausted.state, 'done')
-  assert.equal(exhausted.reopens, 2)
-  assert.equal(exhausted.ignored.at(-1)?.kind, 'reopen')
+  assert.equal(repeated.state, 'accepted')
+  assert.equal(repeated.reopens, 3)
+  assert.equal(repeated.ignored.length, 0, 'no reply is dropped for being the fourth')
 })
 
 test('a deadline or the ttl expires what nobody answered', () => {

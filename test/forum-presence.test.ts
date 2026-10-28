@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import type { ArchivedMessage } from '../src/archive/store.ts'
 import { render, summaryFor, type Envelope } from '../src/forum/envelope.ts'
 import { newId } from '../src/forum/id.ts'
+import { DEFAULT_LIMITS } from '../src/forum/limits.ts'
 import {
   lastPresence,
   markListening,
@@ -135,5 +136,10 @@ test('the local presence mark survives between tools of the same session', async
   assert.equal(await lastPresence(), undefined)
   await markPresence(NOW)
   assert.equal(await lastPresence(), NOW.getTime())
-  assert.equal(presenceThrottleMs(900), 300_000, 'a third of the window')
+  assert.equal(presenceThrottleMs(900), 900_000, 'one post per window')
+  assert.equal(
+    presenceThrottleMs(DEFAULT_LIMITS.presence_seconds),
+    24 * 3_600_000,
+    'a day between announcements by default',
+  )
 })

@@ -59,9 +59,9 @@ slack-browser agent-forum post reviewer@bob-pc "Review the retry PR" \
 
 Two properties make the chain safe to run:
 
-- **`parent` and `depth`.** The review task points at the task it came from, and the
-  depth cap (3, in `limits.depth`) stops a chain that keeps delegating instead of
-  doing the work.
+- **`parent` and `depth`.** The review task points at the task it came from, and
+  `depth` is carried into the envelope so a chain that keeps delegating is visible
+  in `forum task`.
 - **No inherited consent.** Each hop is approved on the machine that receives it.
   Alice approving the plan does not approve Bob's review, and Bob approving the
   review does not approve the merge.

@@ -20,7 +20,7 @@ import { recordSend } from '../slack/audit.ts'
 import { signedMessage } from '../slack/assist.ts'
 import { SlackClient, type SlackChannel } from '../slack/client.ts'
 import { candidates, parseTarget, resolvePeer, targetLabel, type Target } from './addressing.ts'
-import { bindingKey, type Binding } from './binding.ts'
+import type { Binding } from './binding.ts'
 import { labelOf, type Identity } from './identity.ts'
 import { meLabel, reload, requireIdentity, type ForumContext } from './context.ts'
 import { loadViews, type BindingView } from './inbox.ts'
@@ -159,16 +159,6 @@ function requireRequester(task: ForumTask, me: string): void {
   }
 }
 
-async function checkBudget(context: ForumContext, binding: Binding): Promise<void> {
-  const used = await context.forum.postingThisHour(bindingKey(binding))
-  if (used >= context.limits.posts_per_hour) {
-    fail(
-      `posts_per_hour ${context.limits.posts_per_hour} reached on #${binding.name}.`,
-      'The counter resets at the top of the hour; raise limits.posts_per_hour in forum.json to allow more.',
-    )
-  }
-}
-
 /**
  * Renders, signs, posts and records. The only function that talks to Slack, which
  * is what makes "every envelope is audited" a property of the module instead of a
@@ -180,7 +170,6 @@ export async function deliver(
   binding: Binding,
   envelope: Envelope,
   threadTs?: string,
-  options: { count?: boolean } = {},
 ): Promise<{ ts: string; audit: string }> {
   const summary = summaryFor(envelope)
   const text = render(summary, envelope)
@@ -209,10 +198,6 @@ export async function deliver(
   // that only catches up on the next sync makes "accept, then report" fail with
   // "still open" in the same session.
   await rememberOwn(context, binding, posted.ts, signed.text, transport.account.user_id, threadTs)
-
-  // Presence is not a post in the sense the hourly budget means: it is capped by
-  // its own throttle and must not eat the room a real task needs.
-  if (options.count !== false) await context.forum.notePost(bindingKey(binding))
   return { ts: posted.ts, audit }
 }
 
@@ -374,36 +359,14 @@ export async function postTask(
   if (views.length === 0) {
     fail('No forum channel bound on this machine.', 'Bind one: `agent-forum add <channel>`.')
   }
-  if (args.body.length > context.limits.max_body_chars) {
-    fail(
-      `The body is ${args.body.length} characters; limits.max_body_chars is ${context.limits.max_body_chars}.`,
-      'Shorten it, or put the detail in a link.',
-    )
-  }
 
   const { view, toValue, target, peer } = pickBinding(views, args.to, args.tag, args.binding)
   const warning = targetWarning(context, parseTarget(args.to), view.roster, peer)
-  const meOpen = view.ledger.tasks.filter(
-    (task) => task.from === me && !task.closed && task.state !== 'done' && task.state !== 'failed',
-  )
-  if (meOpen.length >= context.limits.open_tasks) {
-    fail(
-      `${meOpen.length} open task(s) from you in #${view.binding.name}; limits.open_tasks is ${context.limits.open_tasks}.`,
-      'Close some with an `ack`, or cancel what is stale.',
-    )
-  }
-  await checkBudget(context, view.binding)
 
   let depth = 0
   if (args.parent) {
     const parent = locateTask([view], args.parent)
     depth = parent.task.depth + 1
-    if (depth > context.limits.depth) {
-      fail(
-        `This would be a depth-${depth} task; limits.depth is ${context.limits.depth}.`,
-        'Do the work instead of delegating it again.',
-      )
-    }
   }
 
   const envelope: Envelope = {
@@ -493,8 +456,6 @@ export async function replyTo(
   }
   const { view, task } = located
 
-  await checkBudget(context, view.binding)
-
   const base = {
     v: 1 as const,
     id: newId(context.now.getTime()),
@@ -569,12 +530,6 @@ function validate(context: ForumContext, task: ForumTask, args: ReplyArgs): void
         )
       }
       requireRequester(task, me)
-      if (args.kind === 'reopen' && task.reopens >= context.limits.reopens) {
-        fail(
-          `Task ${task.id} was already reopened ${task.reopens} times; limits.reopens is ${context.limits.reopens}.`,
-          'Post a new task instead of bouncing the same one.',
-        )
-      }
       break
     case 'cancel':
       if (task.state !== 'open' && task.state !== 'accepted') {
@@ -669,8 +624,9 @@ export function presenceEnvelope(
 
 /**
  * Says "I am here" often enough to survive Slack retention and the roster growing
- * stale, and rarely enough not to be noise: once per third of the presence window,
- * or immediately when the claim changes (idle to listening).
+ * stale, and rarely enough not to be noise: one message per presence window, so at
+ * most one a day. A change from idle to listening waits for the window too; the
+ * roster is there so peers can be seen, not so every session is a headline.
  */
 export async function announcePresence(
   context: ForumContext,
@@ -699,22 +655,12 @@ export async function announcePresence(
       ? context.now.getTime() - Number(seen.ts) * 1000
       : Number.POSITIVE_INFINITY
     const ageMs = Math.min(localAgeMs, archivedAgeMs)
-    // No archived presence means the archive has not caught up with us yet, not
-    // that the state changed; the local mark is the source of truth for that.
-    const unchanged = seen === undefined || seen.state === undefined || seen.state === state
-    if (!options.force && unchanged && ageMs < throttle) {
+    if (!options.force && ageMs < throttle) {
       result.skipped += 1
       continue
     }
     const transport = await resolveTransport(view.binding.workspace)
-    await deliver(
-      context,
-      transport,
-      view.binding,
-      presenceEnvelope(context, identity, state),
-      undefined,
-      { count: false },
-    )
+    await deliver(context, transport, view.binding, presenceEnvelope(context, identity, state))
     await markPresence(context.now)
     result.posted += 1
   }
@@ -740,14 +686,7 @@ export async function unregisterIdentity(
     const views = await loadViews(context)
     for (const view of views) {
       const transport = await resolveTransport(view.binding.workspace)
-      await deliver(
-        context,
-        transport,
-        view.binding,
-        presenceEnvelope(context, identity, 'gone'),
-        undefined,
-        { count: false },
-      )
+      await deliver(context, transport, view.binding, presenceEnvelope(context, identity, 'gone'))
       posted += 1
     }
   }
@@ -784,7 +723,6 @@ export async function announce(
       skipped += 1
       continue
     }
-    await checkBudget(context, view.binding)
     const transport = await resolveTransport(view.binding.workspace)
     await deliver(context, transport, view.binding, envelope)
     posted += 1

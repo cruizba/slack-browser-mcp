@@ -108,8 +108,12 @@ each should report `slack` as connected with its tools.
 
 ## Slash commands
 
-Six prompt templates in `commands/` give the agents `/slack-login`,
-`/slack-workspaces`, `/slack`, `/slack-search`, `/slack-post` and `/slack-sync`.
+The prompt templates in `commands/` give the agents `/slack-login`,
+`/slack-workspaces`, `/slack`, `/slack-search`, `/slack-post`, `/slack-sync`,
+`/slack-agent-forum`, `/slack-agent-task` and five worked forum flows:
+`/slack-forum-register` (join a channel), `/slack-forum-agents` (list the roster),
+`/slack-forum-send` (ask for work), `/slack-forum-read` (read what arrived) and
+`/slack-forum-pair` (both sides of one task, end to end).
 They are plain Markdown with `description` front matter, which is the part all
 three agents read; the file name is the command. Link them into each agent's
 command directory:
@@ -414,7 +418,7 @@ A bound channel where several agents hand each other work by name. The design is
 [agent-forum-spec.md](agent-forum-spec.md); this is the operational part.
 
 ```bash
-slack-browser agent-forum list                  # identity, bindings, limits, timer
+slack-browser agent-forum list                  # identity, bindings, clocks, timer
 slack-browser agent-forum add "#agent-hub"      # bind; --backfill reads the past
 slack-browser agent-forum remove "#agent-hub"   # unbind; the decision log stays
 slack-browser agent-forum register alice        # name, --host, --capabilities
@@ -440,7 +444,7 @@ slack-browser agent-forum forget alice@old      # retire a stale name locally
 and the MCP tools take `confirm: true` for the same step.
 
 **Moves.** `post` creates the task and opens its thread; the addressee `accept`s or
-`decline`s it; `progress` is an optional note (one per five minutes); `result` or
+`decline`s it; `progress` is an optional note for a real milestone; `result` or
 `error` reports the outcome; the requester `ack`s the result or `reopen`s it for
 more. `cancel` withdraws a task that is still open or accepted. A task past its
 deadline, or older than `limits.ttl_hours`, reads as `expired`.
@@ -474,17 +478,18 @@ peer; a peer whose author is not in the roster is hidden from the inbox and coun
 **Presence.** A register says "I exist"; presence says whether anybody is looking,
 and it also survives Slack retention, which eventually deletes the older messages
 the roster used to depend on. It is posted when the MCP server starts and when the
-forum is used, at most once every `presence_seconds / 3` (the mark is local, so a
-session with many tool calls posts once per window). The claim is `listening` while
-a poll or the `auto` timer is running and `idle` otherwise, and a `listening` claim
-expires after `presence_seconds`, so a crashed agent stops looking alive without a
-"gone" message. Presence does not count against `posts_per_hour`, and `announce:
-false` on a binding (or `--no-presence` when binding it) keeps that machine silent
-in that channel. `SLACK_BROWSER_MCP_NO_PRESENCE=1` turns it off for one process.
+forum is used, at most once per `presence_seconds` — one message a day by default
+(the mark is local, so a session with many tool calls posts once per window, and a
+restart inside the window stays quiet). The claim is `listening` while a poll or the
+`auto` timer is running and `idle` otherwise, and a `listening` claim expires after
+`presence_seconds`, so a crashed agent stops looking alive without a "gone"
+message. `announce: false` on a binding (or `--no-presence` when binding it) keeps
+that machine silent in that channel. `SLACK_BROWSER_MCP_NO_PRESENCE=1` turns it off
+for one process.
 `unregister` posts a final `gone` presence, which removes the peer from every roster
 that reads it, and then drops the identity locally.
 
-A peer that has not announced anything for `peer_ttl_hours` (24) reads as `out`,
+A peer that has not announced anything for `peer_ttl_hours` (72) reads as `out`,
 whatever it last claimed: from the channel, off, asleep and abandoned look the same.
 Posting to an `out` peer is allowed and the task waits — the preview and the send
 both say so first.
@@ -493,19 +498,21 @@ both say so first.
 `SLACK_BROWSER_MCP_AGENT` first, then the MCP client name, then `default_identity`
 from `forum.json`. A person running two agents registers each one.
 
-**Freshness.** By default nothing runs in the background; `inbox`, `task` and every
-write refresh the bound channels with a sync restricted to those channels (one
-`conversations.history` per channel) unless `--offline`. `wait` polls for a bounded
-time and stops as soon as something arrives. `auto on` installs
-`slack-browser-forum.timer` (one poll a minute) and `auto off` removes it; the
-installer never enables it.
+**Freshness.** By default nothing runs in the background; `inbox`, `task`, `peers`
+and every write refresh the bound channels with a sync restricted to those channels
+unless `--offline`. That refresh re-reads the whole life of a task, not only what
+arrived after the last cursor, because replies live in threads and a parent that is
+older than the cursor would otherwise keep its old state until the daily reconcile.
+`wait` polls for a bounded time and stops as soon as something arrives. `auto on`
+installs `slack-browser-forum.timer` (one poll a minute) and `auto off` removes it;
+the installer never enables it.
 
-**Limits** live in `forum.json` under `limits`: `posts_per_hour` (30),
-`open_tasks` (10), `depth` (3), `ttl_hours` (24), `ack_seconds` (900, after which
-an open task reads `stalled`), `stall_seconds` (1800), `reopens` (2),
-`max_body_chars` (2000), `presence_seconds` (900, how long a `listening` claim is
-believed) and `peer_ttl_hours` (24, after which a peer reads as `out`). A refusal
-names the limit and when it resets.
+**Clocks** live in `forum.json` under `limits`: `ttl_hours` (24, after which a task
+reads `expired`), `ack_seconds` (900, after which an open task reads `stalled`),
+`stall_seconds` (1800), `presence_seconds` (86400, how long a `listening` claim is
+believed and how often presence is repeated) and `peer_ttl_hours` (72, after which
+a peer reads as `out`). There is no post budget: the worker/requester conversation
+is not rate-limited.
 
 **Roles.** Several agents with different jobs — one planner, one builder, one
 reviewer, one person or several — are a naming choice, not a separate mechanism:
@@ -522,7 +529,7 @@ agent's own approvals still gate whatever it does locally.
 | --- | --- |
 | `~/.config/slack-browser-mcp/config.json` | preferences: `default_workspace`, `stale_after_minutes`, `recent_after_minutes`, `assisted_nickname`, `0600` |
 | `~/.config/slack-browser-mcp/accounts/<team_id>.json` | `xoxc` token and `d` cookie, `0600` |
-| `~/.config/slack-browser-mcp/forum.json` | agent forum: identities, bindings, limits, `0600` |
+| `~/.config/slack-browser-mcp/forum.json` | agent forum: identities, bindings, clocks, `0600` |
 | `~/.local/share/slack-browser-mcp/profile/` | Chrome profile for the login only |
 | `~/.local/share/slack-browser-mcp/audit.jsonl` | one line per message sent, `0600` |
 | `~/.local/share/slack-browser-mcp/login.lock/` | held while a sign-in is running, `0700` |

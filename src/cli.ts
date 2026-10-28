@@ -9,6 +9,7 @@ import { autoOff, autoOn, autoStatus } from './forum/auto.ts'
 import { openForum, reload, requireIdentity, type ForumContext } from './forum/context.ts'
 import { defaultHost, normalizeCapabilities, normalizeName } from './forum/identity.ts'
 import { inboxEntries, loadViews, type InboxEntry } from './forum/inbox.ts'
+import { describeLimits, refreshWindowDays } from './forum/limits.ts'
 import { locateTask, postTask, replyTo, transportFor, announce, announcePresence, registerIdentity, unregisterIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
 import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from './forum/render.ts'
 import { stateLabel } from './forum/ledger.ts'
@@ -638,6 +639,7 @@ async function forumRefresh(context: ForumContext, deadlineMs = 25_000): Promise
     clientFor,
     accountFor: (teamId) => byTeam.get(teamId),
     deadlineMs,
+    refreshDays: refreshWindowDays(context.limits),
     ...(process.stderr.isTTY
       ? { onProgress: (line: string) => console.error(`    ${line}`) }
       : {}),
@@ -695,11 +697,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
         console.log(`  ${forumChannelLabel(binding)} (${binding.channel}) — ${flags}`)
       }
       const limits = context.limits
-      console.log(
-        `limits: ${limits.posts_per_hour}/h posts · ${limits.open_tasks} open · depth ${limits.depth} · ` +
-          `ttl ${limits.ttl_hours}h · ack ${Math.round(limits.ack_seconds / 60)}m · ` +
-          `stall ${Math.round(limits.stall_seconds / 60)}m`,
-      )
+      console.log(`timings: ${describeLimits(limits)}`)
       const auto = await autoStatus()
       console.log(`auto: ${auto.detail}${auto.enabled ? ' (enabled)' : ''}`)
       if (context.file.ignored.length > 0) {
@@ -809,7 +807,12 @@ async function commandForum(args: ParsedArgs): Promise<number> {
     }
 
     case 'peers': {
-      const views = await loadViews(context, {
+      let note = ''
+      const result = await forumRefresh(context, 10_000)
+      if (result.errors.length > 0) note = `\nnote: ${result.errors[0]}`
+      else if (result.locked) note = '\nnote: a sync holds the lock'
+      const fresh = await reload(context)
+      const views = await loadViews(fresh, {
         ...(stringFlag(args, 'workspace') ? { workspace: stringFlag(args, 'workspace')! } : {}),
       })
       if (views.length === 0) {
@@ -817,10 +820,11 @@ async function commandForum(args: ParsedArgs): Promise<number> {
         return 0
       }
       for (const view of views) {
-        for (const line of renderPeers(view, context.now, context.limits)) {
+        for (const line of renderPeers(view, fresh.now, fresh.limits)) {
           console.log(line)
         }
       }
+      if (note) console.log(note.trim())
       return 0
     }
 

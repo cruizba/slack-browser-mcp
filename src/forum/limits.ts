@@ -1,43 +1,34 @@
 /**
- * The limits that keep two agents from turning a coordination channel into a
- * billing incident: posts per hour, open tasks, delegation depth, task lifetime,
- * how long silence counts as stalled, and how many times a result may be sent
- * back for more.
+ * The clocks that keep two agents from talking past each other: how long a task
+ * lives, how long silence counts as stalled, how often a peer says it is there,
+ * and how long a peer may be quiet before it reads as out.
  *
- * They live in `forum.json` so a user can tighten them without a code change;
- * every one of them is a refusal at write time, never a silent drop.
+ * They live in `forum.json` so a user can tune them without a code change. There is
+ * no post budget: the channel is the one the user bound for agents to hand work to
+ * each other, and a counter that refuses a task mid-conversation costs more than
+ * the noise it prevents.
  */
 
 import { z } from 'zod'
 
-export const LimitsSchema = z
-  .object({
-    posts_per_hour: z.number().int().min(1).max(600),
-    open_tasks: z.number().int().min(1).max(200),
-    depth: z.number().int().min(0).max(9),
-    ttl_hours: z.number().positive().max(24 * 30),
-    ack_seconds: z.number().int().min(30).max(86_400),
-    stall_seconds: z.number().int().min(60).max(7 * 86_400),
-    reopens: z.number().int().min(0).max(9),
-    presence_seconds: z.number().int().min(60).max(24 * 3600),
-    peer_ttl_hours: z.number().int().min(1).max(24 * 30),
-    max_body_chars: z.number().int().min(100).max(2000),
-  })
-  .strict()
+export const LimitsSchema = z.object({
+  ttl_hours: z.number().positive().max(24 * 30),
+  ack_seconds: z.number().int().min(30).max(86_400),
+  stall_seconds: z.number().int().min(60).max(7 * 86_400),
+  presence_seconds: z.number().int().min(60).max(24 * 3600),
+  peer_ttl_hours: z.number().int().min(1).max(24 * 30),
+})
 
 export type ForumLimits = z.infer<typeof LimitsSchema>
 
 export const DEFAULT_LIMITS: ForumLimits = {
-  posts_per_hour: 30,
-  open_tasks: 10,
-  depth: 3,
   ttl_hours: 24,
   ack_seconds: 900,
   stall_seconds: 1800,
-  reopens: 2,
-  presence_seconds: 900,
-  peer_ttl_hours: 24,
-  max_body_chars: 2000,
+  /** One heartbeat per window, so at most one presence message a day. */
+  presence_seconds: 86_400,
+  /** Three daily heartbeats may be missed before a peer reads as out. */
+  peer_ttl_hours: 72,
 }
 
 /** A file may carry a subset; anything absent keeps the default. */
@@ -51,4 +42,28 @@ export function forumTimings(limits: ForumLimits): { ackMs: number; stallMs: num
     stallMs: limits.stall_seconds * 1000,
     ttlMs: limits.ttl_hours * 3_600_000,
   }
+}
+
+/**
+ * How far back a forum refresh re-reads the channel. Replies never show up in
+ * `conversations.history`, so a parent older than the cursor is only seen again if
+ * the window reaches it; it has to cover a task's whole life, or a reply to a task
+ * from this morning would wait for the daily reconcile.
+ */
+export function refreshWindowDays(limits: ForumLimits): number {
+  return Math.max(1, Math.ceil(limits.ttl_hours / 24))
+}
+
+function humanDuration(seconds: number): string {
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+  const hours = seconds / 3600
+  return Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`
+}
+
+/** One line both surfaces print, so the numbers cannot drift apart. */
+export function describeLimits(limits: ForumLimits): string {
+  return (
+    `ttl ${limits.ttl_hours}h · ack ${humanDuration(limits.ack_seconds)} · ` +
+    `stall ${humanDuration(limits.stall_seconds)} · presence ${humanDuration(limits.presence_seconds)}`
+  )
 }

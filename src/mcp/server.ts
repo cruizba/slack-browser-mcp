@@ -37,6 +37,7 @@ import { AuthError, SchemaError } from '../errors.ts'
 import { autoStatus } from '../forum/auto.ts'
 import { openForum, reload, type ForumContext } from '../forum/context.ts'
 import { loadViews } from '../forum/inbox.ts'
+import { describeLimits, refreshWindowDays } from '../forum/limits.ts'
 import { announcePresence, locateTask, postTask, replyTo, transportFor, type Transport, type TransportResolver, type WriteResult } from '../forum/service.ts'
 import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from '../forum/render.ts'
 import { catchUp, waitForWork, type CatchUpReport } from '../forum/watch.ts'
@@ -1586,6 +1587,7 @@ export function buildServer(): McpServer {
       },
       accountFor: (teamId) => byTeam.get(teamId),
       deadlineMs: 20_000,
+      refreshDays: refreshWindowDays(context.limits),
     })
   }
 
@@ -1619,7 +1621,7 @@ export function buildServer(): McpServer {
     {
       title: 'Agent forum status',
       description:
-        'What the agent forum looks like from this machine: the identity in force, the bound channels with their archive age, the limits, and whether the background poll is enabled. Read-only.',
+        'What the agent forum looks like from this machine: the identity in force, the bound channels with their archive age, the clocks, and whether the background poll is enabled. Read-only.',
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -1649,10 +1651,7 @@ export function buildServer(): McpServer {
           )
         }
         const limits = context.limits
-        lines.push(
-          `limits: ${limits.posts_per_hour}/h · ${limits.open_tasks} open · depth ${limits.depth} · ` +
-            `ttl ${limits.ttl_hours}h · ack ${Math.round(limits.ack_seconds / 60)}m`,
-        )
+        lines.push(`timings: ${describeLimits(limits)}`)
         const auto = await autoStatus()
         lines.push(`auto: ${auto.detail}`)
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
@@ -1761,7 +1760,12 @@ export function buildServer(): McpServer {
     },
     async () => {
       try {
-        const context = await openForumFor()
+        let context = await openForumFor()
+        let note = ''
+        const result = await refreshForum(context)
+        if (result.errors.length > 0) note = `\nnote: ${result.errors[0]}`
+        else if (result.locked) note = '\nnote: a sync holds the lock'
+        context = await reload(context)
         const views = await loadViews(context)
         if (views.length === 0) {
           return {
@@ -1776,7 +1780,7 @@ export function buildServer(): McpServer {
         const lines = views.flatMap((view) =>
           renderPeers(view, context.now, context.limits),
         )
-        return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+        return { content: [{ type: 'text' as const, text: `${lines.join('\n')}${note}` }] }
       } catch (error) {
         return failure(error)
       }
@@ -1905,7 +1909,7 @@ export function buildServer(): McpServer {
     {
       title: 'Report progress on a forum task',
       description:
-        'Adds a note to the task thread while it is being worked on. One per task per five minutes; not a heartbeat.',
+        'Adds a note to the task thread while it is being worked on. One per real milestone, not a heartbeat.',
       inputSchema: {
         id: z.string().min(4),
         body: z.string().min(1).max(2000),
@@ -1953,7 +1957,7 @@ export function buildServer(): McpServer {
     {
       title: 'Send a forum task back for more',
       description:
-        'Reopens a reported task with what is missing, instead of posting a second task and losing the thread. Limited by limits.reopens (2 by default).',
+        'Reopens a reported task with what is missing, instead of posting a second task and losing the thread.',
       inputSchema: {
         id: z.string().min(4),
         body: z.string().min(1).max(2000).describe('What is missing.'),

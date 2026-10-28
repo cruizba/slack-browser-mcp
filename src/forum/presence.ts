@@ -16,9 +16,13 @@ import { forumDir } from '../config/paths.ts'
 
 export type PresenceState = 'listening' | 'idle'
 
-/** How often a peer re-announces itself while it stays in the same state. */
+/**
+ * How often a peer re-announces itself. One post per window: presence is a
+ * heartbeat that keeps a roster entry from rotting away with Slack retention, not
+ * a live status feed, so a day between messages is enough.
+ */
 export function presenceThrottleMs(presenceSeconds: number): number {
-  return Math.floor((presenceSeconds * 1000) / 3)
+  return presenceSeconds * 1000
 }
 
 export function listeningMarkPath(root: string = forumDir()): string {
