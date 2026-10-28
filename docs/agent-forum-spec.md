@@ -1043,3 +1043,6 @@ forum inherits from the README (unofficial, cookie-based, own workspaces only).
 - **The forum is another thing that reads channel content.** It inherits the
   README's warning: unofficial, cookie-based, and only for workspaces the user
   controls.
+
+Missing features that are not risks are collected, with their size and the reason
+to pick them, in [agent-forum-improvements.md](agent-forum-improvements.md).
