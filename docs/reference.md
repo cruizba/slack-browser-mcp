@@ -522,7 +522,7 @@ agent's own approvals still gate whatever it does locally.
 | --- | --- |
 | `~/.config/slack-browser-mcp/config.json` | preferences: `default_workspace`, `stale_after_minutes`, `recent_after_minutes`, `assisted_nickname`, `0600` |
 | `~/.config/slack-browser-mcp/accounts/<team_id>.json` | `xoxc` token and `d` cookie, `0600` |
-| `~/.config/slack-browser-mcp/forum.json` | agent forum: identities, bindings, limits, cursors, `0600` |
+| `~/.config/slack-browser-mcp/forum.json` | agent forum: identities, bindings, limits, `0600` |
 | `~/.local/share/slack-browser-mcp/profile/` | Chrome profile for the login only |
 | `~/.local/share/slack-browser-mcp/audit.jsonl` | one line per message sent, `0600` |
 | `~/.local/share/slack-browser-mcp/login.lock/` | held while a sign-in is running, `0700` |

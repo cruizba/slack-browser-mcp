@@ -8,7 +8,7 @@ import { login } from './auth/login.ts'
 import { autoOff, autoOn, autoStatus } from './forum/auto.ts'
 import { openForum, reload, requireIdentity, type ForumContext } from './forum/context.ts'
 import { defaultHost, normalizeCapabilities, normalizeName } from './forum/identity.ts'
-import { inboxEntries, loadViews, newestTs, type InboxEntry } from './forum/inbox.ts'
+import { inboxEntries, loadViews, type InboxEntry } from './forum/inbox.ts'
 import { locateTask, postTask, replyTo, transportFor, announce, announcePresence, registerIdentity, unregisterIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
 import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from './forum/render.ts'
 import { stateLabel } from './forum/ledger.ts'
@@ -853,12 +853,6 @@ async function commandForum(args: ParsedArgs): Promise<number> {
         }
       } else {
         console.log(renderInbox(fresh, report, { offline, note }))
-      }
-      const newest = newestTs(report)
-      if (newest && !offline) {
-        for (const view of new Set(report.entries.map((entry) => entry.view))) {
-          await fresh.forum.setCursor(fresh.identityKey, view.key, newest)
-        }
       }
       return 0
     }

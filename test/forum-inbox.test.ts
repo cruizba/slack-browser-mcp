@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -117,7 +117,7 @@ test('the inbox shows what is addressed to me and counts the rest', async (t) =>
   process.env.SLACK_BROWSER_MCP_AGENT = 'pi'
 
   await seed(root)
-  const { openForum } = await import('../src/forum/context.ts')
+  const { openForum, reload: reloadFor } = await import('../src/forum/context.ts')
   const { inboxEntries, loadViews } = await import('../src/forum/inbox.ts')
   const { renderInbox } = await import('../src/forum/render.ts')
 
@@ -133,6 +133,18 @@ test('the inbox shows what is addressed to me and counts the rest', async (t) =>
   assert.equal(report.entries[0]?.task.to, 'reviewer@laptop')
   assert.equal(report.entries[1]?.task.tag, 'review')
   assert.equal(report.hidden, 0)
+
+  // Reading is idempotent, and a stored cursor from an earlier build must not hide
+  // anything: the boundary is `since_ts`, and showing a task moves nothing.
+  const forumFile = join(root, 'config', 'forum.json')
+  const stored = JSON.parse(await readFile(forumFile, 'utf8')) as Record<string, unknown>
+  stored.cursors = { pi: { 'T0TEST:C0HUB': '1793999999.000000' } }
+  await writeFile(forumFile, JSON.stringify(stored), 'utf8')
+  const again = inboxEntries(await reloadFor(context), await loadViews(await reloadFor(context)))
+  assert.deepEqual(
+    again.entries.map((entry) => entry.task.id),
+    report.entries.map((entry) => entry.task.id),
+  )
 
   const text = renderInbox(context, report)
   assert.match(text, /agent forum as reviewer@laptop/)

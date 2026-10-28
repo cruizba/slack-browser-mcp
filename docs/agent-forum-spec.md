@@ -649,17 +649,18 @@ visible in `forum task`.
 | user changes their mind | requester | `cancel`, or `reopen` if already accepted |
 | task is stale and nobody asked | user | `forum forget`, and the inbox stops showing it |
 
-## 8. Inbox and cursors
+## 8. The inbox
 
 - The inbox is tasks where `to` is me, or `to` is `*` and either has no `tag` or
   a `tag` my identity advertises, and `from` is not me, the channel is bound,
-  `ts > max(since_ts, cursor)`, the state is not closed, and the local decision is
-  not `rejected`. A `*` task that somebody else already accepted stays visible
-  with `taken by <peer>` rather than disappearing.
-- A cursor per (identity, binding) lives in `forum.json` and advances only when
-  `forum_inbox` returns a task, or when `forum poll` runs. Reading is idempotent:
-  calling `forum_inbox` twice returns the same pending set, because the filter is
-  state-based and the cursor only bounds the scan.
+  `ts > since_ts`, the state is not closed, and the local decision is not
+  `rejected`. A `*` task that somebody else already accepted stays visible with
+  `taken by <peer>` rather than disappearing.
+- **Reading moves nothing.** The only boundary is `since_ts`, set once when the
+  channel was bound; what decides is the task's state. An earlier draft also kept a
+  cursor advanced by reads, and it made the task just shown disappear on the next
+  call — the opposite of what an inbox owes. `forum_inbox` twice returns the same
+  pending set.
 - `forum_inbox` sorts oldest first — the order the tasks were sent — and reports
   the archive age for the bound channel, the way reads do today
   (`archive: 4 min ago`).

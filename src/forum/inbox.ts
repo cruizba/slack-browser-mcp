@@ -109,10 +109,10 @@ export function inboxEntries(
     unreadable += view.ledger.unreadable
     orphans += view.ledger.orphans
     hidden += view.ledger.unvouched
-    const cursor = options.sinceStart
-      ? undefined
-      : context.file.cursors[context.identityKey]?.[view.key]
-    const floor = Math.max(Number(view.binding.since_ts) || 0, Number(cursor) || 0)
+    // The boundary is when the channel was bound. Reading must not move it: the
+    // filter is the task's state, and a watermark advanced by showing something is
+    // what makes the same task vanish on the next call.
+    const floor = options.sinceStart ? 0 : Number(view.binding.since_ts) || 0
 
     for (const task of view.ledger.tasks) {
       const decision = view.decisions.get(task.id)

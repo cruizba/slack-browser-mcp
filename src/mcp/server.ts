@@ -36,7 +36,7 @@ import { FileSettingsStore } from '../config/settings.ts'
 import { AuthError, SchemaError } from '../errors.ts'
 import { autoStatus } from '../forum/auto.ts'
 import { openForum, reload, type ForumContext } from '../forum/context.ts'
-import { loadViews, newestTs } from '../forum/inbox.ts'
+import { loadViews } from '../forum/inbox.ts'
 import { announcePresence, locateTask, postTask, replyTo, transportFor, type Transport, type TransportResolver, type WriteResult } from '../forum/service.ts'
 import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from '../forum/render.ts'
 import { catchUp, waitForWork, type CatchUpReport } from '../forum/watch.ts'
@@ -1645,7 +1645,7 @@ export function buildServer(): McpServer {
             `channel: ${forumChannelLabel(view.binding)} (${view.binding.channel}) — ` +
               `${peers} peer(s), ${open} open task(s), ` +
               `${view.ledger.unreadable} unreadable, ` +
-              `reading since ${context.file.cursors[context.identityKey]?.[view.key] ?? view.binding.since_ts}`,
+              `reading since ${view.binding.since_ts}`,
           )
         }
         const limits = context.limits
@@ -1708,12 +1708,6 @@ export function buildServer(): McpServer {
           ...(offline ? {} : { refresh }),
         })
         const text = renderInbox(context, outcome.report, { offline, note })
-        const newest = newestTs(outcome.report)
-        if (newest && !offline) {
-          for (const view of new Set(outcome.report.entries.map((entry) => entry.view))) {
-            await context.forum.setCursor(context.identityKey, view.key, newest)
-          }
-        }
         return { content: [{ type: 'text' as const, text }] }
       } catch (error) {
         return failure(error)

@@ -64,6 +64,7 @@ const ForumFileSchema = z
     default_identity: z.string().optional(),
     channels: z.array(BindingSchema).default([]),
     limits: LimitsSchema.partial().default({}),
+    /** Kept so a file written by an earlier build still parses; nothing reads it. */
     cursors: z.record(z.string(), z.record(z.string(), z.string())).default({}),
     ignored: z.array(z.string()).default([]),
     posting: z.record(z.string(), CounterSchema).default({}),
@@ -216,17 +217,6 @@ export class ForumStore {
     file.channels = kept
     await this.write(file)
     return true
-  }
-
-  async cursor(identityKey: string, binding: string): Promise<string | undefined> {
-    return (await this.read()).cursors[identityKey]?.[binding]
-  }
-
-  async setCursor(identityKey: string, binding: string, ts: string): Promise<void> {
-    const file = await this.read()
-    file.cursors[identityKey] ??= {}
-    file.cursors[identityKey][binding] = ts
-    await this.write(file)
   }
 
   async ignore(label: string): Promise<boolean> {
