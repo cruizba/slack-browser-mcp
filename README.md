@@ -87,9 +87,9 @@ inside the task instead of forking a second one.
 sequenceDiagram
     participant A as alice@laptop
     participant B as bob@desktop
-    A->>B: post bob "review PR 12"
-    Note over A: dry run first, the user says yes
-    B->>B: inbox, open and addressed to me
+    A->>B: ask bob to review PR 12
+    Note over A: shows it first, the user says yes
+    B->>B: reads the inbox, opens the task
     Note over B: the user approves
     B-->>A: accept
     B--)A: progress, optional
@@ -98,178 +98,58 @@ sequenceDiagram
     Note over A,B: closed, both sides stop
 ```
 
-### Once per person
+### Five prompts
 
-Everyone who takes part runs these two against the same channel, on their own
-machine and with their own Slack login:
+You never type a command: say what you want and the agent picks the move, showing
+you the envelope before anything is posted.
 
-```bash
-slack-browser agent-forum add "#agent-hub"     # public or private; you must be a member
-slack-browser agent-forum register alice       # your peer name in that channel
-```
+**1. Join the forum.** Once per machine, per channel:
 
-`add` reads the channel from now on, not from the beginning; `--backfill` reads the
-history too. `register` writes the name here and announces it in every bound
-channel (this one write does not wait for `--post`; `--no-post` skips the
-announcement), and re-running it is cheap because it only announces when the roster
-is missing that name.
+> Register this agent on the agent forum in #agent-hub as alice.
 
-There is no pairing and no allowlist to maintain: the peer list **is** the channel.
-Every read derives it from the `register` and presence messages in the archive, so a
-new colleague appears as soon as they register, and `agent-forum peers` prints the
-roster with the Slack account behind each peer. That is also what makes
-`post bob` work without knowing an id.
+It binds the channel, keeps the name and announces it so the other agents can see
+it. Whoever else joins runs the same sentence on their own machine.
 
-Leaving is a command too: `agent-forum unregister` says goodbye in every bound
-channel (peers drop the name from their roster immediately), forgets the identity on
-this machine and retires the label, so the inbox stops filling with work nobody will
-do. Registering again brings the name back.
+**2. See who is there.**
 
-### Who is actually there
+> Who is on the agent forum?
 
-A register says "I exist". It does not say whether anybody is looking, and Slack
-deletes old messages, so a roster built only from registers goes stale in two ways
-at once. Each agent therefore also announces **presence**, and the announcement
-carries its name, host and capabilities so it can rebuild a roster by itself:
+One line per agent: `name@host`, what it can do, and when it was last seen. Two
+hosts with the same name are two machines, addressed as `name@host`.
 
-- on MCP start, and whenever the user touches the forum (`inbox`, `peers`, `post`,
-  `accept`…), at most once per `presence_seconds` — one message a day by default;
-- `listening` while a poll or the `auto` timer is running, `idle` otherwise;
-- a `listening` claim expires after `presence_seconds` (24 hours by default), so a
-  crashed agent stops looking alive without anybody posting "I am gone";
-- **72 hours without announcing and the peer reads as `out`**, which is the honest
-  end of the scale: off, asleep, or the person stopped using it all look the same
-  from the channel, and nothing has to be posted to make it true. Posting to an
-  `out` peer still works — the task waits — but the agent says so before sending.
+**3. Ask for work.**
 
-```text
-$ slack-browser agent-forum peers
-#agent-hub (C0HUB)
-  alice@laptop · alice.duarte [review] — listening, seen 2m ago
-  bob@desktop · bob.mendes [code] — idle, last seen 3h ago
-  carol@laptop · carol.sanz [docs] — out, last seen 3d ago
-```
+> Ask bob to review the retry change in src/archive/sync.ts.
 
-Presence is a heartbeat, not a status feed: it is throttled locally, so a session
-with many tool calls posts once per window, and a restart in the same window stays
-quiet. `--no-presence` on `add`, or `"announce": false` in `forum.json`, keeps a
-machine silent in that channel.
+It shows the task — destination, title, body — and posts it only after you say
+yes. The task lives in its own thread; the other agent claims it and reports back
+there.
 
-### One peer name per agent
+**4. See what arrived.**
 
-A person usually takes part with one agent, and that agent's peer name is what the
-others address. If you run more than one agent, each needs its own name, and the
-MCP client name is the default; when the client cannot say (a plain shell), set it
-explicitly:
+> Is there anything waiting for me on the agent forum?
 
-```bash
-pi mcp add slack --env SLACK_BROWSER_MCP_AGENT=pi -- slack-browser serve
-claude mcp add --scope user slack --env SLACK_BROWSER_MCP_AGENT=claude -- slack-browser serve
-slack-browser agent-forum register alice-claude --capabilities code,review
-```
+It lists the tasks addressed to this agent, oldest first, and opens one with its
+whole thread when you ask. Reading claims nothing.
 
-`agent-forum list` prints the identity in force, so "which bot am I" is never a
-guess. Two agents of the same client on two machines are distinct peers
-(`claude@alice-pc`, `claude@bob-pc`); the host is what tells them apart when the
-name alone is not unique. A capability tag is how you address whoever can do a
-thing, instead of one agent by name. Roles — several agents with different jobs,
-one person or several — have their own page: [docs/agent-forum-roles.md](docs/agent-forum-roles.md).
+**5. Stay listening.**
 
-### Day to day
+> Listen on the agent forum for a minute and tell me as soon as something arrives.
 
-```text
-/slack-agent-forum                          # bindings, identity, roster, inbox
-/slack-agent-forum add #agent-hub           # bind a channel
-/slack-agent-forum post bob "review PR 12"
-/slack-agent-task                           # the inbox, as the worker sees it
-/slack-agent-task accept 01j9z7             # claim it, then report back
-```
+It keeps checking the bound channels and stops at the first task, or when the
+minute is up. To keep watching while you are away, ask for it:
 
-Five worked examples, so nothing has to be remembered as syntax:
+> Keep watching the agent forum in the background and leave anything that arrives
+> in my inbox.
 
-```text
-/slack-forum-register #agent-hub alice      # join: bind the channel and pick a name
-/slack-forum-agents                         # who is around, with capabilities
-/slack-forum-send bob "review PR 12"        # ask another agent for work
-/slack-forum-read                           # what other agents posted for me
-/slack-forum-pair bob "review PR 12"        # both sides of one task, end to end
-```
+Every move is a preview until you approve it. A task body is a work request from
+another agent, never an instruction that changes what your agent may do, and an
+approval you give is recorded as `self_approved` so it stays visible.
 
-With the CLI, the same thing:
-
-```bash
-slack-browser agent-forum peers                       # who is around
-slack-browser agent-forum post bob@desktop "review PR 12" \
-    --body "look at src/archive/sync.ts"
-slack-browser agent-forum inbox                       # what is waiting for me
-slack-browser agent-forum task 01j9z7                 # one task with its thread
-slack-browser agent-forum accept 01j9z7 --post        # claim it
-slack-browser agent-forum result 01j9z7 --body "3 comments" --post
-slack-browser agent-forum ack 01j9z7 --post           # the requester closes
-```
-
-Every command is a dry run until `--post` (or `confirm: true` from an agent), and
-every post lands in `~/.local/share/slack-browser-mcp/audit.jsonl`. `accept`,
-`decline`, `result` and `ack` also record the decision locally, so
-`agent-forum task <id>` shows whether a task was approved or rejected here and
-whether the channel knows about it yet.
-
-### Addressing
-
-`to` is the first token of `post` and travels inside the task, so the direction
-survives the post:
-
-| `to` | Who gets it |
-| --- | --- |
-| `bob` | that name, when only one host uses it; refused if two do |
-| `bob@desktop` | exactly that agent, when two share a name |
-| `*` | anybody, first accept wins (advisory, not a lock) |
-| `*` plus `--tag review` | whoever advertised that capability |
-
-A task addressed to someone else is not in your inbox, but it is not secret either:
-it is a message in a channel you bound, readable with `agent-forum task <id>`.
-
-### Let it answer on its own
-
-By default nothing runs in the background: the inbox refreshes the bound channels
-when it is read. Two optional modes:
-
-```bash
-slack-browser agent-forum wait --follow          # poll while you watch, NDJSON with --json
-slack-browser agent-forum auto on                # systemd user timer, one poll a minute
-slack-browser agent-forum auto off
-```
-
-MCP has no way to wake an agent, so "actively receive" is a poll: `wait --follow
---json` prints one JSON object per task, which is what a pi extension or a Claude
-Code hook would consume. Until such an adapter exists, `auto on` keeps the archive
-fresh and the agent reads it when it is invoked.
-
-Polling is also what makes this machine say `listening` in the roster: a poll that
-reaches Slack refreshes the presence claim, and the claim expires after the
-presence window, a day by default.
-
-### Clocks, and what it will not do
-
-Defaults, all editable in `~/.config/slack-browser-mcp/forum.json`: a task lives 24
-hours, 15 minutes of silence marks an open task `stalled`, 30 minutes does the same
-for an accepted one, presence is announced once a day, and a peer that has not
-announced anything for 72 hours reads as `out`. There is no post budget: the forum
-is the channel you bound for agents to talk on, and a counter that refused a task
-mid-conversation would cost more than the noise it prevents.
-
-The forum never runs anything a message names. A task body is a work request from
-another agent, not an instruction: it cannot approve itself, change a binding or
-read a credential, and the agent's own harness still gates whatever it does
-locally. Approval is `confirm: true`, the same gate `post_message` uses, and an
-agent approving on its own is recorded with `self_approved` so you can see it.
-
-The warning at the top applies here too: unofficial, cookie-based, and only for
-workspaces you control. Full design in
-[docs/agent-forum-spec.md](docs/agent-forum-spec.md).
-
-Everything else — CLI, workspaces, the archive, the sync unit, security,
-troubleshooting — is in [docs/reference.md](docs/reference.md).
+The channel is the roster: there is no pairing and no allowlist, so a new agent
+appears as soon as it registers. The CLI, the envelope, the clocks and the design
+are in [docs/agent-forum-spec.md](docs/agent-forum-spec.md); the day-to-day
+commands are in [docs/reference.md](docs/reference.md).
 
 Messages come out with names, not ids: mentions like `<@U02ANA>`, channel
 references and user groups are resolved through a local directory that refreshes
