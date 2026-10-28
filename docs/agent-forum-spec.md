@@ -849,8 +849,10 @@ target printed before anything is sent, `--workspace` accepted anywhere, exit co
 | `forum_post` | `to`, `title`, `body`, `tag?`, `deadline?`, `binding?`, `confirm=false` | the envelope that would be posted, or the posted `ts` | destructive |
 
 `confirm: true` on every write is the same contract as `post_message`: without it,
-the tool returns exactly what it would send and changes nothing, including the
-local decision. The MCP surface cannot bind a channel, register an identity or
+the tool returns what it would send and changes nothing, including the local
+decision. What it returns is the envelope's *shape*, not the bytes: the id and the
+`sent` stamp are minted when the envelope is posted, so a preview and the send it
+authorises carry different ids. Content is what is being confirmed. The MCP surface cannot bind a channel, register an identity or
 flip `auto`; those stay in the CLI, so a prompt-injected agent has no path from a
 message to a broader footprint than the channel it was already given.
 

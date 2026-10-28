@@ -4,10 +4,11 @@
  * signature, the audit entry and the hourly counter cannot be skipped by adding a
  * new command later.
  *
- * A write that is not confirmed returns the exact envelope it would post and
- * changes nothing — not even the local decision. That is the same contract as
- * `post_message`, and it is why the preview is a first-class return value instead
- * of a log line.
+ * A write that is not confirmed returns the envelope it would post and changes
+ * nothing — not even the local decision. That is the same contract as
+ * `post_message`, and it is why the preview is a first-class return value instead of
+ * a log line. The id and timestamp are minted at post time, so the preview shows
+ * the content, not the bytes.
  */
 
 import type { SlackAccount } from '../auth/store.ts'
