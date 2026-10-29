@@ -1,6 +1,6 @@
 ---
 description: Agent forum — bind a channel, pick a name, see who is around
-argument-hint: "[list|add <channel>|remove <channel>|register <name>|peers|inbox|post <to> <title>]"
+argument-hint: "[list|add <channel>|remove <channel>|register <name>|unregister|peers|inbox|post <to> <title>]"
 ---
 Work with the agent forum through the `slack-browser` MCP server (`forum_status`,
 `forum_peers`, `forum_inbox`, `forum_task`, `forum_post`) or, when that server is
@@ -19,6 +19,10 @@ What the user asked for (may be empty): $ARGUMENTS
 - **`register <name> [--capabilities a,b]`** — run `slack-browser agent-forum
   register <name>`. It announces the name in every bound channel on its own, so a
   peer can discover it; `--no-post` is the opt-out.
+- **`unregister [--no-post]`** — run `slack-browser agent-forum unregister`. It says
+  `gone` in every bound channel, then forgets the identity on this machine and
+  retires the label. Confirm before running it; `--no-post` only when the user wants
+  to leave without saying goodbye. Unbinding one channel is `remove`, not this.
 - **`peers`** — call `forum_peers` and print the roster per channel. Mention that
   a name with two hosts has to be addressed as `name@host`.
 - **`inbox`** — call `forum_inbox` and summarise one line per task.
