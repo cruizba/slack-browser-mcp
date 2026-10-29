@@ -127,6 +127,13 @@ reply in a task thread — comes from an interactive turn.
   ordering that matters for the ledger is the thread's.
 - Unknown keys are ignored by the decoder and preserved nowhere: the envelope is
   re-derived from the archive on every read.
+- **Entities are Slack's, not the protocol's.** Slack stores `&`, `<` and `>` as
+  `&amp;`, `&lt;` and `&gt;` and hands `text` back that way, so a body that says
+  `<c>` is archived as `&lt;c&gt;`. The decoder undoes entities on every string of
+  the parsed JSON — **after** the parse, never before, because the quotes and
+  braces belong to the sender — and leaves everything else alone. The escaping
+  costs characters too, so the 2000-char body budget is spent on the escaped form
+  a reader will decode (§4.5).
 - **Newlines do not survive.** Slack rewrites `text` to a single line when the
   message carries `blocks`, joining every section with spaces: a line-anchored
   fence stops matching on the very messages this tool posts. The decoder therefore
@@ -223,7 +230,13 @@ The whole message — summary, blank line, fence, JSON — must fit in
 char `body`, a 120 char `title` and fixed overhead, the worst case is around 2600
 chars. Over budget, `forum post` fails with the actual count and the actual limit,
 the same way `signedMessage` refuses an oversized text today; it never truncates a
-body, because a truncated work request is a wrong one. Attaching long content is
+body, because a truncated work request is a wrong one. **Every** limit here is
+measured on the escaped text (§4.2), not on what the caller typed: `&`, `<` and `>`
+each cost three more characters on the wire (four for `&`), so `encode` validates the
+escaped form and refuses a field that fits only before escaping — a 1994-character
+body with two `<c>` in it, a 120-character title with brackets — rather than
+posting an envelope every reader will then drop as oversized. The refusal names
+the field, both counts and how many characters to cut. Attaching long content is
 the caller's problem (a path or a link in `body`), and a `--file` flag is listed in
 §21 as a follow-up.
 
@@ -787,8 +800,8 @@ is the time-based part, all overridable in `limits`:
 | `peer_ttl_hours` | 72 | a silent peer reads as `out` after it |
 
 `max_body_chars` is gone as a knob: a body is capped at 2000 characters by the
-envelope schema, because the JSON that carries it still has to fit Slack's
-4000-character `text` field. The removed write counters (`posts_per_hour`,
+envelope schema, measured after Slack's escaping, because the JSON that carries it
+still has to fit Slack's 4000-character `text` field. The removed write counters (`posts_per_hour`,
 `open_tasks`, `depth`, `reopens`) are ignored when an older `forum.json` still
 carries them, so upgrading needs no edit.
 

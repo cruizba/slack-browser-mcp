@@ -9,6 +9,8 @@
  * the directory can improve old messages instead of freezing a stale name.
  */
 
+import { unescapeEntities } from './entities.ts'
+
 /** What the resolver can answer. Missing answers fall back to the raw id. */
 export interface ReferenceScope {
   user(id: string): string | undefined
@@ -24,15 +26,6 @@ function splitLabel(body: string): { target: string; label?: string } {
   const bar = body.indexOf('|')
   if (bar === -1) return { target: body }
   return { target: body.slice(0, bar), label: body.slice(bar + 1) }
-}
-
-function unescape(text: string): string {
-  return text
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&')
 }
 
 function resolveOne(body: string, scope: ReferenceScope | undefined): string {
@@ -75,6 +68,6 @@ function resolveOne(body: string, scope: ReferenceScope | undefined): string {
  * with no markup comes back unchanged, so the common case costs one regex.
  */
 export function resolveReferences(text: string, scope?: ReferenceScope): string {
-  if (!text.includes('<')) return unescape(text)
-  return unescape(text.replace(REFERENCE, (match, body: string) => resolveOne(body, scope)))
+  if (!text.includes('<')) return unescapeEntities(text)
+  return unescapeEntities(text.replace(REFERENCE, (match, body: string) => resolveOne(body, scope)))
 }

@@ -11,6 +11,7 @@ import {
   type Envelope,
 } from '../src/forum/envelope.ts'
 import { newId } from '../src/forum/id.ts'
+import { escapeEntities } from '../src/slack/entities.ts'
 
 const ID = '01J9Z7K3QX4MB8WN2R5T6Y7Z8A'
 const OTHER = '01J9Z7K3QX4MB8WN2R5T6Y7Z9B'
@@ -157,4 +158,55 @@ test('validation refused what Slack would mangle', () => {
 test('the size budget is refused, never truncated', () => {
   assert.throws(() => assertFits('x'.repeat(4001)), /Slack accepts 4000/)
   assert.doesNotThrow(() => assertFits('x'.repeat(4000)))
+})
+
+test('a body Slack escaped reads back as the text that was sent', () => {
+  const envelope = task({
+    body: 'lanza `ov stack deploy --cloud <c> --edition community` & mira el RG',
+  } as Partial<Envelope>)
+  const stored = escapeEntities(render(summaryFor(envelope), envelope))
+  assert.match(stored, /--cloud &lt;c&gt; --edition/)
+  assert.match(stored, /community` &amp; mira el RG/)
+  assert.deepEqual(decode(stored), envelope)
+})
+
+test('a body that only fits before escaping is refused, not posted', () => {
+  // 1996 characters of body with four brackets in it: 2008 once Slack escapes them.
+  const body = `${'x'.repeat(1989)}<c> <c>`
+  assert.equal(body.length, 1996)
+  assert.throws(
+    () => encode(task({ body } as Partial<Envelope>)),
+    /Slack escapes.*would see 2008 and the limit is 2000.*8 fewer/s,
+  )
+})
+
+test('the same holds for every budgeted field, not just the body', () => {
+  // A title of 120 characters with four brackets arrives as 132 and is dropped by
+  // the reader just as silently, so the check cannot be the body's alone.
+  const title = `${'x'.repeat(113)}<c> <c>`
+  assert.equal(title.length, 120)
+  assert.throws(
+    () => encode(task({ title } as Partial<Envelope>)),
+    /The title is 120 characters.*a reader would see 132/s,
+  )
+})
+
+test('an escaped body over the budget still decodes, so old envelopes come back', () => {
+  // What an earlier version posted: 1994 raw characters, 2006 on the wire. The
+  // reader judges the text, not the escaping, so the envelope is recoverable.
+  const body = `${'x'.repeat(1986)}<c> <c>`
+  const json = JSON.stringify({ ...task({ body } as Partial<Envelope>) })
+  const stored = escapeEntities(`resumen\n\n\`\`\`forum\n${json}\n\`\`\``)
+  assert.equal(decode(stored)?.kind, 'task')
+  assert.equal((decode(stored) as Extract<Envelope, { kind: 'task' }>).body, body)
+})
+
+test('a body that already quotes entities survives as written', () => {
+  // Unescaping twice, or before the JSON parse, would turn entity text a body
+  // deliberately carries into the character it names.
+  const envelope = task({ body: 'ya escribí &lt;c&gt; a mano' } as Partial<Envelope>)
+  const first = decode(escapeEntities(render(summaryFor(envelope), envelope)))
+  assert.deepEqual(first, envelope)
+  const again = decode(escapeEntities(render(summaryFor(first!), first!)))
+  assert.deepEqual(again, envelope)
 })

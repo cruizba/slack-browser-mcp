@@ -17,6 +17,7 @@
 import { z } from 'zod'
 
 import { MAX_TEXT_CHARS } from '../slack/assist.ts'
+import { escapeEntities, unescapeEntities } from '../slack/entities.ts'
 import { StoreError } from '../errors.ts'
 import { ID_LENGTH, isId } from './id.ts'
 
@@ -196,11 +197,80 @@ export function isReply(envelope: Envelope): envelope is Extract<Envelope, { tas
 }
 
 /**
+ * The escaped form of the envelope, which is what Slack stores and what a reader
+ * therefore validates. The inverse of `unescapeForm`, and the reason a body at the
+ * limit can still arrive too long: `&`, `<` and `>` each cost three characters more
+ * on the wire (`&` four), so a sender that only counts what it typed posts an
+ * envelope every reader then drops as oversized — silently, with its replies left
+ * as orphans.
+ */
+function escapeForm(value: unknown): unknown {
+  if (typeof value === 'string') return escapeEntities(value)
+  if (Array.isArray(value)) return value.map(escapeForm)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, escapeForm(entry)]))
+  }
+  return value
+}
+
+/** What the caller typed, recovered from the escaped form the schema just measured. */
+function unescapeForm(value: unknown): unknown {
+  if (typeof value === 'string') return unescapeEntities(value)
+  if (Array.isArray(value)) return value.map(unescapeForm)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, unescapeForm(entry)]),
+    )
+  }
+  return value
+}
+
+/**
+ * The failure a caller can act on when a field fits only before escaping. When the
+ * raw envelope is broken too, that error is the honest one and is kept.
+ */
+function escapingRefusal(envelope: Envelope, error: z.ZodError): Error {
+  if (!EnvelopeSchema.safeParse(envelope).success) return error
+  const issue = error.issues[0]
+  const path = issue?.path.join('.') ?? 'field'
+  const typed = path
+    .split('.')
+    .reduce<unknown>(
+      (node, key) => (node as Record<string, unknown> | undefined)?.[key],
+      envelope,
+    )
+  if (typeof typed !== 'string' || issue === undefined) return error
+  const stored = escapeEntities(typed).length
+  const limit =
+    'maximum' in issue && typeof issue.maximum === 'number' ? issue.maximum : undefined
+  const budget =
+    limit === undefined
+      ? ''
+      : ` and the limit is ${limit}, so it needs ${stored - limit} fewer characters`
+  return new StoreError(
+    `The ${path} is ${typed.length} characters, but Slack escapes \`&\`, \`<\` and ` +
+      `\`>\` when it stores a message, so a reader would see ${stored}${budget}. ` +
+      'Shorten it, or leave those symbols out.',
+  )
+}
+
+/**
  * Returns the JSON one-liner. Pretty-printing would cost characters the 4000-char
  * message budget does not have, and a single line is what a reader can copy.
+ *
+ * The schema runs against the escaped form so every budget is spent the way a
+ * reader will spend it, and the wire text then carries the values as typed: Slack
+ * escapes them again on its side.
  */
 export function encode(envelope: Envelope): string {
-  return JSON.stringify(EnvelopeSchema.parse(envelope))
+  let parsed: Envelope
+  try {
+    parsed = EnvelopeSchema.parse(escapeForm(envelope))
+  } catch (error) {
+    if (error instanceof z.ZodError) throw escapingRefusal(envelope, error)
+    throw error
+  }
+  return JSON.stringify(unescapeForm(parsed))
 }
 
 export function render(summary: string, envelope: Envelope): string {
@@ -216,6 +286,12 @@ export function looksLikeEnvelope(text: string | undefined): boolean {
   return text !== undefined && text.includes('```forum')
 }
 
+/**
+ * Undoes Slack's escaping on every string the JSON carries. It has to happen after
+ * `JSON.parse`, never before: the quotes and braces that make the JSON are the
+ * sender's, and only the values inside them travelled through Slack's escaping.
+ * Anything unrecognised passes through untouched, so prose stays prose.
+ */
 export function decode(text: string | undefined): Envelope | undefined {
   const match = text?.match(FENCE)
   if (!match) return undefined
@@ -225,7 +301,7 @@ export function decode(text: string | undefined): Envelope | undefined {
   } catch {
     return undefined
   }
-  const result = EnvelopeSchema.safeParse(parsed)
+  const result = EnvelopeSchema.safeParse(unescapeForm(parsed))
   return result.success ? result.data : undefined
 }
 
