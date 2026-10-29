@@ -227,6 +227,7 @@ Sending is a dry run unless you pass `--send`:
 slack-browser send ci-notifications "deploy finished"            # prints, sends nothing
 slack-browser send ci-notifications "deploy finished" --send     # posts
 slack-browser send general "ack" --thread 1792500000.000100 --send
+slack-browser send general "the report" --attach informe.md,chart.png --send
 ```
 
 ## Several workspaces
@@ -293,7 +294,8 @@ the message body
 
 The blocks travel with a plain `text` fallback, which is what notifications,
 search and clients without block support show; a message longer than 2900
-characters keeps the fallback only. The dry run prints that fallback, so a
+characters keeps the fallback only, and so does one that carries attachments,
+because an upload cannot take blocks. The dry run prints that fallback, so a
 message of dashes there is the same block without the dividers, and the audit
 log counts that text. To post one message bare, pass `--no-assist` on the CLI or
 `assist: false` on `post_message`.
@@ -436,7 +438,7 @@ see [Several workspaces](#several-workspaces) for how the default is chosen.
 | `list_conversations` | `workspace?`, `query?`, `kind?` (`all\|channel\|private\|dm`), `limit?` | Only conversations the user belongs to. |
 | `read_messages` | `workspace?`, `channel`, `limit?`, `oldest?`, `latest?` | Oldest first, raw Slack `ts` preserved for paging. |
 | `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?` | Every reply in the thread. |
-| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm`, `assist?=true` | `confirm=true` is required; without it the call returns the exact message and posts nothing. `assist` wraps the text in the AI-assisted block, signed with the configured nickname or the generated default. |
+| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm`, `assist?=true`, `attachments?` | `confirm=true` is required; without it the call returns the exact message and posts nothing. `assist` wraps the text in the AI-assisted block, signed with the configured nickname or the generated default. `attachments` is a list of local paths uploaded with the message. |
 | `read_file` | `workspace?`, `file`, `refresh?` | Saves a Slack file into the archive and returns images as an image block, so the model can see them. `file` is the id printed after `id=` in a message line. |
 | `search_messages` | `query`, `workspace?`, `channel?`, `limit?`, `include_deleted?` | Full-text over the local archive. No network; covers what `sync` has fetched. |
 | `archive_messages` | `workspace?`, `order?` (`oldest\|newest`), `limit?`, `author?`, `channel?`, `oldest?`, `latest?`, `include_deleted?`, `include_replies?` | One time-ordered walk of the whole archive, oldest or newest first. Strictly local: no Slack request, no directory refresh, no background sync. The answer for "the oldest messages", "my oldest message" or "the first one in #x", where going channel by channel costs a call each. `author` matches the cached directory by name, handle or id. |
@@ -479,6 +481,19 @@ original through `files.info` + the authenticated URL, keeps it under
 `archive/<team>/files/` and returns images as an image block (up to 4 MB inline;
 larger ones come back as a path). Downloads happen on demand, never during `sync`,
 so a backfill does not pull every screenshot ever posted.
+
+**Sending files.** `post_message` and `slack-browser send --attach` carry local
+files with a normal message: up to 10, 100 MB each, named by path on the machine
+that runs the tool. They go out as one message whose comment is `text`, through
+Slack's documented upload — `files.getUploadURLExternal`, the bytes POSTed to the
+pre-signed URL, then `files.completeUploadExternal`. Slack builds the message from
+the upload itself, so the comment and the files share one `ts`; a
+`chat.postMessage` plus an upload would be two messages. The pre-signed URL is
+posted to without credentials, so the `xoxc` token and the `d` cookie never leave
+`slack.com/api`. A dry run `stat`s each path and prints name, type and size; it
+reads no bytes and asks Slack for nothing, and the audit line records the names
+and sizes, never the contents. An upload carries no blocks, so the AI-assisted
+block goes out as its plain-text form: same rules and header, no dividers.
 
 ## Agent forum
 

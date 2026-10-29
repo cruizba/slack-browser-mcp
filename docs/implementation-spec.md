@@ -281,7 +281,7 @@ Behaviours:
 | `list_conversations` | `workspace?`, `query?`, `kind?=all`, `limit?=100` | `label (id) [N members]`, sorted by name | read-only |
 | `read_messages` | `workspace?`, `channel`, `limit?=20`, `oldest?`, `latest?` | header + oldest-first lines + paging footer | read-only |
 | `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?=100` | header + thread lines | read-only |
-| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm=false`, `assist=true` | `Sent to <where> at ts <ts>` + audit path, or the exact dry-run text | destructive |
+| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm=false`, `assist=true`, `attachments?` | `Sent to <where> at ts <ts>` + audit path, or the exact dry-run text | destructive |
 | `read_file` | `workspace?`, `file`, `refresh=false` | saved path + summary, plus an `image` block for images up to 4 MB | read-only |
 | `search_messages` | `query`, `workspace?`, `channel?`, `limit?=20`, `include_deleted=false` | `archive: <age>` then ranked hits `[ts] channel author: text`, prefixed with the workspace when the search spans more than one | read-only |
 | `archive_messages` | `workspace?`, `order=oldest\|newest`, `limit?=20`, `author?`, `channel?`, `oldest?`, `latest?`, `include_deleted=false`, `include_replies=false` | `archive: <age> · oldest first · N of M archived messages[ by name]`, then `[ts] date channel author: text` with `ts` preserved, plus a coverage footer when the archive ends there. Local only: an `author` is resolved from the cached directory, never from `users.info`, and no sync is nudged. | read-only |
@@ -315,11 +315,19 @@ so a result set that spans workspaces is never ambiguous.
   The composition lives in one function shared with `slack-browser send`, since a
   header that appears in one path and not the other would be a bug nobody sees
   until it is in a channel.
+- `attachments` takes local paths and turns the send into an upload:
+  `files.getUploadURLExternal`, the bytes POSTed to the pre-signed URL, then
+  `files.completeUploadExternal` with the comment and `channel_id`, so the comment
+  and the files are one message instead of a post plus an upload. The pre-signed
+  URL is posted to without credentials, which keeps the session inside
+  `slack.com/api`. The dry run `stat`s each path and prints name, type and size; it
+  reads no bytes and asks Slack nothing. An upload takes no `blocks`, so the
+  signed message goes out as its plain fallback.
 - Every successful send appends one line to
   `$XDG_DATA_HOME/slack-browser-mcp/audit.jsonl` (`0600`): timestamp, workspace,
-  channel label and id, message ts, character count, and a redacted 120-char
-  preview. The full text is never stored, so the audit cannot become a second
-  copy of secrets someone pasted into a channel.
+  channel label and id, message ts, character count, attachment names and sizes,
+  and a redacted 120-char preview. The full text is never stored, so the audit
+  cannot become a second copy of secrets someone pasted into a channel.
 
 Every message line is `[<ts>] <iso time> <author>: <text>`, plus
 `(N replies, thread_ts <ts>)` when a parent has replies, plus one

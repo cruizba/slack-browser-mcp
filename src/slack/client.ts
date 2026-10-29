@@ -128,6 +128,22 @@ export interface PostedMessage {
   text?: string
 }
 
+export interface UploadAttachment {
+  name: string
+  /** Backed by a plain `ArrayBuffer`: a `FormData` part cannot wrap a shared one. */
+  bytes: Uint8Array<ArrayBuffer>
+}
+
+/**
+ * An upload is a message like any other, except that Slack reports its `ts` inside
+ * the file it created. It is not promised: an upload that landed somewhere Slack
+ * does not describe comes back without one instead of failing after the fact.
+ */
+export interface UploadedMessage {
+  ts?: string
+  fileIds: string[]
+}
+
 export interface ApiClientOptions {
   fetch?: typeof fetch
   sleep?: (ms: number) => Promise<void>
@@ -167,6 +183,19 @@ function retryAfterMs(response: Response): number | undefined {
   if (!header) return undefined
   const seconds = Number(header)
   return Number.isFinite(seconds) ? seconds * 1000 : undefined
+}
+
+/** Slack files the share under `public`, `private` or `channel`, keyed by channel id. */
+type SlackShares = Record<string, Record<string, Array<{ ts?: string }>> | undefined>
+
+function sharedTs(shares: SlackShares | undefined): string | undefined {
+  for (const scope of Object.values(shares ?? {})) {
+    for (const entries of Object.values(scope ?? {})) {
+      const ts = entries?.[0]?.ts
+      if (ts) return ts
+    }
+  }
+  return undefined
 }
 
 export class SlackClient {
@@ -463,6 +492,60 @@ export class SlackClient {
       ts: payload.ts,
       channel: payload.channel,
       ...(payload.message?.text ? { text: payload.message.text } : {}),
+    }
+  }
+
+  /**
+   * Files travel the documented three-step upload: a pre-signed URL, the bytes
+   * straight to it, and one call that turns them into a message. Slack builds the
+   * message from the upload, so the comment and the files share one `ts`; posting
+   * first and uploading after would be two messages.
+   *
+   * The pre-signed URL is posted to without credentials: Slack signs it, so the
+   * `xoxc` token and the `d` cookie never leave `slack.com/api`.
+   */
+  async uploadFiles(params: {
+    channel: string
+    files: readonly UploadAttachment[]
+    text?: string
+    thread_ts?: string
+  }): Promise<UploadedMessage> {
+    const ids: Array<{ id: string; title: string }> = []
+    for (const file of params.files) {
+      const target = await this.call<SlackEnvelope & { upload_url: string; file_id: string }>(
+        'files.getUploadURLExternal',
+        { filename: file.name, length: file.bytes.byteLength },
+      )
+      await this.putBytes(target.upload_url, file)
+      ids.push({ id: target.file_id, title: file.name })
+    }
+
+    const payload = await this.call<
+      SlackEnvelope & { files?: Array<{ id?: string; shares?: SlackShares }> }
+    >('files.completeUploadExternal', {
+      files: JSON.stringify(ids),
+      channel_id: params.channel,
+      ...(params.text ? { initial_comment: params.text } : {}),
+      ...(params.thread_ts ? { thread_ts: params.thread_ts } : {}),
+    })
+
+    const uploaded = payload.files ?? []
+    const ts = uploaded.map((file) => sharedTs(file.shares)).find((value) => value !== undefined)
+    return {
+      ...(ts ? { ts } : {}),
+      fileIds: uploaded
+        .map((file) => file.id)
+        .filter((id): id is string => typeof id === 'string'),
+    }
+  }
+
+  private async putBytes(url: string, file: UploadAttachment): Promise<void> {
+    const form = new FormData()
+    form.append('filename', file.name)
+    form.append('file', new Blob([file.bytes]), file.name)
+    const response = await this.fetchImpl(url, { method: 'POST', body: form })
+    if (!response.ok) {
+      throw new SlackApiError('files.upload', `http_${response.status}`, file.name)
     }
   }
 

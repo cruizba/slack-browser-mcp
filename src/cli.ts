@@ -33,6 +33,12 @@ import { loginLockPath } from './config/paths.ts'
 import { AuthError, ForumError, SchemaError, StoreError } from './errors.ts'
 import { main as serve } from './mcp/server.ts'
 import { recordSend } from './slack/audit.ts'
+import {
+  describeAttachment,
+  humanSize,
+  planAttachments,
+  readAttachments,
+} from './slack/attachments.ts'
 import { ASSISTED_HEADER, describeSigning, signedMessage } from './slack/assist.ts'
 import { SlackClient } from './slack/client.ts'
 import { channelLabel, renderMessages } from './slack/format.ts'
@@ -64,7 +70,7 @@ Usage:
   slack-browser status [--workspace <ref>]
   slack-browser read <channel> [--limit <n>] [--oldest <ts>] [--latest <ts>] [--workspace <ref>]
   slack-browser thread <channel> <thread_ts> [--workspace <ref>]
-  slack-browser send <channel> <message> [--thread <ts>] [--send] [--no-assist] [--workspace <ref>]
+  slack-browser send <channel> <message> [--thread <ts>] [--attach <path,...>] [--send] [--no-assist] [--workspace <ref>]
   slack-browser sync [--full] [--since <days>] [--deadline <seconds>] [--quiet] [--workspace <ref>]
   slack-browser archive search <query> [--channel <name>] [--workspace <ref>] [--limit <n>] [--deleted]
   slack-browser archive stats [--workspace <ref>]
@@ -401,6 +407,12 @@ async function commandSend(args: ParsedArgs): Promise<number> {
   })
   const label = channelLabel(channel, directory)
   const threadTs = stringFlag(args, 'thread')
+  const planned = await planAttachments(
+    (stringFlag(args, 'attach') ?? '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  )
   const target = `${account.team_name} · ${label} (${channel.id})`
   const nickname = resolveNickname(signingFor(await new FileSettingsStore().read()), {
     user: account.user,
@@ -411,7 +423,32 @@ async function commandSend(args: ParsedArgs): Promise<number> {
   if (args.flags.get('send') !== true) {
     console.log(`dry run — would post to ${target}${threadTs ? ` in thread ${threadTs}` : ''}:`)
     console.log(signed.text)
+    for (const plan of planned) console.log(`  attached: ${describeAttachment(plan)}`)
     console.error('nothing sent; add --send to commit')
+    return 0
+  }
+
+  if (planned.length) {
+    const uploaded = await client.uploadFiles({
+      channel: channel.id,
+      text: signed.text,
+      files: await readAttachments(planned),
+      ...(threadTs ? { thread_ts: threadTs } : {}),
+    })
+    const audit = await recordSend({
+      workspace: account.team_name,
+      channel: label,
+      channel_id: channel.id,
+      ...(threadTs ? { thread_ts: threadTs } : {}),
+      ...(uploaded.ts ? { message_ts: uploaded.ts } : {}),
+      text: signed.text,
+      files: planned.map((plan) => `${plan.name} (${humanSize(plan.bytes)})`),
+    })
+    const ts = uploaded.ts ? `ts ${uploaded.ts}` : '(no ts reported by Slack)'
+    const ids = uploaded.fileIds.length ? ` (${uploaded.fileIds.join(', ')})` : ''
+    console.log(
+      `sent to ${target} with ${planned.length} attachment(s) at ${ts}${ids}; audit: ${audit}`,
+    )
     return 0
   }
 

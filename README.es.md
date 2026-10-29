@@ -274,7 +274,9 @@ Los mensajes salen con nombres, no con ids: las menciones como `<@U02ANA>`, las
 referencias a canales y los grupos de usuarios se resuelven con un directorio local
 que se refresca una vez al día. Los adjuntos se imprimen como `[file: name id=F0ABC]`,
 y pedirle al agente que abra uno lo guarda en el archivo y devuelve las imágenes a la
-conversación.
+conversación. También va en la otra dirección: un mensaje puede llevar ficheros
+locales, así que un informe largo sale como adjunto markdown en vez de un muro de
+texto.
 
 ---
 

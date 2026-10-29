@@ -264,4 +264,5 @@ Messages come out with names, not ids: mentions like `<@U02ANA>`, channel
 references and user groups are resolved through a local directory that refreshes
 once a day. Attachments are printed as `[file: name id=F0ABC]`, and asking the
 agent to open one saves it to the archive and brings images back into the
-conversation.
+conversation. The other direction works too: a message can carry local files, so a
+long report goes out as a markdown attachment instead of a wall of text.

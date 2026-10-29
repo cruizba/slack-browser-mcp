@@ -213,6 +213,89 @@ describe('SlackClient', () => {
     )
   })
 
+  it('uploads files to a pre-signed URL and posts them as one message', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    const fetchImpl = (async (input: unknown, init: RequestInit) => {
+      const url = String(input)
+      calls.push({ url, init })
+      if (url.endsWith('files.getUploadURLExternal')) {
+        const filename = new URLSearchParams(String(init.body)).get('filename')
+        return respond({ ok: true, upload_url: `https://files.slack.com/upload/v1/${filename}`, file_id: `F0${filename === 'informe.md' ? 'A' : 'B'}` })
+      }
+      if (url.startsWith('https://files.slack.com/upload/')) return new Response('OK', { status: 200 })
+      return respond({
+        ok: true,
+        files: [
+          { id: 'F0A', shares: { private: { C0OPS: [{ ts: '1792500000.000200' }] } } },
+          { id: 'F0B', shares: { private: { C0OPS: [{ ts: '1792500000.000200' }] } } },
+        ],
+      })
+    }) as unknown as typeof fetch
+
+    const client = new SlackClient(account, { fetch: fetchImpl })
+    const uploaded = await client.uploadFiles({
+      channel: 'C0OPS',
+      text: 'el informe',
+      thread_ts: '1792499999.000001',
+      files: [
+        { name: 'informe.md', bytes: new Uint8Array([35, 32, 104, 105]) },
+        { name: 'captura.png', bytes: new Uint8Array([1, 2, 3]) },
+      ],
+    })
+
+    assert.deepEqual(uploaded, { ts: '1792500000.000200', fileIds: ['F0A', 'F0B'] })
+    const lengths = calls
+      .filter((call) => call.url.endsWith('files.getUploadURLExternal'))
+      .map((call) => new URLSearchParams(String(call.init.body)).get('length'))
+    assert.deepEqual(lengths, ['4', '3'], 'Slack is told the exact size of each file')
+
+    const puts = calls.filter((call) => call.url.startsWith('https://files.slack.com/upload/'))
+    assert.equal(puts.length, 2)
+    const put = puts[0]!
+    assert.equal(
+      put.init.headers,
+      undefined,
+      'the pre-signed URL needs no session: the token must not leave slack.com/api',
+    )
+    const form = put.init.body as FormData
+    assert.equal(form.get('filename'), 'informe.md')
+    assert.equal(await (form.get('file') as File).text(), '# hi')
+
+    const completion = calls.at(-1)!
+    assert.equal(completion.url, 'https://slack.com/api/files.completeUploadExternal')
+    const body = new URLSearchParams(String(completion.init.body))
+    assert.deepEqual(JSON.parse(String(body.get('files'))), [
+      { id: 'F0A', title: 'informe.md' },
+      { id: 'F0B', title: 'captura.png' },
+    ])
+    assert.equal(body.get('channel_id'), 'C0OPS')
+    assert.equal(body.get('initial_comment'), 'el informe')
+    assert.equal(body.get('thread_ts'), '1792499999.000001')
+  })
+
+  it('reports an upload that the file host refuses', async () => {
+    const methods: string[] = []
+    const fetchImpl = (async (input: unknown) => {
+      const url = String(input)
+      methods.push(url)
+      if (url.endsWith('files.getUploadURLExternal')) {
+        return respond({ ok: true, upload_url: 'https://files.slack.com/upload/v1/x', file_id: 'F0A' })
+      }
+      return new Response('nope', { status: 500 })
+    }) as unknown as typeof fetch
+
+    const client = new SlackClient(account, { fetch: fetchImpl })
+    await assert.rejects(
+      () => client.uploadFiles({ channel: 'C0OPS', files: [{ name: 'x.md', bytes: new Uint8Array([1]) }] }),
+      (error: unknown) => error instanceof SlackApiError && error.code === 'http_500',
+    )
+    assert.equal(
+      methods.some((url) => url.endsWith('files.completeUploadExternal')),
+      false,
+      'a failed upload must not post an empty message',
+    )
+  })
+
   it('spends the burst at once and then paces one request per interval', async () => {
     const waits: number[] = []
     const { fetchImpl, calls } = recordingFetch(

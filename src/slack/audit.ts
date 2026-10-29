@@ -18,8 +18,11 @@ export interface SendRecord {
   channel: string
   channel_id: string
   thread_ts?: string
-  message_ts: string
+  /** Absent when Slack reported no ts for an upload, which is rare and not worth a failure. */
+  message_ts?: string
   text: string
+  /** Names and sizes: the bytes stay where the caller left them. */
+  files?: string[]
 }
 
 export async function recordSend(record: SendRecord, when: Date = new Date()): Promise<string> {
@@ -31,7 +34,8 @@ export async function recordSend(record: SendRecord, when: Date = new Date()): P
     channel: record.channel,
     channel_id: record.channel_id,
     ...(record.thread_ts ? { thread_ts: record.thread_ts } : {}),
-    message_ts: record.message_ts,
+    ...(record.message_ts ? { message_ts: record.message_ts } : {}),
+    ...(record.files?.length ? { files: record.files } : {}),
     chars: record.text.length,
     preview: redact(record.text).slice(0, PREVIEW_CHARS),
   })
