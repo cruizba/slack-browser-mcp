@@ -80,8 +80,10 @@ version (or bump) as its input, runs the tests, and pushes the commit, the tag
 and the notes with the workflow's own `github.token`. No personal token is
 stored in the repository, and the job needs `contents: write` for that push.
 Its actions are pinned to a commit SHA with `pinact`, and `.github/dependabot.yml`
-keeps those pins and the npm dependencies current. From an agent,
-`/slack-update` runs the same update and reminds you to reconnect the MCP server.
+keeps those pins and the npm dependencies current. A separate `ci` workflow runs
+the typecheck, the tests and the build on every push to `main`; PRs never trigger
+it. From an agent, `/slack-update` runs the same update and reminds you to
+reconnect the MCP server.
 
 ## Examples
 

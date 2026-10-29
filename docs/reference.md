@@ -102,6 +102,12 @@ to and says that the running MCP server keeps the old build until the agent
 reconnects. install.sh links `commands/slack*.md`, so the update that installs the
 release also installs the prompt.
 
+`.github/workflows/ci.yml` runs `npm ci`, the typecheck, the tests and the build
+on every push to `main` and on a manual dispatch. It has no `pull_request` trigger
+on purpose: a PR, Dependabot's included, never runs CI here, so the post-merge run
+on `main` is the first automated check. The job asks only for `contents: read` and
+checks out without persisting the token.
+
 ## Install by hand
 
 The README has the one-liner. Step by step, it is:
