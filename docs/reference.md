@@ -209,6 +209,22 @@ unexpanded, so there it is a TUI feature.
 | `/slack-post <channel> <text>` | Prints the exact message and posts only after you say yes |
 | `/slack-sync [workspace]` | Runs a sync and reports the new archive age |
 
+## Help
+
+`slack-browser help` prints one usage line per command; `slack-browser <command>
+--help` prints that command's page: what it does, its usage, and every flag with
+the value it expects. A grouped command answers per subcommand too, so
+`slack-browser archive search --help` covers the flags of `search` alone.
+
+The flags are a whitelist. One the command does not take is refused before it
+runs, which matters most for `update`: `slack-browser update --chek` stops with the
+flag named instead of moving the checkout. A bare `--` ends the flags, so a message
+that starts with two dashes goes after it:
+
+```bash
+slack-browser send general -- --help
+```
+
 ## Check and read from the shell
 
 ```bash

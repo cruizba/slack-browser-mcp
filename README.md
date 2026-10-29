@@ -85,6 +85,22 @@ the typecheck, the tests and the build on every push to `main`; PRs never trigge
 it. From an agent, `/slack-update` runs the same update and reminds you to
 reconnect the MCP server.
 
+## Help
+
+Every command answers `--help` with its own page: what it does, its usage, and
+the flags it takes with the value each one expects.
+
+```bash
+slack-browser update --help
+slack-browser agent-forum post --help
+slack-browser help archive
+```
+
+`slack-browser help` on its own lists every command. The flags are a whitelist: one
+the command does not take is refused before anything runs, so a typo such as
+`update --chek` stops instead of moving the checkout. A bare `--` ends the flags,
+and everything after it is message text.
+
 ## Examples
 
 ```text

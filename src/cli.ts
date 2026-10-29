@@ -6,6 +6,7 @@
 
 import { fileURLToPath } from 'node:url'
 
+import { parseArgs, type ParsedArgs } from './args.ts'
 import { login } from './auth/login.ts'
 import { autoOff, autoOn, autoStatus } from './forum/auto.ts'
 import { openForum, reload, requireIdentity, type ForumContext } from './forum/context.ts'
@@ -53,103 +54,11 @@ import {
   type Directory,
 } from './slack/directory.ts'
 import { resolveReferences } from './slack/references.ts'
+import { commandPage, flagSpecs, helpPageFor, indexPage, resolveCommand, usageProblem } from './help.ts'
 import { checkoutRoot, update, versionLine } from './update.ts'
 
 /** Where the checkout lives, so `update` can find install.sh and the tags. */
 const SELF_ROOT = checkoutRoot(fileURLToPath(import.meta.url))
-
-const HELP = `slack-browser — Slack read access from a browser session
-
-Usage:
-  slack-browser login [--timeout <seconds>] [--headless]
-  slack-browser accounts
-  slack-browser workspace [list]
-  slack-browser workspace use <name|domain|team-id>
-  slack-browser workspace clear
-  slack-browser assist [<nickname>] [--clear]
-  slack-browser status [--workspace <ref>]
-  slack-browser read <channel> [--limit <n>] [--oldest <ts>] [--latest <ts>] [--workspace <ref>]
-  slack-browser thread <channel> <thread_ts> [--workspace <ref>]
-  slack-browser send <channel> <message> [--thread <ts>] [--attach <path,...>] [--send] [--no-assist] [--workspace <ref>]
-  slack-browser sync [--full] [--since <days>] [--deadline <seconds>] [--quiet] [--workspace <ref>]
-  slack-browser archive search <query> [--channel <name>] [--workspace <ref>] [--limit <n>] [--deleted]
-  slack-browser archive stats [--workspace <ref>]
-  slack-browser archive reindex
-  slack-browser archive migrate
-  slack-browser agent-forum [list]                 # bindings, identity, peers pending
-  slack-browser agent-forum add <channel> [--backfill] [--signed] [--no-presence] [--workspace <ref>]
-  slack-browser agent-forum remove <channel>
-  slack-browser agent-forum register <name> [--host <h>] [--capabilities a,b] [--no-post]
-  slack-browser agent-forum unregister [<name>] [--no-post]
-  slack-browser agent-forum peers
-  slack-browser agent-forum away [<note>]
-  slack-browser agent-forum inbox [--all] [--json] [--offline]
-  slack-browser agent-forum task <id>
-  slack-browser agent-forum post <to> <title> --body <text> [--tag <cap>] [--parent <id>] [--binding <name>] [--post]
-  slack-browser agent-forum accept|decline|progress|result|ack|reopen|cancel <id> [--body <text>] [--post]
-  slack-browser agent-forum wait [--timeout <s>] [--follow] [--json] [--offline]
-  slack-browser agent-forum poll [--quiet] [--deadline <s>]
-  slack-browser agent-forum auto [on|off|status]
-  slack-browser agent-forum forget <name|name@host>
-  slack-browser update [--check] [--to <tag>] [--pre] [--no-systemd]
-  slack-browser version
-  slack-browser serve
-
-The browser opens once, during login. Everything else talks to the Slack Web API
-with the captured session, stored at ~/.config/slack-browser-mcp/accounts with
-mode 0600.
-
-Without --workspace, a command uses SLACK_BROWSER_MCP_TEAM, then the default
-saved by "workspace use", then the only stored session. "sync" without
---workspace covers every stored workspace.
-
-With nothing configured, every sent message is still marked: the header reads
-"*Message Sent by AI Agent '<client>' of <account>*", naming the MCP client and the
-account it goes out from. Set your own with "assist <nickname>"; --no-assist posts
-the text alone, and ${ASSISTED_NICKNAME_ENV} wins over config.json.
-
-"agent-forum" (alias "forum") is the channel where agents hand each other work:
-bind a channel once, register a name, then post tasks to a peer by name. Every
-write is a dry run unless --post, and every post is audited.
-
-"update" moves the checkout this build runs from to a release: the latest semver
-tag (v1.4.0), or the one named with --to. It fetches the tags, checks the tag out
-detached and re-runs install.sh --no-pull to rebuild and relink. --check only
-says what it would do; a checkout on main past the latest release is left alone.
-`
-
-interface ParsedArgs {
-  positional: string[]
-  flags: Map<string, string | boolean>
-}
-
-function parseArgs(argv: string[]): ParsedArgs {
-  const positional: string[] = []
-  const flags = new Map<string, string | boolean>()
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index]!
-    if (!arg.startsWith('--')) {
-      positional.push(arg)
-      continue
-    }
-    const withoutPrefix = arg.slice(2)
-    const equals = withoutPrefix.indexOf('=')
-    if (equals > 0) {
-      flags.set(withoutPrefix.slice(0, equals), withoutPrefix.slice(equals + 1))
-      continue
-    }
-    const next = argv[index + 1]
-    if (next !== undefined && !next.startsWith('--')) {
-      flags.set(withoutPrefix, next)
-      index += 1
-    } else {
-      flags.set(withoutPrefix, true)
-    }
-  }
-
-  return { positional, flags }
-}
 
 function stringFlag(args: ParsedArgs, name: string): string | undefined {
   const value = args.flags.get(name)
@@ -1111,7 +1020,37 @@ async function commandVersion(): Promise<number> {
 async function main(): Promise<number> {
   const argv = process.argv.slice(2)
   const command = argv[0] ?? 'help'
-  const args = parseArgs(argv.slice(1))
+  const tokens = argv.slice(1)
+  const name = resolveCommand(command)
+
+  if (name === undefined) {
+    if (command === 'help' || command === '--help' || command === '-h') {
+      const topic = tokens.find((token) => !token.startsWith('-'))
+      const page = topic === undefined ? indexPage() : commandPage(topic)
+      if (page === undefined) {
+        console.error(`no command named \`${topic}\`\n\n${indexPage()}`)
+        return 1
+      }
+      console.log(page)
+      return 0
+    }
+    console.error(`Unknown command: ${command}\n`)
+    console.error(indexPage())
+    return 1
+  }
+
+  const page = helpPageFor(command, tokens)
+  if (page !== undefined) {
+    console.log(page)
+    return 0
+  }
+
+  const args = parseArgs(tokens, flagSpecs(name), name)
+  const problem = usageProblem(command, args.positional[0], args.flags.keys())
+  if (problem !== null) {
+    console.error(problem)
+    return 1
+  }
 
   switch (command) {
     case 'login':
@@ -1147,14 +1086,9 @@ async function main(): Promise<number> {
     case 'serve':
       await serve()
       return 0
-    case 'help':
-    case '--help':
-    case '-h':
-      console.log(HELP)
-      return 0
     default:
       console.error(`Unknown command: ${command}\n`)
-      console.error(HELP)
+      console.error(indexPage())
       return 1
   }
 }

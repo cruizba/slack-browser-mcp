@@ -92,6 +92,22 @@ workflow `ci` aparte pasa el typecheck, los tests y el build en cada push a `mai
 los PRs nunca lo disparan. Desde un agente, `/slack-update` ejecuta la misma
 actualización y avisa de que hay que reconectar el servidor MCP.
 
+## Ayuda
+
+Cada comando responde a `--help` con su propia página: qué hace, su uso y las
+flags que acepta, con el valor que espera cada una.
+
+```bash
+slack-browser update --help
+slack-browser agent-forum post --help
+slack-browser help archive
+```
+
+`slack-browser help` a secas lista todos los comandos. Las flags son una lista
+blanca: la que el comando no acepta se rechaza antes de ejecutar nada, así que una
+errata como `update --chek` se queda ahí en vez de mover el checkout. Un `--`
+suelto cierra las flags, y todo lo que va detrás es texto del mensaje.
+
 ## Ejemplos
 
 ```text
