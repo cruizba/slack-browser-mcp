@@ -264,8 +264,10 @@ Behaviours:
 - Attachment bytes are fetched with the same `xoxc` token plus `d` cookie sent as
   `Authorization: Bearer …` (Slack redirects only between its own hosts), and are
   stored under `archive/<team>/files/` when `read_file` asks for them.
-- Message text is truncated at 2000 chars per message; the rest of the payload
-  stays out of the model's context by design.
+- Message text is truncated at 4000 chars per message, Slack's own recommended
+  ceiling; the marker says how long the message really is and that
+  `search_messages` prints a hit whole, so the rest of a long message stays out of
+  the model's context by design but is never lost.
 
 ## 8. Agent surface
 

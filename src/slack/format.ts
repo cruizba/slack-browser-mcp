@@ -8,7 +8,13 @@ import { slackChannelLabel } from './conversations.ts'
 import type { Directory } from './directory.ts'
 import { resolveReferences, type ReferenceScope } from './references.ts'
 
-const MAX_MESSAGE_CHARS = 2000
+/**
+ * Slack's own recommendation is 4000 characters per message, and the archive holds
+ * longer ones, so a channel read cuts there and says so instead of quietly handing
+ * back half a message. `search_messages` prints a hit whole and is the way to ask
+ * for the rest.
+ */
+const MAX_MESSAGE_CHARS = 4000
 
 export function formatTs(ts: string): string {
   const seconds = Number(ts.split('.')[0])
@@ -42,7 +48,7 @@ function messageBody(message: SlackMessage, scope?: ReferenceScope): string {
     text = `${text}${text ? ' ' : ''}${fileLabel(file)}`
   }
   if (text.length > MAX_MESSAGE_CHARS) {
-    text = `${text.slice(0, MAX_MESSAGE_CHARS)}… [truncated]`
+    text = `${text.slice(0, MAX_MESSAGE_CHARS)}… [truncated: ${text.length} characters, search_messages prints a message whole]`
   }
   return text
 }

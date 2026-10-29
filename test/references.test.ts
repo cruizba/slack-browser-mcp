@@ -69,4 +69,22 @@ describe('renderMessages', () => {
     assert.match(line, /ana: @ana mira #random & esta foto/)
     assert.match(line, /\[file: foto\.png id=F0ABC\]/)
   })
+
+  it('cuts a long message at 4000 and says where the rest is', () => {
+    const long = 'x'.repeat(6000)
+    const line = renderMessages([{ ts: '1792519300.197699', user: 'U02ANA', text: long }], {
+      names: new Map([['U02ANA', 'ana']]),
+      scope,
+    })
+    assert.match(line, /x{4000}… \[truncated: 6000 characters, search_messages prints a message whole\]/)
+  })
+
+  it('leaves a message under the limit alone', () => {
+    const line = renderMessages(
+      [{ ts: '1792519300.197699', user: 'U02ANA', text: 'x'.repeat(4000) }],
+      { names: new Map([['U02ANA', 'ana']]), scope },
+    )
+    assert.doesNotMatch(line, /truncated/)
+    assert.equal(line.endsWith('x'.repeat(4000)), true)
+  })
 })
