@@ -90,6 +90,12 @@ repository or in the workflow, and the token is never echoed. The release commit
 is authored by `github-actions[bot]`, and a push made with that token does not
 trigger another workflow run, so the job cannot loop.
 
+The workflow's actions are pinned to a commit SHA with `pinact`, with the tag in
+the trailing comment so Dependabot can read it. `.github/dependabot.yml` opens a
+weekly PR for the actions (one group) and for npm (minor and patch grouped, majors
+on their own), using `versioning-strategy: increase` so `package.json` and the
+lockfile move together.
+
 ## Install by hand
 
 The README has the one-liner. Step by step, it is:

@@ -79,6 +79,8 @@ The same script runs from the Actions tab: the `release` workflow takes the
 version (or bump) as its input, runs the tests, and pushes the commit, the tag
 and the notes with the workflow's own `github.token`. No personal token is
 stored in the repository, and the job needs `contents: write` for that push.
+Its actions are pinned to a commit SHA with `pinact`, and `.github/dependabot.yml`
+keeps those pins and the npm dependencies current.
 
 ## Examples
 
