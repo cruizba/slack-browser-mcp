@@ -90,7 +90,7 @@ TAGGED="$(git describe --tags --exact-match HEAD)"
 [ "$TAGGED" = "$TAG" ] || die "git tagged $TAGGED, expected $TAG"
 echo "    $TAG at $(git rev-parse --short HEAD)"
 
-SLUG="$(git remote get-url origin | sed -n 's#.*github\.com[:/]\(.*\)\.git$#\1#p')"
+SLUG="$(git remote get-url origin | sed -n 's#.*github\.com[:/]\(.*\)$#\1#p' | sed 's#\.git$##')"
 RELEASES_URL=""
 [ -n "$SLUG" ] && RELEASES_URL="https://github.com/$SLUG/releases"
 
