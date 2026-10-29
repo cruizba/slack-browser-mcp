@@ -1,6 +1,6 @@
 {
   "name": "slack-browser-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "license": "MIT",
   "description": "Slack read access for any agent: browser login once, then the Slack Web API",
