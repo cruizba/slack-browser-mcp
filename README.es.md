@@ -82,6 +82,11 @@ push y abre la release de GitHub. `--dry-run` dice lo que haría, `--no-push` se
 queda en el tag, y una prerelease como `0.3.0-rc.1` solo se instala con
 `update --pre`.
 
+El mismo script corre desde la pestaña Actions: el workflow `release` recibe la
+versión (o el salto) como input, pasa los tests y empuja el commit, el tag y las
+notas con el `github.token` del propio workflow. No se guarda ningún token
+personal en el repositorio, y el job necesita `contents: write` para ese push.
+
 ## Ejemplos
 
 ```text

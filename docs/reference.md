@@ -81,6 +81,15 @@ tag, and runs `gh release create --generate-notes` when `gh` is available.
 `--dry-run` prints the plan, `--no-push` stops after the local tag, `--no-notes`
 skips the GitHub release.
 
+`.github/workflows/release.yml` runs the same script from the Actions tab: a
+manual run takes the version or the bump as its input, checks out `main` with the
+tags, runs `npm ci`, the typecheck and the tests, and only then calls
+`release.sh`. The job asks for `contents: write` and authenticates with
+`github.token` as `GH_TOKEN` and `GH_REPO`; no personal access token lives in the
+repository or in the workflow, and the token is never echoed. The release commit
+is authored by `github-actions[bot]`, and a push made with that token does not
+trigger another workflow run, so the job cannot loop.
+
 ## Install by hand
 
 The README has the one-liner. Step by step, it is:

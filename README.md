@@ -75,6 +75,11 @@ full version): it bumps `package.json`, commits, tags, pushes and opens the
 GitHub release. `--dry-run` says what it would do, `--no-push` stops after the
 tag, and a prerelease such as `0.3.0-rc.1` is only installed with `update --pre`.
 
+The same script runs from the Actions tab: the `release` workflow takes the
+version (or bump) as its input, runs the tests, and pushes the commit, the tag
+and the notes with the workflow's own `github.token`. No personal token is
+stored in the repository, and the job needs `contents: write` for that push.
+
 ## Examples
 
 ```text
