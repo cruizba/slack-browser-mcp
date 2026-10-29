@@ -96,6 +96,12 @@ weekly PR for the actions (one group) and for npm (minor and patch grouped, majo
 on their own), using `versioning-strategy: increase` so `package.json` and the
 lockfile move together.
 
+`commands/slack-update.md` is the agent surface for the same CLI command: it runs
+`slack-browser update --check` first, applies the release, reports the tag it moved
+to and says that the running MCP server keeps the old build until the agent
+reconnects. install.sh links `commands/slack*.md`, so the update that installs the
+release also installs the prompt.
+
 ## Install by hand
 
 The README has the one-liner. Step by step, it is:

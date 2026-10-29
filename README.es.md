@@ -87,7 +87,9 @@ versión (o el salto) como input, pasa los tests y empuja el commit, el tag y la
 notas con el `github.token` del propio workflow. No se guarda ningún token
 personal en el repositorio, y el job necesita `contents: write` para ese push.
 Sus actions están fijadas a un SHA de commit con `pinact`, y
-`.github/dependabot.yml` mantiene esos pins y las dependencias npm al día.
+`.github/dependabot.yml` mantiene esos pins y las dependencias npm al día. Desde
+un agente, `/slack-update` ejecuta la misma actualización y avisa de que hay que
+reconectar el servidor MCP.
 
 ## Ejemplos
 
@@ -101,6 +103,7 @@ Sus actions están fijadas a un SHA de commit con `pinact`, y
 /slack-search mtu                         # texto completo en el archivo local
 /slack-post ci-notifications "deployed"   # ensayo; publica solo si dices que sí
 /slack-sync                               # refresca el archivo ahora
+/slack-update                             # pasa a la última release y recompila
 ```
 
 ## Foro de agentes
