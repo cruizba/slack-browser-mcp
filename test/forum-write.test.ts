@@ -12,7 +12,13 @@ import { render, summaryFor, type Envelope } from '../src/forum/envelope.ts'
 import { newId } from '../src/forum/id.ts'
 
 const TASK = '01J9Z7K3QX4MB8WN2R5T6Y7Z8A'
-const TASK_TS = '1793145900.000300'
+// Anchored to the clock: the ledger derives a task's expiry from the envelope's
+// `sent`, so a fixed date turns it expired once enough real time passes.
+const NOW_SECONDS = Math.floor(Date.now() / 1000)
+const TASK_TS = `${NOW_SECONDS - 3600}.000300`
+const PEER_TS = `${NOW_SECONDS - 7200}`
+const iso = (secondsAgo: number): string => new Date(Date.now() - secondsAgo * 1000).toISOString()
+let NEXT_POST_TS = NOW_SECONDS + 10
 
 // The modules under test resolve their paths at import time, so every test in this
 // file shares one root and starts from a rewritten file instead of a new directory.
@@ -108,22 +114,22 @@ async function seedArchive(): Promise<void> {
     synced_at: '2026-10-28T09:30:00Z',
   })
   await archive.append('T0TEST', 'C0HUB', [
-    record('1793145600.000100', {
+    record(`${PEER_TS}.000100`, {
       v: 1,
       kind: 'register',
       id: newId(),
       from: 'builder@desktop',
-      sent: '2026-10-28T09:00:00Z',
+      sent: iso(7200),
       name: 'builder',
       host: 'desktop',
       capabilities: ['code'],
     }),
-    record('1793145600.000200', {
+    record(`${PEER_TS}.000200`, {
       v: 1,
       kind: 'register',
       id: newId(),
       from: 'reviewer@laptop',
-      sent: '2026-10-28T09:00:00Z',
+      sent: iso(7200),
       name: 'reviewer',
       host: 'laptop',
       capabilities: ['review'],
@@ -134,7 +140,7 @@ async function seedArchive(): Promise<void> {
       id: TASK,
       from: 'builder@desktop',
       to: 'reviewer@laptop',
-      sent: '2026-10-28T09:05:00Z',
+      sent: iso(3600),
       title: 'revisar el PR',
       body: 'mira el diff',
     }),
@@ -183,10 +189,11 @@ async function setup(
       return json({ ok: true, messages })
     }
     if (method === 'chat.postMessage') {
+      NEXT_POST_TS += 1
       return json({
         ok: true,
         channel: body.get('channel'),
-        ts: '1793149000.000100',
+        ts: `${NEXT_POST_TS}.000100`,
         message: { text: body.get('text') },
       })
     }
@@ -422,7 +429,7 @@ test('a write retries once when the thread lags behind', async (t) => {
     kind: 'accept' as const,
     id: newId(),
     from: 'reviewer@laptop',
-    sent: '2026-10-28T09:06:00Z',
+    sent: iso(60),
     task: TASK,
   }
 
@@ -435,7 +442,7 @@ test('a write retries once when the thread lags behind', async (t) => {
       if (refreshes === 2) {
         await archive.append('T0TEST', 'C0HUB', [
           {
-            ts: '1793145950.000500',
+            ts: `${NOW_SECONDS - 60}.000500`,
             channel: 'C0HUB',
             text: render(summaryFor(accept), accept),
             user: 'U0REVIEWER',
