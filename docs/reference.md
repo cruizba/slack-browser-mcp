@@ -29,7 +29,9 @@ server `slack`. Finally it renders `systemd/slack-browser-sync.service.in` into
 `~/.config/systemd/user/`, installs the sync timer, enables it and turns on linger.
 It never opens a browser: signing in is a command the agent runs. Re-running it
 is safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left
-on its branch). That re-run is also the update: there is no separate command.
+on its branch). It always follows `main`; releases are installed by
+`slack-browser update`, and re-running install.sh on a release checkout brings it
+back to the branch.
 
 ```bash
 ./install.sh --help
@@ -39,6 +41,45 @@ on its branch). That re-run is also the update: there is no separate command.
   --no-pull         keep the checkout as it is, do not fetch or pull
   --no-systemd      skip the archive sync unit
 ```
+
+## Releases and updates
+
+A release is a semver tag (`v0.2.0`) pushed with an optional GitHub release made
+from it. The tag, not `main`, is what a machine is allowed to stand on: `main`
+keeps moving, a tag does not. Tags are the source of truth, so the update works
+with a GitHub or Gitea remote and needs no token; the GitHub release is only the
+place notes live.
+
+```bash
+slack-browser update            # latest stable tag, rebuild and relink
+slack-browser update --check    # installed vs latest, changes nothing
+slack-browser update --to v0.1.0
+slack-browser update --pre      # consider prereleases too
+slack-browser version
+```
+
+`update` fetches the tags from `origin`, compares the tag at `HEAD` with the
+highest one, checks it out detached and runs `install.sh --no-pull`, so the build,
+the `npm link`, the agent registrations and the units all come from the installer
+that is already there. Three rules keep it predictable:
+
+- A checkout on `main` past the latest release is not rolled back; `--to` pins a
+  tag when that is what was asked for.
+- A dirty checkout refuses to move, with the same advice as install.sh: commit or
+  stash, or rebuild in place with `install.sh --no-pull`.
+- A copy that is not a git checkout says so instead of guessing; reinstall it with
+  install.sh.
+
+After the update, restart the agent so its MCP server process loads the new
+build. The sync and forum timers start a new process on every tick, so they pick
+the build up by themselves.
+
+`release.sh` cuts one from a clean `main` equal to `origin/main`: it resolves the
+next version (`major`, `minor`, `patch`, or a full version, prereleases included),
+bumps `package.json`, commits `chore: release vX`, tags, pushes the branch and the
+tag, and runs `gh release create --generate-notes` when `gh` is available.
+`--dry-run` prints the plan, `--no-push` stops after the local tag, `--no-notes`
+skips the GitHub release.
 
 ## Install by hand
 

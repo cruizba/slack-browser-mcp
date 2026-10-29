@@ -51,13 +51,29 @@ Re-running it is safe; `install.sh --help` lists the flags.
 
 ## Update
 
-Run the same script again. It pulls `main` and rebuilds before touching anything
-else. Updates never require deleting local data: the archive carries a layout
-version and is migrated in place, with the index rebuilt from the JSONL.
-
 ```bash
-~/slack-browser-mcp/install.sh
+slack-browser update            # move to the latest release and rebuild
+slack-browser update --check    # say what is installed and what the latest is
+slack-browser update --to v0.2.0
+slack-browser version
 ```
+
+A release is a semver tag (`v0.2.0`) and the checkout stands on one, detached,
+so `main` stays a development branch. `update` fetches the tags, compares the one
+at `HEAD` with the latest stable release, checks it out and runs
+`install.sh --no-pull` (build, link, agents, units). A checkout on `main` past
+the latest tag is left alone: `update` moves between releases, and pinning one is
+`--to`. Restart the agent afterwards so its MCP server loads the new build.
+
+`install.sh` still installs from `main`, and re-running it is the way to track the
+branch: it also brings a release checkout back to `main`. Updates never require
+deleting local data: the archive carries a layout version and is migrated in
+place, with the index rebuilt from the JSONL.
+
+Maintainers cut a release with `./release.sh patch` (or `minor`, `major`, or a
+full version): it bumps `package.json`, commits, tags, pushes and opens the
+GitHub release. `--dry-run` says what it would do, `--no-push` stops after the
+tag, and a prerelease such as `0.3.0-rc.1` is only installed with `update --pre`.
 
 ## Examples
 

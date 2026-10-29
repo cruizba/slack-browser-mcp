@@ -4,6 +4,8 @@
  * shell. `serve` runs the MCP server on stdio.
  */
 
+import { fileURLToPath } from 'node:url'
+
 import { login } from './auth/login.ts'
 import { autoOff, autoOn, autoStatus } from './forum/auto.ts'
 import { openForum, reload, requireIdentity, type ForumContext } from './forum/context.ts'
@@ -45,6 +47,10 @@ import {
   type Directory,
 } from './slack/directory.ts'
 import { resolveReferences } from './slack/references.ts'
+import { checkoutRoot, update, versionLine } from './update.ts'
+
+/** Where the checkout lives, so `update` can find install.sh and the tags. */
+const SELF_ROOT = checkoutRoot(fileURLToPath(import.meta.url))
 
 const HELP = `slack-browser — Slack read access from a browser session
 
@@ -79,6 +85,8 @@ Usage:
   slack-browser agent-forum poll [--quiet] [--deadline <s>]
   slack-browser agent-forum auto [on|off|status]
   slack-browser agent-forum forget <name|name@host>
+  slack-browser update [--check] [--to <tag>] [--pre] [--no-systemd]
+  slack-browser version
   slack-browser serve
 
 The browser opens once, during login. Everything else talks to the Slack Web API
@@ -96,7 +104,13 @@ the text alone, and ${ASSISTED_NICKNAME_ENV} wins over config.json.
 
 "agent-forum" (alias "forum") is the channel where agents hand each other work:
 bind a channel once, register a name, then post tasks to a peer by name. Every
-write is a dry run unless --post, and every post is audited.`
+write is a dry run unless --post, and every post is audited.
+
+"update" moves the checkout this build runs from to a release: the latest semver
+tag (v1.4.0), or the one named with --to. It fetches the tags, checks the tag out
+detached and re-runs install.sh --no-pull to rebuild and relink. --check only
+says what it would do; a checkout on main past the latest release is left alone.
+`
 
 interface ParsedArgs {
   positional: string[]
@@ -1041,6 +1055,22 @@ async function commandForum(args: ParsedArgs): Promise<number> {
   }
 }
 
+async function commandUpdate(args: ParsedArgs): Promise<number> {
+  const target = stringFlag(args, 'to')
+  return update({
+    root: SELF_ROOT,
+    check: args.flags.get('check') === true,
+    ...(target !== undefined ? { target } : {}),
+    prerelease: args.flags.get('pre') === true,
+    systemd: args.flags.get('no-systemd') !== true,
+  })
+}
+
+async function commandVersion(): Promise<number> {
+  console.log(`slack-browser ${await versionLine(SELF_ROOT)}`)
+  return 0
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2)
   const command = argv[0] ?? 'help'
@@ -1071,6 +1101,12 @@ async function main(): Promise<number> {
     case 'agent-forum':
     case 'forum':
       return commandForum(args)
+    case 'update':
+      return commandUpdate(args)
+    case 'version':
+    case '--version':
+    case '-v':
+      return commandVersion()
     case 'serve':
       await serve()
       return 0

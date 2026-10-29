@@ -56,13 +56,31 @@ Ejecutarlo otra vez es seguro; `install.sh --help` lista las opciones.
 
 ## Actualizar
 
-Vuelve a ejecutar el mismo script. Hace un pull de `main` y recompila antes de tocar
-nada más. Las actualizaciones nunca piden borrar datos locales: el archivo lleva una
-versión de formato y se migra en el sitio, con el índice reconstruido desde el JSONL.
-
 ```bash
-~/slack-browser-mcp/install.sh
+slack-browser update            # pasa a la última release y recompila
+slack-browser update --check    # dice qué hay instalado y cuál es la última
+slack-browser update --to v0.2.0
+slack-browser version
 ```
+
+Una release es un tag semver (`v0.2.0`) y el checkout se queda en uno, detached,
+para que `main` siga siendo la rama de desarrollo. `update` trae los tags, compara
+el que está en `HEAD` con la última release estable, hace el checkout y ejecuta
+`install.sh --no-pull` (build, enlaces, agentes, unidades). Un checkout en `main`
+por delante del último tag no se toca: `update` se mueve entre releases, y fijar
+una es `--to`. Reinicia el agente después para que su servidor MCP cargue el build
+nuevo.
+
+`install.sh` sigue instalando desde `main`, y volver a ejecutarlo es la forma de
+seguir la rama: también devuelve un checkout de release a `main`. Las
+actualizaciones nunca piden borrar datos locales: el archivo lleva una versión de
+formato y se migra en el sitio, con el índice reconstruido desde el JSONL.
+
+Quien mantiene el repo saca una release con `./release.sh patch` (o `minor`,
+`major`, o una versión completa): sube `package.json`, hace el commit, el tag, el
+push y abre la release de GitHub. `--dry-run` dice lo que haría, `--no-push` se
+queda en el tag, y una prerelease como `0.3.0-rc.1` solo se instala con
+`update --pre`.
 
 ## Ejemplos
 
