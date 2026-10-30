@@ -410,3 +410,79 @@ test('a file that is not an envelope is left alone', async (t) => {
   const [record] = await store.read('T0TEST', channel.id)
   assert.equal(record?.forum, undefined)
 })
+
+test('a reply carries its own envelope, so a state change is not invisible', async (t) => {
+  const { store, index } = await scratch(t)
+  const task = envelope()
+  const accept: Envelope = {
+    v: 1,
+    kind: 'accept',
+    id: '01J9Z7K3QX4MB8WN2R5T6Y7Z9C',
+    from: 'reviewer@desktop',
+    sent: '2026-10-20T11:05:00Z',
+    task: TASK_ID,
+  }
+  const parent: SlackMessage = {
+    ts: '1792500400.000500',
+    user: 'U0BUILDER',
+    text: 'builder@laptop asks reviewer@desktop: revisar el PR',
+    reply_count: 1,
+    files: [{ id: 'F0TASK', name: forumFileName(TASK_ID), size: 120 }],
+  }
+  const reply: SlackMessage = {
+    ts: '1792500430.000600',
+    user: 'U0REVIEWER',
+    text: 'reviewer@desktop accepted ' + TASK_ID,
+    thread_ts: parent.ts,
+    files: [{ id: 'F0ACCEPT', name: forumFileName(String(accept.id)), size: 120 }],
+  }
+  const bodies: Record<string, string> = { F0TASK: encode(task), F0ACCEPT: encode(accept) }
+  const asked: string[] = []
+  const client = new FakeClient([parent], { [parent.ts]: [parent, reply] })
+  client.downloadFile = async (file: SlackFile) => {
+    asked.push(file.id ?? '')
+    return new TextEncoder().encode(bodies[file.id ?? ''] ?? '')
+  }
+
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+  const records = await store.read('T0TEST', channel.id)
+  const replyRecord = records.find((record) => record.ts === reply.ts)
+  assert.ok(replyRecord, 'the reply was archived')
+  assert.deepEqual(asked.sort(), ['F0ACCEPT', 'F0TASK'], 'both the task and its reply')
+  assert.equal(replyRecord?.forum, encode(accept), 'a reply carries an envelope like a message')
+  assert.equal(envelopeOf(replyRecord!)?.kind, 'accept')
+})
+
+test('a record filed without its envelope is completed on the next run', async (t) => {
+  const { store, index } = await scratch(t)
+  const json = encode(envelope())
+  // What a v0.2.1 process left behind: the file name is there, the envelope is not.
+  await store.append('T0TEST', channel.id, [
+    {
+      ts: '1792500100.000200',
+      channel: channel.id,
+      ...(channel.name ? { channel_name: channel.name } : {}),
+      user: 'U0BUILDER',
+      text: 'builder@laptop asks reviewer@desktop: revisar el PR',
+      files: [{ id: 'F0OLD', name: forumFileName(TASK_ID) }],
+      synced_at: '2026-10-20T10:00:00.000Z',
+    },
+  ])
+
+  const asked: string[] = []
+  const client = new FakeClient([])
+  client.downloadFile = async (file: SlackFile) => {
+    asked.push(file.id ?? '')
+    return new TextEncoder().encode(json)
+  }
+
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+  assert.deepEqual(asked, ['F0OLD'], 'the file the record named is fetched')
+  const [record] = await store.read('T0TEST', channel.id)
+  assert.equal(record?.forum, json, 'the envelope is filed without a new sync of the message')
+  assert.deepEqual(envelopeOf(record!), envelope())
+
+  // And once it has one, another run does not download it again.
+  await syncAccount({ account, client, store, index, options: { now: at(5) } })
+  assert.deepEqual(asked, ['F0OLD'])
+})

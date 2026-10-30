@@ -287,6 +287,17 @@ test('a message with an attachment that will not parse is counted, not ignored',
   const built = ledger([...registers(), broken])
   assert.equal(built.tasks.length, 0)
   assert.equal(built.unreadable, 1)
+
+  // A record that names the file but never got its bytes — what an upgrade leaves
+  // behind when the sync that wrote it did not read envelopes from attachments.
+  const incomplete: ArchivedMessage = {
+    ...task,
+    text: 'solo la frase',
+    files: [{ id: 'F0FORUM', name: 'forum-01J9Z7K3QX4MB8WN2R5T6Y7Z8A.json' }],
+  }
+  const unread = ledger([...registers(), incomplete])
+  assert.equal(unread.tasks.length, 0)
+  assert.equal(unread.unreadable, 1, 'a named envelope that could not be read is counted')
 })
 
 function taskEnvelope(): Envelope {

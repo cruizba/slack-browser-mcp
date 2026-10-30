@@ -54,7 +54,18 @@ export function envelopeOf(carrier: Pick<ArchivedMessage, 'text' | 'forum'>): En
   return decodeAttachment(carrier.forum) ?? decode(carrier.text)
 }
 
-/** True when the message claims to carry an envelope, readable or not. */
-export function carriesEnvelope(carrier: Pick<ArchivedMessage, 'text' | 'forum'>): boolean {
-  return carrier.forum !== undefined || (carrier.text ?? '').includes('```forum')
+/**
+ * True when the message claims to carry an envelope, readable or not. A record that
+ * names a `forum-*.json` but has no `forum` yet is a message that arrived before the
+ * sync could fetch it: counting it as prose would hide it behind a perfectly ordinary
+ * sentence, which is how a whole thread went missing.
+ */
+export function carriesEnvelope(
+  carrier: Pick<ArchivedMessage, 'text' | 'forum' | 'files'>,
+): boolean {
+  return (
+    carrier.forum !== undefined ||
+    forumFileOf(carrier.files) !== undefined ||
+    (carrier.text ?? '').includes('```forum')
+  )
 }

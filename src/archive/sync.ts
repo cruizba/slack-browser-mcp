@@ -212,22 +212,31 @@ export async function syncAccount(args: {
 }
 
 /**
+ * The bit of a message an envelope lookup needs, whichever side it came from: a
+ * fresh one from Slack or a record the archive already holds.
+ */
+interface EnvelopeCarrier {
+  ts: string
+  files?: readonly SlackFile[] | undefined
+}
+
+/**
  * The envelope a message carries travels as a file, so the channel file alone is not
- * enough to read the thread. The bytes land next to the archive — the same store
- * `read_file` uses — and the envelope is copied into the record, which is what keeps
- * `inbox --offline`, the ledger rebuild and the inbox cursor honest without a
- * download on every read.
+ * enough to read the thread — and in a thread is where every state change lives. The
+ * bytes land next to the archive (the same store `read_file` uses) and the envelope is
+ * copied into the record, which is what keeps `inbox --offline`, the ledger rebuild
+ * and the inbox cursor honest without a download on every read.
  */
 async function collectEnvelopes(args: {
   client: SyncClient
   store: ArchiveStore
   teamId: string
-  messages: readonly SlackMessage[]
+  carriers: readonly EnvelopeCarrier[]
   deadline: number
 }): Promise<Map<string, string>> {
   const found = new Map<string, string>()
   const files = new ArchiveFileStore(args.store.root)
-  for (const message of args.messages) {
+  for (const message of args.carriers) {
     if (Date.now() > args.deadline) break
     const file = forumFileOf(message.files)
     if (!file?.id || !args.client.downloadFile) continue
@@ -300,19 +309,75 @@ async function syncChannel(args: {
 
   if (reconcileDue) await collect({ oldest: daysAgo(options.now, options.reconcileDays) })
 
+  for (const message of fetched.values()) {
+    if ((message.reply_count ?? 0) <= 0) continue
+    const storedCount = cachedByTs.get(message.ts)?.reply_count ?? -1
+    if (storedCount !== message.reply_count) pending.add(message.ts)
+  }
+
+  // The threads come first: `accept`, `progress`, `result` and `ack` are replies, so
+  // a reply carries an envelope exactly like a channel message does, and its file has
+  // to be fetched before the record is built. Reading only the history left every
+  // state change of a v0.3.0 task invisible while the task sat in `open`.
+  const threadParents = [...pending].slice(0, options.maxThreadsPerChannel)
+  const replyMessages: SlackMessage[] = []
+  for (const parentTs of threadParents) {
+    if (Date.now() > args.deadline) break
+    const thread = await client.replies({ channel: channel.id, thread_ts: parentTs, limit: 200 })
+    for (const message of thread) {
+      if (message.ts === parentTs) continue
+      replyMessages.push(message)
+    }
+    // Slack can serve a thread a moment before its newest reply is visible. Keeping
+    // the parent queued retries it on the next run instead of trusting a half
+    // thread forever, which would leave a task stuck one state behind.
+    const expected = Math.min(
+      fetched.get(parentTs)?.reply_count ?? cachedByTs.get(parentTs)?.reply_count ?? 0,
+      199,
+    )
+    const got = thread.filter((message) => message.ts !== parentTs).length
+    pending.delete(parentTs)
+    if (got < expected) pending.add(parentTs)
+  }
+
+  // A record written before this build read envelopes from files still names the file
+  // it carried, and that is enough to go back for it: without this pass an upgrade
+  // leaves a channel half readable, with records that will never be looked at again.
+  const replyTs = new Set(replyMessages.map((message) => message.ts))
+  const stale = cached.filter(
+    (record) =>
+      record.forum === undefined &&
+      !record.deleted_at &&
+      forumFileOf(record.files) !== undefined &&
+      !fetched.has(record.ts) &&
+      !replyTs.has(record.ts),
+  )
+
   const envelopes = await collectEnvelopes({
     client,
     store,
     teamId,
-    messages: [...fetched.values()],
+    carriers: [...fetched.values(), ...replyMessages, ...stale],
     deadline: args.deadline,
   })
 
-  for (const message of fetched.values()) {
-    const record = toRecord(channel, message, options.now)
-    const forum = envelopes.get(message.ts)
+  const withEnvelope = (record: ArchivedMessage, ts: string): ArchivedMessage => {
+    const forum = envelopes.get(ts)
     if (forum !== undefined) record.forum = forum
+    return record
+  }
+
+  for (const message of fetched.values()) {
+    const record = withEnvelope(toRecord(channel, message, options.now), message.ts)
     if (changed(cachedByTs.get(message.ts), record)) records.push(record)
+  }
+
+  for (const record of stale) {
+    const completed = withEnvelope(
+      { ...record, synced_at: options.now.toISOString() },
+      record.ts,
+    )
+    if (completed.forum !== undefined) records.push(completed)
   }
 
   let deletions = 0
@@ -336,32 +401,10 @@ async function syncChannel(args: {
     }
   }
 
-  for (const message of fetched.values()) {
-    if ((message.reply_count ?? 0) <= 0) continue
-    const storedCount = cachedByTs.get(message.ts)?.reply_count ?? -1
-    if (storedCount !== message.reply_count) pending.add(message.ts)
-  }
-
-  const threadParents = [...pending].slice(0, options.maxThreadsPerChannel)
   let replies = 0
-  for (const parentTs of threadParents) {
-    if (Date.now() > args.deadline) break
-    const thread = await client.replies({ channel: channel.id, thread_ts: parentTs, limit: 200 })
-    for (const message of thread) {
-      if (message.ts === parentTs) continue
-      records.push(toRecord(channel, message, options.now))
-      replies += 1
-    }
-    // Slack can serve a thread a moment before its newest reply is visible. Keeping
-    // the parent queued retries it on the next run instead of trusting a half
-    // thread forever, which would leave a task stuck one state behind.
-    const expected = Math.min(
-      fetched.get(parentTs)?.reply_count ?? cachedByTs.get(parentTs)?.reply_count ?? 0,
-      199,
-    )
-    const got = thread.filter((message) => message.ts !== parentTs).length
-    pending.delete(parentTs)
-    if (got < expected) pending.add(parentTs)
+  for (const message of replyMessages) {
+    records.push(withEnvelope(toRecord(channel, message, options.now), message.ts))
+    replies += 1
   }
 
   if (records.length > 0) {
