@@ -95,7 +95,8 @@ export type WriteResult =
       kind: 'posted'
       envelope: Envelope
       binding: Binding
-      ts: string
+      /** Absent when Slack accepted the upload without reporting which message it made. */
+      ts?: string
       audit: string
       target: string
       warning?: string
@@ -166,6 +167,11 @@ function requireRequester(task: ForumTask, me: string): void {
  * Renders, signs, posts and records. The only function that talks to Slack, which
  * is what makes "every envelope is audited" a property of the module instead of a
  * habit.
+ *
+ * Never throws because the acknowledgement is thin. Slack sometimes accepts an upload
+ * and reports which message it made a beat later, or not at all; the message is out
+ * either way, so a missing `ts` comes back as a warning that says not to post it
+ * again. An error there is an error that gets the same move posted twice.
  */
 export async function deliver(
   context: ForumContext,
@@ -173,7 +179,7 @@ export async function deliver(
   binding: Binding,
   envelope: Envelope,
   threadTs?: string,
-): Promise<{ ts: string; audit: string }> {
+): Promise<{ ts?: string; audit: string; warning?: string }> {
   // The channel gets a sentence a person can read; the envelope travels beside it as
   // a file, where nothing escapes it, nothing truncates it and backticks are just
   // backticks.
@@ -194,12 +200,6 @@ export async function deliver(
     text: signed.text,
     ...(threadTs ? { thread_ts: threadTs } : {}),
   })
-  if (!posted.ts) {
-    throw new ForumError(
-      `Slack accepted ${name} but did not say where it landed, so the thread cannot be followed.`,
-      'Check the channel: the file is there. Replies to it need the message ts, which Slack only reports sometimes.',
-    )
-  }
   const fileId = posted.fileIds[0]
   const file = {
     ...(fileId ? { id: fileId } : {}),
@@ -212,17 +212,29 @@ export async function deliver(
     channel: `#${binding.name}`,
     channel_id: binding.channel,
     ...(threadTs ? { thread_ts: threadTs } : {}),
-    message_ts: posted.ts,
+    ...(posted.ts ? { message_ts: posted.ts } : {}),
     text: signed.text,
   })
-  // The poster's own archive has to know immediately: deriving the state from a copy
-  // that only catches up on the next sync makes "accept, then report" fail with
-  // "still open" in the same session.
-  await rememberOwn(context, binding, posted.ts, signed.text, transport.account.user_id, threadTs, {
-    file,
-    json,
-  })
-  return { ts: posted.ts, audit }
+  if (posted.ts) {
+    // The poster's own archive has to know immediately: deriving the state from a copy
+    // that only catches up on the next sync makes "accept, then report" fail with
+    // "still open" in the same session.
+    await rememberOwn(context, binding, posted.ts, signed.text, transport.account.user_id, threadTs, {
+      file,
+      json,
+    })
+    return { ts: posted.ts, audit }
+  }
+  // The message is out: Slack accepted the upload and the comment is in the channel.
+  // Without its `ts` this machine cannot file it locally, and a caller that treats
+  // that as a failure posts the same move twice — so it is a warning, and the word
+  // "again" is the point of it.
+  return {
+    audit,
+    warning:
+      'Slack accepted the message without reporting its ts. It is posted, so do not post it ' +
+      'again; this machine files it on the next sync.',
+  }
 }
 
 /**
@@ -439,15 +451,22 @@ export async function postTask(
     decision: 'posted',
     by: args.by,
   })
+  const note = joined(warning, posted.warning)
   return {
     kind: 'posted',
     envelope,
     binding: view.binding,
-    ts: posted.ts,
+    ...(posted.ts ? { ts: posted.ts } : {}),
     audit: posted.audit,
     target,
-    ...(warning ? { warning } : {}),
+    ...(note ? { warning: note } : {}),
   }
+}
+
+/** One line for the caller, however many things it has to say. */
+function joined(...parts: Array<string | undefined>): string | undefined {
+  const said = parts.filter((part): part is string => part !== undefined && part !== '')
+  return said.length > 0 ? said.join('; ') : undefined
 }
 
 const DECISION_OF: Partial<Record<ReplyKind, DecisionName>> = {
@@ -532,9 +551,10 @@ export async function replyTo(
     kind: 'posted',
     envelope,
     binding: view.binding,
-    ts: posted.ts,
+    ...(posted.ts ? { ts: posted.ts } : {}),
     audit: posted.audit,
     target: task.title,
+    ...(posted.warning ? { warning: posted.warning } : {}),
   }
 }
 

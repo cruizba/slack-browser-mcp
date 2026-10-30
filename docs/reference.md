@@ -556,6 +556,12 @@ and the JSON it would attach; `--post` uploads it. The sync downloads those file
 into `archive/<team>/files/` and keeps the envelope in the archive, so `inbox
 --offline` and `task` work without the network.
 
+**When Slack loses the ts.** An upload is acknowledged with the message it created,
+but Slack can take a moment to say which, and occasionally never does. The message is
+posted regardless, so a write reports "posted, do not post it again" instead of
+failing: the local archive catches up on the next sync, and a retry would put the same
+move in the channel twice.
+
 **No AI header by default.** Envelopes are posted bare, because the header exists to
 mark a message as written on somebody's behalf and an envelope names its sender
 already (`from`, plus the summary line). `--signed` on `add`, or `sign: true` in

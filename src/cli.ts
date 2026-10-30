@@ -616,7 +616,11 @@ function printWrite(result: WriteResult): number {
     console.error('nothing sent; add --post to commit')
     return 0
   }
-  console.log(`sent ts ${result.ts} to ${where}; audit: ${result.audit}`)
+  console.log(
+    result.ts
+      ? `sent ts ${result.ts} to ${where}; audit: ${result.audit}`
+      : `sent to ${where} without a reported ts; audit: ${result.audit}`,
+  )
   return 0
 }
 

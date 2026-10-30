@@ -544,17 +544,28 @@ export class SlackClient {
     return { ...(ts ? { ts } : {}), fileIds }
   }
 
-  /** Best effort: an upload that landed without a share is not a failed send. */
+  /**
+   * Best effort, and worth waiting for: Slack files the share a beat after the upload
+   * completes, so a single `files.info` right away can answer "no shares yet" for a
+   * message that is already in the channel. Three looks with a short wait cover it
+   * (about a second in total); an upload that never reports one is still a sent
+   * message, so this returns nothing rather than throwing.
+   */
   private async sharedTsFromInfo(fileIds: readonly string[]): Promise<string | undefined> {
-    for (const fileId of fileIds) {
-      try {
-        const ts = sharedTs((await this.fileInfo(fileId)).shares)
-        if (ts) return ts
-      } catch {
-        return undefined
+    const waits = [120, 350, 800]
+    for (let attempt = 0; ; attempt += 1) {
+      for (const fileId of fileIds) {
+        try {
+          const ts = sharedTs((await this.fileInfo(fileId)).shares)
+          if (ts) return ts
+        } catch {
+          // A `files.info` that refuses will refuse again in a moment; the caller
+          // already has the file ids and handles a missing ts.
+        }
       }
+      if (attempt >= waits.length) return undefined
+      await this.sleep(waits[attempt]!)
     }
-    return undefined
   }
 
   private async putBytes(url: string, file: UploadAttachment): Promise<void> {

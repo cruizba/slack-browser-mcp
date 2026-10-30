@@ -1656,7 +1656,11 @@ export function buildServer(): McpServer {
       content: [
         {
           type: 'text' as const,
-          text: `Posted to ${where} at ts ${result.ts}; audit: ${result.audit}${warning}`,
+          text:
+            (result.ts
+              ? `Posted to ${where} at ts ${result.ts}`
+              : `Posted to ${where}, but Slack did not report the message ts`) +
+            `; audit: ${result.audit}${warning}`,
         },
       ],
     }

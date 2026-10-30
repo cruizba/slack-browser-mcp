@@ -157,6 +157,7 @@ interface Harness {
 async function setup(
   t: { after(fn: () => void | Promise<void>): void },
   limits: Record<string, number> = {},
+  slack: { shareTs?: boolean } = {},
 ): Promise<Harness> {
   await rm(join(root, 'data'), { recursive: true, force: true })
   await writeForum(limits)
@@ -223,9 +224,16 @@ async function setup(
         ok: true,
         files: files.map((file) => ({
           id: file.id,
-          shares: { private: { [channel]: [{ ts: `${NEXT_POST_TS}.000100` }] } },
+          ...(slack.shareTs === false
+            ? {}
+            : { shares: { private: { [channel]: [{ ts: `${NEXT_POST_TS}.000100` }] } } }),
         })),
       })
+    }
+    if (method === 'files.info') {
+      // Slack sometimes has the file before it has the share, which is the whole
+      // problem: the message exists and nothing says which ts it is.
+      return json({ ok: true, file: { id: String(body.get('file')) } })
     }
     return json({ ok: false, error: 'unexpected_method' })
   }) as typeof fetch
@@ -582,4 +590,22 @@ test('there is no hourly budget: back-to-back posts both go out', async (t) => {
     assert.match(textOf(result), /Posted to/)
   }
   assert.equal(posts(calls).length, 2)
+})
+
+test('an upload Slack does not place is a warning that forbids a retry, not an error', async (t) => {
+  const { calls, uploads, client } = await setup(t, {}, { shareTs: false })
+
+  const posted = await client.callTool({
+    name: 'forum_post',
+    arguments: { to: 'reviewer@laptop', title: 'sin ts', body: 'esto se publica igual', confirm: true },
+  })
+  const text = textOf(posted)
+  assert.match(text, /Posted to private:agent-hub, but Slack did not report the message ts/)
+  assert.match(text, /do not post it again/)
+  assert.equal(uploads.length, 1, 'posted once, and it says so')
+  assert.equal(posts(calls).length, 1, 'the send is not attempted again')
+
+  // Nothing is filed locally, because there is no ts to file it under: the next sync
+  // is what brings it in.
+  assert.equal(archived().length, 3, 'the seeded records, and nothing else')
 })

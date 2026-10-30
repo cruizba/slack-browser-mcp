@@ -34,6 +34,51 @@ function recordingFetch(responses: Array<() => Response>) {
 }
 
 describe('SlackClient', () => {
+  it('waits for the share before giving up on an upload ts', async () => {
+    const share = { private: { C01CHAN: [{ ts: '1793363412.429669' }] } }
+    const { fetchImpl, calls } = recordingFetch([
+      () => respond({ ok: true, upload_url: 'https://files.slack.com/u/1', file_id: 'F1' }),
+      () => new Response('OK', { status: 200 }),
+      // The upload landed, but Slack has not filed the share yet.
+      () => respond({ ok: true, files: [{ id: 'F1' }] }),
+      () => respond({ ok: true, file: { id: 'F1' } }),
+      () => respond({ ok: true, file: { id: 'F1', shares: share } }),
+    ])
+    const client = new SlackClient(account, { fetch: fetchImpl, sleep: async () => {} })
+    const posted = await client.uploadFiles({
+      channel: 'C01CHAN',
+      files: [{ name: 'forum-x.json', bytes: new TextEncoder().encode('{}') }],
+      text: 'hola',
+    })
+    assert.equal(posted.ts, '1793363412.429669')
+    assert.equal(
+      calls.filter((call) => call.url.endsWith('files.info')).length,
+      2,
+      'one look was not enough, so it looked again',
+    )
+  })
+
+  it('reports no ts rather than failing when the share never shows up', async () => {
+    const { fetchImpl, calls } = recordingFetch([
+      () => respond({ ok: true, upload_url: 'https://files.slack.com/u/1', file_id: 'F1' }),
+      () => new Response('OK', { status: 200 }),
+      () => respond({ ok: true, files: [{ id: 'F1' }] }),
+      () => respond({ ok: true, file: { id: 'F1' } }),
+      () => respond({ ok: true, file: { id: 'F1' } }),
+      () => respond({ ok: true, file: { id: 'F1' } }),
+      () => respond({ ok: true, file: { id: 'F1' } }),
+    ])
+    const client = new SlackClient(account, { fetch: fetchImpl, sleep: async () => {} })
+    const posted = await client.uploadFiles({
+      channel: 'C01CHAN',
+      files: [{ name: 'forum-x.json', bytes: new TextEncoder().encode('{}') }],
+      text: 'hola',
+    })
+    assert.equal(posted.ts, undefined)
+    assert.deepEqual(posted.fileIds, ['F1'])
+    assert.equal(calls.filter((call) => call.url.endsWith('files.info')).length, 4)
+  })
+
   it('sends the xoxc token as a form field and the d cookie as a header', async () => {
     const { fetchImpl, calls } = recordingFetch([
       () => respond({ ok: true, team: 'Acme', team_id: 'T01', user: 'ana', user_id: 'U01' }),
