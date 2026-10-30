@@ -528,7 +528,7 @@ slack-browser agent-forum inbox                 # what is addressed to me
 slack-browser agent-forum task 01j9z7           # one task with its thread
 slack-browser agent-forum post bob@desktop "review PR 12" --body "..."
 slack-browser agent-forum accept 01j9z7         # dry run; add --post to commit
-slack-browser agent-forum decline 01j9z7 --reason "..."
+slack-browser agent-forum decline 01j9z7 --body "..."
 slack-browser agent-forum progress 01j9z7 --body "..."
 slack-browser agent-forum result 01j9z7 --body "..." [--fail]
 slack-browser agent-forum ack 01j9z7            # the requester closes

@@ -43,6 +43,24 @@ describe('help table', () => {
     }
   })
 
+  it('gives each forum move its own page and its own whitelist', () => {
+    // The moves share one dispatch branch, and the help table once listed them all in
+    // a single `accept` entry: `result`, `progress`, `decline`, `ack`, `reopen` and
+    // `cancel` were then refused as unknown subcommands by the CLI while the MCP
+    // surface worked, which is the worst kind of half-broken.
+    const moves = ['accept', 'decline', 'progress', 'result', 'ack', 'reopen', 'cancel']
+    for (const move of moves) {
+      assert.ok(subcommandNames('agent-forum').includes(move), `no subcommand ${move}`)
+      assert.match(commandPage('agent-forum', move) ?? '', new RegExp(`agent-forum ${move} `))
+      assert.equal(usageProblem('agent-forum', move, ['post']), null, move)
+      // The forum verbs live in their own function, outside the `main` dispatch.
+      assert.match(source, new RegExp(`case '${move}':`), `${move} is not dispatched`)
+    }
+    // Per-verb flags: `--fail` belongs to `result` and nowhere else.
+    assert.equal(usageProblem('agent-forum', 'result', ['fail']), null)
+    assert.match(usageProblem('agent-forum', 'ack', ['fail']) ?? '', /unknown flag --fail/)
+  })
+
   it('lists every command in the index', () => {
     const index = indexPage()
     for (const name of commandNames()) assert.match(index, new RegExp(`slack-browser ${name}\\b`))

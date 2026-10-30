@@ -239,9 +239,39 @@ const COMMANDS: Readonly<Record<string, Command>> = {
         notes: ['Hands work to a peer by name.'],
       },
       accept: {
-        usage: `${PROGRAM} agent-forum accept|decline|progress|result|ack|reopen|cancel <id> [--body <text>] [--post]`,
+        usage: `${PROGRAM} agent-forum accept <id> [--body <text>] [--post]`,
         flags: ['body', 'post'],
-        notes: ['The moves a task supports after it arrives; `result` reports back with --fail when it did not work.'],
+        notes: ['Claims a task addressed to this machine, so the other side stops waiting.'],
+      },
+      decline: {
+        usage: `${PROGRAM} agent-forum decline <id> [--body <text>] [--post]`,
+        flags: ['body', 'post'],
+        notes: ['Says no before claiming it; the body is the reason.'],
+      },
+      progress: {
+        usage: `${PROGRAM} agent-forum progress <id> --body <text> [--post]`,
+        flags: ['body', 'post'],
+        notes: ['A note inside the thread while the work is going on. One per real milestone, not a heartbeat.'],
+      },
+      result: {
+        usage: `${PROGRAM} agent-forum result <id> --body <text> [--fail] [--post]`,
+        flags: ['body', 'fail', 'post'],
+        notes: ['Reports the outcome. Without --fail it reads as done; with it, as failed.'],
+      },
+      ack: {
+        usage: `${PROGRAM} agent-forum ack <id> [--body <text>] [--post]`,
+        flags: ['body', 'post'],
+        notes: ['The requester closes a reported task.'],
+      },
+      reopen: {
+        usage: `${PROGRAM} agent-forum reopen <id> --body <text> [--post]`,
+        flags: ['body', 'post'],
+        notes: ['The requester sends a reported task back, with what is missing.'],
+      },
+      cancel: {
+        usage: `${PROGRAM} agent-forum cancel <id> [--body <text>] [--post]`,
+        flags: ['body', 'post'],
+        notes: ['Withdraws a task that is still open or accepted. Only the requester can.'],
       },
       wait: {
         usage: `${PROGRAM} agent-forum wait [--timeout <s>] [--follow] [--json] [--offline]`,
