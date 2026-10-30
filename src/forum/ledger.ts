@@ -14,7 +14,8 @@
 
 import type { ArchivedMessage } from '../archive/store.ts'
 import { ForumError } from '../errors.ts'
-import { decode, looksLikeEnvelope, type ReplyKind } from './envelope.ts'
+import { carriesEnvelope, envelopeOf, forumFileOf } from './carrier.ts'
+import type { ReplyKind } from './envelope.ts'
 import { matchesId } from './id.ts'
 import { forumTimings, type ForumLimits } from './limits.ts'
 import { peerFor, type Peer } from './roster.ts'
@@ -58,6 +59,8 @@ export interface ForumTask {
   tag?: string
   title: string
   body: string
+  /** The `forum-*.json` attachment, when the envelope arrived as a file. */
+  fileId?: string
   deadline?: string
   parent?: string
   depth: number
@@ -177,9 +180,9 @@ export function buildLedger(args: LedgerArgs): Ledger {
 
   for (const message of messages) {
     if (message.deleted_at) continue
-    const envelope = decode(message.text)
+    const envelope = envelopeOf(message)
     if (!envelope) {
-      if (looksLikeEnvelope(message.text)) unreadable += 1
+      if (carriesEnvelope(message)) unreadable += 1
       continue
     }
     // The roster kinds carry no state of their own here; they only say who exists.
@@ -192,6 +195,8 @@ export function buildLedger(args: LedgerArgs): Ledger {
     }
 
     if (envelope.kind === 'task') {
+      // Kept so a long body can name the file the reader would ask `read_file` for.
+      const file = forumFileOf(message.files)
       const existing = tasks.get(envelope.id)
       // A re-posted task id is the same task: the later envelope wins the header,
       // the earlier events stay, so an edit cannot reset a claim.
@@ -206,6 +211,7 @@ export function buildLedger(args: LedgerArgs): Ledger {
           ...(envelope.tag !== undefined ? { tag: envelope.tag } : {}),
           title: envelope.title,
           body: envelope.body,
+          ...(file?.id !== undefined ? { fileId: file.id } : {}),
           ...(envelope.deadline !== undefined ? { deadline: envelope.deadline } : {}),
           ...(envelope.parent !== undefined ? { parent: envelope.parent } : {}),
           depth: envelope.depth ?? 0,

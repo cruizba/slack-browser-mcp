@@ -70,6 +70,7 @@ export interface SlackFile {
   size?: number
   url_private?: string
   url_private_download?: string
+  shares?: SlackShares
 }
 
 export interface SlackUser {
@@ -530,13 +531,30 @@ export class SlackClient {
     })
 
     const uploaded = payload.files ?? []
-    const ts = uploaded.map((file) => sharedTs(file.shares)).find((value) => value !== undefined)
-    return {
-      ...(ts ? { ts } : {}),
-      fileIds: uploaded
-        .map((file) => file.id)
-        .filter((id): id is string => typeof id === 'string'),
+    const fileIds = uploaded
+      .map((file) => file.id)
+      .filter((id): id is string => typeof id === 'string')
+    // `completeUploadExternal` describes where the upload landed but is not obliged
+    // to: when the shares come back empty, `files.info` still reports the message
+    // the upload created, and a caller that needs the `ts` (a reply in the same
+    // thread) would otherwise have to guess it.
+    const ts =
+      uploaded.map((file) => sharedTs(file.shares)).find((value) => value !== undefined) ??
+      (await this.sharedTsFromInfo(fileIds))
+    return { ...(ts ? { ts } : {}), fileIds }
+  }
+
+  /** Best effort: an upload that landed without a share is not a failed send. */
+  private async sharedTsFromInfo(fileIds: readonly string[]): Promise<string | undefined> {
+    for (const fileId of fileIds) {
+      try {
+        const ts = sharedTs((await this.fileInfo(fileId)).shares)
+        if (ts) return ts
+      } catch {
+        return undefined
+      }
     }
+    return undefined
   }
 
   private async putBytes(url: string, file: UploadAttachment): Promise<void> {
@@ -625,6 +643,20 @@ export class SlackClient {
     })
     if (!payload.file) throw new Error(`files.info returned no file for ${fileId}`)
     return payload.file
+  }
+
+  /**
+   * The bytes of a file a message carries. History gives the URL in the common case;
+   * when it does not, `files.info` does, which is why the id is enough to ask.
+   */
+  async downloadFile(file: SlackFile): Promise<Uint8Array> {
+    const resolved =
+      file.url_private ?? file.url_private_download
+        ? file
+        : await this.fileInfo(file.id ?? '')
+    const url = resolved.url_private ?? resolved.url_private_download
+    if (!url) throw new Error(`No download URL for file ${file.id ?? resolved.name ?? 'unknown'}`)
+    return (await this.fetchAttachment(url)).bytes
   }
 
   /**

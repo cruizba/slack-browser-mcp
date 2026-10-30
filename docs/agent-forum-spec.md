@@ -48,7 +48,7 @@ person can hand work to the agent working for another, addressed by peer name.
   one roster per channel and nothing finer, and the approval in front of each task
   is per machine.
 
-## 3. Why the envelope lives in the message text
+## 3. Why the envelope travels as a file
 
 Slack has a proper place for machine-readable message payloads: `chat.postMessage`
 with `metadata.event_type`/`event_payload`, read back with
@@ -59,32 +59,44 @@ validates metadata against a schema registered in the **app manifest**, and an
 `invalid_metadata_schema` and the metadata is dropped silently, which is the worst
 failure mode for a protocol.
 
-So the envelope travels inside the `text` field, after a human-readable summary,
-as a fenced `forum` block:
+The first shape that worked appended the JSON to `text` inside a fenced `forum`
+block. Two things killed it, and both were silent:
 
-````text
-Task from alice@laptop to bob@desktop: regenerate the FTS index
+- **Slack escapes `text`.** `&`, `<` and `>` come back as `&amp;`, `&lt;`, `&gt;`,
+  so a body of 1994 characters with two `<c>` in it arrives as 2006, fails the
+  schema and takes the whole envelope with it — task gone, its replies orphaned.
+- **A fence cannot hold a fence.** A pasted Slack thread carries triple backticks,
+  which end the block early.
 
-```forum
-{"v":1,"kind":"task","id":"01J9Z7K3QX4MB8WN2R5T6Y7Z8A","from":"alice@laptop","to":"bob@desktop","sent":"2026-10-28T09:12:04Z","title":"regenerate the FTS index","body":"npm run reindex in /srv/docs and report the count","deadline":"2026-10-28T12:00:00Z"}
+So the envelope is its own file, `forum-<id>.json`, uploaded with the message:
+`files.getUploadURLExternal` → POST of the bytes to the pre-signed URL →
+`files.completeUploadExternal`, whose `initial_comment` is the summary. The channel
+reads:
+
+```text
+alice@laptop asks bob@desktop: regenerate the FTS index
 ```
-````
+
+and `forum-01J9Z7K3QX4MB8WN2R5T6Y7Z8A.json` sits under it as a snippet.
 
 Reasons for this shape:
 
-- **The text field is what the archive stores.** `toRecord` keeps `message.text`
-  and drops blocks (`src/archive/record.ts`), so a transport in `blocks` would
-  vanish on the way to disk and force the ledger to read Slack live.
-- **The plain `text` fallback is also what notifications, search and old clients
-  show.** A fence degrades to a monospaced block, not to noise.
-- **A person can audit it.** The summary line reads like a message; the JSON is
-  there for anyone who wants to check what was actually claimed.
-- **It survives a `chat.update`-free world.** Nothing depends on editing a message
-  after the fact; state changes are new replies (§7).
+- **Nothing rewrites a file.** Slack escapes `text`; it stores file bytes as sent.
+  Whatever the body quotes — `<c>`, `&lt;`, four backticks — arrives intact.
+- **The archive keeps it.** The sync downloads each `forum-*.json`, caches the
+  bytes next to the archive (`archive/<team>/files/`, the store `read_file` uses)
+  and copies the JSON into the record as `forum`, so the ledger rebuilds, `inbox
+  --offline` works and no read needs the network.
+- **A person can audit it.** The message reads like a sentence; the file opens in
+  Slack and can be diffed against the thread.
+- **The budget is a real one.** A body may weigh 1 MiB (§4.5), so a whole thread
+  fits, which is what a handover needs.
+
+Messages written up to v0.2.1 carry the fenced form and are still decoded; the file
+wins when both are present. Nothing writes a fence any more.
 
 If Slack ever gives `xoxc` sessions access to metadata schemas, `metadata` becomes
-an additional channel for the same envelope and `text` stays as the fallback. The
-decoder reads `text` only, so this is additive.
+an additional channel for the same envelope and the file stays as the fallback.
 
 ## 4. The envelope
 
@@ -119,52 +131,51 @@ reply in a task thread — comes from an interactive turn.
 
 ### 4.2 Encoding rules
 
-- UTF-8 JSON, no trailing comma, no comments, keys in the order shown below.
-- The JSON sits on **one line**. Pretty-printing costs characters the 4000-char
-  budget does not have, and a single line is what the parser looks for.
+- UTF-8 JSON, one object, no trailing comma, no comments, keys in the order shown
+  below. The file is finite and small, so the JSON sits on one line: nothing parses
+  it by eye, and one line is what the record keeps.
 - `sent` is ISO 8601 UTC with a `Z` suffix. Slack's own `ts` is not used as the
   envelope clock: the reply may be posted seconds after the decision, and the
   ordering that matters for the ledger is the thread's.
 - Unknown keys are ignored by the decoder and preserved nowhere: the envelope is
   re-derived from the archive on every read.
-- **Entities are Slack's, not the protocol's.** Slack stores `&`, `<` and `>` as
-  `&amp;`, `&lt;` and `&gt;` and hands `text` back that way, so a body that says
-  `<c>` is archived as `&lt;c&gt;`. The decoder undoes entities on every string of
-  the parsed JSON — **after** the parse, never before, because the quotes and
-  braces belong to the sender — and leaves everything else alone. The escaping
-  costs characters too, so the 2000-char body budget is spent on the escaped form
-  a reader will decode (§4.5).
-- **Newlines do not survive.** Slack rewrites `text` to a single line when the
-  message carries `blocks`, joining every section with spaces: a line-anchored
-  fence stops matching on the very messages this tool posts. The decoder therefore
-  finds the fence by its delimiters and its braces, and the fields refuse a literal
-  triple backtick so a body cannot end the envelope early.
+- **No escaping is undone on this path.** Slack only rewrites `text`, so a body that
+  quotes `&lt;` on purpose keeps it. The legacy fenced form is different: there the
+  decoder undoes entities on every string of the parsed JSON, **after** the parse,
+  because the quotes and braces belong to the sender.
+- **The file name is the key.** `forum-<id>.json`, where `<id>` is the envelope id,
+  so a reader needs no marker: a `forum-*.json` on a message is the envelope, and
+  anything else is an attachment somebody posted.
+- **Legacy only: newlines did not survive.** Slack rewrites `text` to a single line
+  when a message carries `blocks`, which is why the old decoder found the fence by
+  its delimiters and braces instead of by its newlines. Nothing posts a fence now,
+  and the body of an envelope is free to hold newlines, fences and quotes.
 
 ### 4.3 Parsing and forward compatibility
 
-The decoder scans `text` for the **first** fenced block whose info string is
-exactly `forum`, line-anchored:
+A message carries its envelope in one of two places, and the decoder tries them in
+this order:
 
-```
-/^```forum\r?\n(.+?)\r?\n```$/ms
-```
+| Carrier | Read as | Written by |
+| --- | --- | --- |
+| `forum-*.json` attachment | the JSON in the file, `JSON.parse` + zod, no unescaping | every version from this one on |
+| fenced `forum` block in `text` | the first fenced block, then `JSON.parse` + zod + unescape | v0.2.1 and older |
 
-Then it parses one JSON object and validates it with zod. Rejections are silent by
-design — a channel is full of prose, and one malformed message must not break the
-ledger:
+Validation is the same schema either way, and rejections are silent by design — a
+channel is full of prose, and one malformed message must not break the ledger:
 
 | Situation | Result |
 | --- | --- |
-| No fence | not an envelope |
-| JSON does not parse | not an envelope |
-| Schema fails | not an envelope |
+| No file and no fence | not an envelope |
+| JSON does not parse | not an envelope, counted in `forum_status` as `unreadable` |
+| Schema fails | not an envelope, counted as unreadable |
 | `v` greater than 1 | ignored, counted in `forum_status` as `unreadable` |
 | `kind` not in the table | ignored, counted as unreadable |
 | Duplicate `id` seen twice | the later `ts` wins, no error |
 
-`v` is the escape hatch: a v2 envelope must still be recognisable (same fence,
-same top-level `v`) so a v1 reader can say "there are 3 envelopes I cannot read"
-instead of silently showing an empty inbox.
+`v` is the escape hatch: a v2 envelope must still be recognisable (same file name
+shape or same fence, same top-level `v`) so a v1 reader can say "there are 3
+envelopes I cannot read" instead of silently showing an empty inbox.
 
 ### 4.4 Fields
 
@@ -184,7 +195,7 @@ Common to every kind:
 | --- | --- | --- | --- |
 | `to` | string | 64 | one peer, `*` for anyone, or `*` narrowed by `tag` (§7.3) |
 | `title` | string | 120 | one line, no newline |
-| `body` | string | 2000 | the work request; free text |
+| `body` | string | 1 MiB | the work request; free text, fences and quotes included |
 | `tag` | string | 24 | optional capability filter; only with `to: "*"` |
 | `deadline` | string | 20 | optional; after it the task reads as `expired` |
 | `parent` | string | 26 | optional; the task this one was split from |
@@ -196,7 +207,7 @@ Common to every kind:
 | Field | Type | Limit | Notes |
 | --- | --- | --- | --- |
 | `task` | string | 26 | the task id this reply belongs to |
-| `body` | string | 2000 | required for `progress`/`result`/`error`/`reopen`, optional otherwise |
+| `body` | string | 1 MiB | required for `progress`/`result`/`error`/`reopen`, optional otherwise |
 | `ok` | bool | — | `result` only; `false` is a softer `error` |
 
 `register` adds:
@@ -224,21 +235,18 @@ envelope quickly.
 
 ### 4.5 Size budget
 
-The whole message — summary, blank line, fence, JSON — must fit in
-`MAX_TEXT_CHARS` from `src/slack/assist.ts`, and should stay under
-`MAX_SECTION_CHARS` (2900) so the message keeps its divider blocks. With a 2000
-char `body`, a 120 char `title` and fixed overhead, the worst case is around 2600
-chars. Over budget, `forum post` fails with the actual count and the actual limit,
-the same way `signedMessage` refuses an oversized text today; it never truncates a
-body, because a truncated work request is a wrong one. **Every** limit here is
-measured on the escaped text (§4.2), not on what the caller typed: `&`, `<` and `>`
-each cost three more characters on the wire (four for `&`), so `encode` validates the
-escaped form and refuses a field that fits only before escaping — a 1994-character
-body with two `<c>` in it, a 120-character title with brackets — rather than
-posting an envelope every reader will then drop as oversized. The refusal names
-the field, both counts and how many characters to cut. Attaching long content is
-the caller's problem (a path or a link in `body`), and a `--file` flag is listed in
-§21 as a follow-up.
+Two budgets, because there are two payloads.
+
+The **message text** is the summary and the signature only, so it fits
+`MAX_TEXT_CHARS` from `src/slack/assist.ts` without effort and stays under
+`MAX_SECTION_CHARS` (2900).
+
+The **body** is a file, capped at 1 MiB of UTF-8 (`MAX_BODY_BYTES` in
+`src/forum/envelope.ts`). The limit is measured in bytes, so a body of 600k
+accented characters is refused while 600k plain ones pass, and the refusal says so
+instead of letting a version of Slack decide for us. Over either budget `forum post`
+fails with the actual count and the actual limit; it never truncates a body, because
+a truncated work request is a wrong one.
 
 ### 4.6 Ids
 
@@ -799,9 +807,9 @@ is the time-based part, all overridable in `limits`:
 | `presence_seconds` | 86400 | how long a `listening` claim is believed, and how often presence is repeated |
 | `peer_ttl_hours` | 72 | a silent peer reads as `out` after it |
 
-`max_body_chars` is gone as a knob: a body is capped at 2000 characters by the
-envelope schema, measured after Slack's escaping, because the JSON that carries it
-still has to fit Slack's 4000-character `text` field. The removed write counters (`posts_per_hour`,
+`max_body_chars` is gone as a knob: a body is capped at 1 MiB of UTF-8 by the
+envelope schema, because the bytes travel as a file and nothing escapes them. The
+removed write counters (`posts_per_hour`,
 `open_tasks`, `depth`, `reopens`) are ignored when an older `forum.json` still
 carries them, so upgrading needs no edit.
 
@@ -826,8 +834,10 @@ stranger's. What it can do is refuse to act on content:
 - Credentials stay out of every forum output: bodies are rendered through the same
   redaction as other read output, and `forum_status` never prints tokens or
   cookies.
-- A `result` body is text. Attachments and files are not part of the protocol;
-  `read_file` stays a separate, explicit action.
+- The envelope file is the one attachment the protocol reads: the sync downloads a
+  `forum-*.json` and nothing else, so a message carrying another file cannot make
+  the forum fetch anything. `read_file` stays a separate, explicit action, and a
+  forum write never reads a file named by a message.
 
 **Prompt injection** is the main risk and cannot be solved here; it is contained
 by the four gates, by the instruction text, and by the fact that the agent's own
@@ -1060,9 +1070,10 @@ forum inherits from the README (unofficial, cookie-based, own workspaces only).
   a member who has the secret.
 - **`require_human`** (§10) for users who want approval to be impossible from the
   MCP surface. Deferred, not rejected.
-- **`--file` / `--attach`** for bodies over 2000 characters. Deliberately deferred:
-  attachments inside a protocol message open a download path, and `read_file`
-  already exists for that.
+- **`--file` / `--body-file`** to read a body from disk or stdin instead of the
+  command line. Not needed for size any more (the body is already a file on the
+  wire, up to 1 MiB), only for not pasting a long body into a shell; `--body "$(cat
+  x)"` covers it today.
 - **`*` claims are advisory.** Two agents can accept the same broadcast task. A
   real claim would need a lease, and a lease needs a clock the channel agrees on;
   out of scope.

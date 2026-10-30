@@ -4,12 +4,19 @@ import { test } from 'node:test'
 import {
   assertFits,
   decode,
+  decodeAttachment,
   encode,
-  looksLikeEnvelope,
+  MAX_BODY_BYTES,
   render,
   summaryFor,
   type Envelope,
 } from '../src/forum/envelope.ts'
+import {
+  carriesEnvelope,
+  envelopeOf,
+  forumFileName,
+  isForumFileName,
+} from '../src/forum/carrier.ts'
 import { newId } from '../src/forum/id.ts'
 import { escapeEntities } from '../src/slack/entities.ts'
 
@@ -67,7 +74,7 @@ test('every kind survives a round trip through the fence', () => {
     const text = render(summaryFor(envelope), envelope)
     const decoded = decode(text)
     assert.deepEqual(decoded, envelope, `${envelope.kind} did not survive`)
-    assert.equal(looksLikeEnvelope(text), true)
+    assert.equal(carriesEnvelope({ text }), true)
   }
 })
 
@@ -102,10 +109,11 @@ test('prose, malformed JSON and unknown versions are not envelopes', () => {
     undefined,
   )
 
-  // A fence that exists but cannot be read is still recognisable, which is how the
+  // A carrier that exists but cannot be read is still recognisable, which is how the
   // ledger counts what it could not understand.
-  assert.equal(looksLikeEnvelope('```forum\nnot json\n```'), true)
-  assert.equal(looksLikeEnvelope('no fence here'), false)
+  assert.equal(carriesEnvelope({ text: '```forum\nnot json\n```' }), true)
+  assert.equal(carriesEnvelope({ text: 'no fence here' }), false)
+  assert.equal(carriesEnvelope({ text: 'prosa', forum: '{"v":1}' }), true)
 })
 
 test('a message Slack has flattened to one line still decodes', () => {
@@ -121,12 +129,31 @@ test('a message Slack has flattened to one line still decodes', () => {
   assert.deepEqual(decode(flattened), envelope)
 })
 
-test('a field cannot smuggle a fence', () => {
+test('a body may hold the backticks a pasted thread carries', () => {
+  // The whole point of the file: this is what a summary pasted out of Slack looks
+  // like, and the fence it used to break is no longer on the wire.
+  const body = 'mira\n\n```ts\nconst x = 1\n```\n\ny esto\n\n```bash\nnpm test\n```'
+  const json = encode(task({ body } as Partial<Envelope>))
+  assert.equal((JSON.parse(json) as { body: string }).body, body)
+})
+
+test('the short fields still refuse a fence', () => {
+  assert.throws(() => encode(task({ title: 'a ```b' } as Partial<Envelope>)), /triple backticks/)
   assert.throws(
-    () => encode(task({ body: 'texto ``` forum \n{"v":1}' } as Partial<Envelope>)),
+    () =>
+      encode({
+        v: 1,
+        kind: 'presence',
+        id: OTHER,
+        from: 'builder@laptop',
+        sent: '2026-10-28T09:00:00Z',
+        name: 'builder',
+        host: 'laptop',
+        state: 'away',
+        note: 'dejo esto ``` por aqui',
+      }),
     /triple backticks/,
   )
-  assert.throws(() => encode(task({ title: 'a ```b' } as Partial<Envelope>)), /triple backticks/)
 })
 
 test('a fence in the middle of prose is found, and the first one wins', () => {
@@ -170,24 +197,22 @@ test('a body Slack escaped reads back as the text that was sent', () => {
   assert.deepEqual(decode(stored), envelope)
 })
 
-test('a body that only fits before escaping is refused, not posted', () => {
-  // 1996 characters of body with four brackets in it: 2008 once Slack escapes them.
-  const body = `${'x'.repeat(1989)}<c> <c>`
-  assert.equal(body.length, 1996)
+test('a megabyte of body is accepted, and one byte more is not', () => {
+  const big = 'x'.repeat(MAX_BODY_BYTES)
+  assert.doesNotThrow(() => encode(task({ body: big } as Partial<Envelope>)))
   assert.throws(
-    () => encode(task({ body } as Partial<Envelope>)),
-    /Slack escapes.*would see 2008 and the limit is 2000.*8 fewer/s,
+    () => encode(task({ body: `${big}x` } as Partial<Envelope>)),
+    /at most 1048576 bytes/,
   )
 })
 
-test('the same holds for every budgeted field, not just the body', () => {
-  // A title of 120 characters with four brackets arrives as 132 and is dropped by
-  // the reader just as silently, so the check cannot be the body's alone.
-  const title = `${'x'.repeat(113)}<c> <c>`
-  assert.equal(title.length, 120)
+test('the budget counts bytes, so an accented body weighs more than its length', () => {
+  // 600k `ñ` is 1.2 MB: characters would let it through and the file would not fit.
+  const body = 'ñ'.repeat(600_000)
+  assert.ok(body.length < MAX_BODY_BYTES)
   assert.throws(
-    () => encode(task({ title } as Partial<Envelope>)),
-    /The title is 120 characters.*a reader would see 132/s,
+    () => encode(task({ body } as Partial<Envelope>)),
+    /at most 1048576 bytes/,
   )
 })
 
@@ -209,4 +234,38 @@ test('a body that already quotes entities survives as written', () => {
   assert.deepEqual(first, envelope)
   const again = decode(escapeEntities(render(summaryFor(first!), first!)))
   assert.deepEqual(again, envelope)
+})
+
+test('the attachment is the wire: no fence, and nothing escaped on the way', () => {
+  const body = 'deploy con `<c>` & sin sustos, y &lt; tal cual'
+  const envelope = task({ body } as Partial<Envelope>)
+  const json = encode(envelope)
+  assert.deepEqual(decodeAttachment(json), envelope)
+  // Slack only escapes `text`, so the bytes of a file come back exactly as sent: a
+  // body that quotes an entity on purpose must not be rewritten.
+  const decoded = decodeAttachment(json)
+  assert.equal(decoded?.kind === 'task' ? decoded.body : undefined, body)
+})
+
+test('a message is read from its file first, and from the fence when there is none', () => {
+  const envelope = task()
+  const file = encode(envelope)
+  const fenced = render(summaryFor(envelope), envelope)
+
+  assert.deepEqual(envelopeOf({ forum: file, text: 'a human line' }), envelope)
+  assert.deepEqual(envelopeOf({ text: fenced }), envelope)
+  // Both present: the file wins, because it is the one Slack cannot have rewritten.
+  assert.deepEqual(envelopeOf({ forum: file, text: fenced }), envelope)
+  assert.equal(envelopeOf({ text: 'solo prosa' }), undefined)
+  assert.equal(envelopeOf({ forum: 'not json' }), undefined)
+})
+
+test('an envelope file is named after its id, and anything else is an attachment', () => {
+  const id = newId()
+  assert.equal(forumFileName(id), `forum-${id}.json`)
+  assert.equal(isForumFileName(`forum-${id}.json`), true)
+  assert.equal(isForumFileName('forum-.json'), false)
+  assert.equal(isForumFileName('informe-forum-x.json'), false)
+  assert.equal(isForumFileName('forum-x.txt'), false)
+  assert.equal(isForumFileName(undefined), false)
 })

@@ -15,7 +15,8 @@
  */
 
 import type { ArchivedMessage } from '../archive/store.ts'
-import { decode, type Envelope } from './envelope.ts'
+import { envelopeOf } from './carrier.ts'
+import type { Envelope } from './envelope.ts'
 
 export interface Peer {
   from: string
@@ -53,7 +54,7 @@ export function rosterFrom(
   // The archive hands messages back oldest first, so a later announcement wins.
   for (const message of messages) {
     if (message.deleted_at) continue
-    const envelope = decode(message.text)
+    const envelope = envelopeOf(message)
     if (!envelope) continue
     if (retired.has(envelope.from)) continue
     if (envelope.kind === 'presence' && envelope.state === 'gone') {

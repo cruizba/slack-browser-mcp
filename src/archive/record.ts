@@ -55,6 +55,9 @@ export function changed(cached: ArchivedMessage | undefined, record: ArchivedMes
     cached.text !== record.text ||
     cached.edited_ts !== record.edited_ts ||
     cached.reply_count !== record.reply_count ||
+    // Only when the fresh copy carries one: a sync that could not download must not
+    // erase the envelope a previous run stored.
+    (record.forum !== undefined && cached.forum !== record.forum) ||
     JSON.stringify(cached.files ?? []) !== JSON.stringify(record.files ?? [])
   )
 }

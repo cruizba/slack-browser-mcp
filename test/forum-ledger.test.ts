@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { ArchivedMessage } from '../src/archive/store.ts'
-import { render, summaryFor, type Envelope } from '../src/forum/envelope.ts'
+import { encode, render, summaryFor, type Envelope } from '../src/forum/envelope.ts'
 import { newId } from '../src/forum/id.ts'
 import { buildLedger, findTask, stateLabel, type ForumTask } from '../src/forum/ledger.ts'
 import { DEFAULT_LIMITS } from '../src/forum/limits.ts'
@@ -267,3 +267,37 @@ test('a task id is found by a unique prefix and refused when ambiguous', () => {
   assert.throws(() => findTask([task], 'zzzz'), /No task matching/)
   assert.throws(() => findTask([{ ...task }, { ...task, id: '01J9Z7K3QX4MB8WN2R5T6Y7Z8B' }], '01j9z7'), /matches 2 tasks/)
 })
+
+test('a task whose envelope arrived as a file reads like any other', () => {
+  const task = taskAt(at(5))
+  // The current wire: the text carries the sentence a person reads and the envelope
+  // is the attachment. The ledger has to reach into the record for it.
+  const carried: ArchivedMessage = {
+    ...task,
+    text: summaryFor(taskEnvelope()),
+    forum: encode(taskEnvelope()),
+    files: [{ id: 'F0FORUM', name: 'forum-01J9Z7K3QX4MB8WN2R5T6Y7Z8A.json', mimetype: 'application/json' }],
+  }
+  assert.equal(only([...registers(), carried]).body, 'mira el diff')
+})
+
+test('a message with an attachment that will not parse is counted, not ignored', () => {
+  const task = taskAt(at(5))
+  const broken: ArchivedMessage = { ...task, text: 'solo la frase', forum: '{"v":1,"kind":"task"}' }
+  const built = ledger([...registers(), broken])
+  assert.equal(built.tasks.length, 0)
+  assert.equal(built.unreadable, 1)
+})
+
+function taskEnvelope(): Envelope {
+  return {
+    v: 1,
+    kind: 'task',
+    id: TASK,
+    from: PEER,
+    to: ME,
+    sent: '2026-10-28T09:05:00Z',
+    title: 'revisar el PR',
+    body: 'mira el diff',
+  }
+}

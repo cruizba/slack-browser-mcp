@@ -9,6 +9,13 @@
 import { meLabel, type ForumContext } from './context.ts'
 import type { BindingView } from './inbox.ts'
 import type { Decision } from './decisions.ts'
+
+/**
+ * How much of a body `forum task` prints before pointing at the file. The read tools
+ * cut at 4000 for the same reason: an agent skimming a thread needs the beginning and
+ * a way to the rest, not a megabyte of pasted logs.
+ */
+const MAX_INLINE_BODY_CHARS = 4000
 import type { InboxReport } from './inbox.ts'
 import { stateLabel, type ForumTask } from './ledger.ts'
 import type { Binding } from './binding.ts'
@@ -165,5 +172,16 @@ export function renderTask(
           .map((event) => `${event.kind} from ${event.from}`)
           .join(', ')}`
       : ''
-  return `${header}\n${route}\n\n${task.title}\n${task.body}${thread}${ignored}`
+  return `${header}\n${route}\n\n${task.title}\n${bodyForContext(task.body, task.fileId)}${thread}${ignored}`
+}
+
+/**
+ * A body is a file now, so it can be a whole thread: printing a megabyte into an
+ * agent's context would bury the thread it is trying to read. The cut says how much
+ * it hid and where the rest lives, which is the archive copy the sync downloaded.
+ */
+function bodyForContext(body: string, fileId: string | undefined): string {
+  if (body.length <= MAX_INLINE_BODY_CHARS) return body
+  const where = fileId ? `the whole envelope is \`read_file ${fileId}\`` : 'the whole envelope is in the local archive'
+  return `${body.slice(0, MAX_INLINE_BODY_CHARS)}… [truncated: ${body.length} characters; ${where}]`
 }

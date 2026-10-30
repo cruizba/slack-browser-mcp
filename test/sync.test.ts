@@ -4,11 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import { ArchiveFileStore } from '../src/archive/files.ts'
 import { ArchiveIndex } from '../src/archive/index.ts'
 import { ArchiveStore } from '../src/archive/store.ts'
 import { DEFAULT_BACKFILL_DAYS, syncAccount, type SyncClient } from '../src/archive/sync.ts'
 import type { SlackAccount } from '../src/auth/store.ts'
-import type { HistoryPage, SlackChannel, SlackMessage } from '../src/slack/client.ts'
+import { envelopeOf, forumFileName } from '../src/forum/carrier.ts'
+import { encode, type Envelope } from '../src/forum/envelope.ts'
+import type { HistoryPage, SlackChannel, SlackFile, SlackMessage } from '../src/slack/client.ts'
 
 const account: SlackAccount = {
   team_id: 'T0TEST',
@@ -25,6 +28,8 @@ class FakeClient implements SyncClient {
   readonly repliesCalls: string[] = []
   messages: SlackMessage[]
   threads: Record<string, SlackMessage[]>
+  /** Set by the tests that carry an envelope as a file. */
+  downloadFile?: (file: SlackFile) => Promise<Uint8Array>
 
   constructor(messages: SlackMessage[], threads: Record<string, SlackMessage[]> = {}) {
     this.messages = messages
@@ -329,4 +334,79 @@ test('a workspace seen for the first time is read back 90 days by default', asyn
     Math.abs(days - DEFAULT_BACKFILL_DAYS) < 0.001,
     `expected ${DEFAULT_BACKFILL_DAYS} days, got ${days}`,
   )
+})
+
+const TASK_ID = '01J9Z7K3QX4MB8WN2R5T6Y7Z8A'
+
+function envelope(overrides: Partial<Envelope> = {}): Envelope {
+  return {
+    v: 1,
+    kind: 'task',
+    id: TASK_ID,
+    from: 'builder@laptop',
+    to: 'reviewer@desktop',
+    sent: '2026-10-20T11:00:00Z',
+    title: 'revisar el PR',
+    body: 'mira el diff\n\n```ts\nconst x = 1\n```',
+    ...overrides,
+  } as Envelope
+}
+
+test('an envelope that travels as a file is downloaded once and stays offline', async (t) => {
+  const { store, index } = await scratch(t)
+  const json = encode(envelope())
+  const message: SlackMessage = {
+    ts: '1792500300.000300',
+    user: 'U0BUILDER',
+    text: 'builder@laptop asks reviewer@desktop: revisar el PR',
+    files: [
+      {
+        id: 'F0FORUM',
+        name: forumFileName(TASK_ID),
+        mimetype: 'application/json',
+        size: Buffer.byteLength(json),
+        url_private: 'https://files.slack.com/files/F0FORUM',
+      },
+    ],
+  }
+  const downloads: string[] = []
+  const client = new FakeClient([message])
+  client.downloadFile = async (file: SlackFile) => {
+    downloads.push(file.id ?? '')
+    return new TextEncoder().encode(json)
+  }
+
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+  assert.deepEqual(downloads, ['F0FORUM'], 'the envelope is fetched once')
+
+  const [record] = await store.read('T0TEST', channel.id)
+  assert.equal(record?.forum, json, 'the record carries the envelope, not a path to it')
+  assert.deepEqual(envelopeOf(record!), envelope())
+  const cached = await new ArchiveFileStore(store.root).find('T0TEST', 'F0FORUM')
+  assert.ok(cached, 'the bytes are kept next to the archive, so read_file finds them')
+
+  // A second run reads the file instead of asking Slack again.
+  await syncAccount({ account, client, store, index, options: { now: at(5) } })
+  assert.deepEqual(downloads, ['F0FORUM'])
+})
+
+test('a file that is not an envelope is left alone', async (t) => {
+  const { store, index } = await scratch(t)
+  const message: SlackMessage = {
+    ts: '1792500300.000400',
+    user: 'U0BUILDER',
+    text: 'mira el informe',
+    files: [{ id: 'F0REPORT', name: 'informe.json', mimetype: 'application/json' }],
+  }
+  let asked = 0
+  const client = new FakeClient([message])
+  client.downloadFile = async () => {
+    asked += 1
+    return new Uint8Array()
+  }
+
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+  assert.equal(asked, 0, 'a plain attachment is not an envelope')
+  const [record] = await store.read('T0TEST', channel.id)
+  assert.equal(record?.forum, undefined)
 })

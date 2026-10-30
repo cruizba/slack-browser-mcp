@@ -1,28 +1,35 @@
 /**
- * The wire format: one JSON object inside a fenced `forum` block, behind a line
- * a person can read.
+ * The wire format: a human summary in the message `text`, and the envelope itself as
+ * a `forum-<id>.json` attachment on the same message.
  *
- * The fence lives in the message `text`, not in Slack's `metadata`, because
- * metadata needs a schema registered in an app manifest and an `xoxc` session
- * has no app: Slack would answer `invalid_metadata_schema` and drop it silently.
- * `text` is also the only field the archive keeps, so the ledger can rebuild
- * every task from disk without asking Slack again.
+ * It travelled inside a fenced `forum` block in `text` up to v0.2.1, which is why
+ * the fence is still decoded here: the channels hold those messages and the ledger
+ * rebuilds itself from them. Nothing writes one any more. Slack escapes `&`, `<`
+ * and `>` in `text`, so a body near any limit arrived longer than it was sent, and a
+ * fence also cannot carry a body with three backticks in it — exactly what a pasted
+ * Slack thread has. A file is bytes nobody rewrites, so the body budget is a real
+ * megabyte and a transcript fits.
  *
- * Decoding is deliberately forgiving: a channel is full of prose, and one
- * malformed message must never break the thread. Anything that does not parse is
- * simply not an envelope; `looksLikeEnvelope` is what lets a caller count the
- * ones it could not read instead of pretending they were never there.
+ * Not Slack's `metadata` either: that needs a schema registered in an app manifest
+ * and an `xoxc` session has no app, so Slack answers `invalid_metadata_schema` and
+ * drops it silently.
+ *
+ * Decoding is deliberately forgiving: a channel is full of prose, and one malformed
+ * message must never break the thread. Anything that does not parse is simply not an
+ * envelope; `carriesEnvelope` in `carrier.ts` is what lets a caller count the ones it
+ * could not read instead of pretending they were never there.
  */
 
 import { z } from 'zod'
 
 import { MAX_TEXT_CHARS } from '../slack/assist.ts'
-import { escapeEntities, unescapeEntities } from '../slack/entities.ts'
+import { unescapeEntities } from '../slack/entities.ts'
 import { StoreError } from '../errors.ts'
 import { ID_LENGTH, isId } from './id.ts'
 
 export const FORUM_FENCE = 'forum'
-export const MAX_BODY_CHARS = 2000
+/** What a body may weigh once it travels as a file: a whole transcript, not a paste. */
+export const MAX_BODY_BYTES = 1024 * 1024
 export const MAX_TITLE_CHARS = 120
 export const MAX_FROM_CHARS = 64
 export const MAX_TARGET_CHARS = 64
@@ -44,14 +51,25 @@ const who = z.string().trim().min(1).max(MAX_FROM_CHARS)
 const when = z.string().trim().min(10).max(MAX_DEADLINE_CHARS)
 const tag = z.string().trim().min(1).max(MAX_TAG_CHARS)
 
-/** A field carrying a fence would end the envelope early and unparse the message. */
+/**
+ * A field carrying a fence would end a fenced envelope early and unparse the
+ * message. Only the legacy format can be broken that way, so only the short fields
+ * keep the rule: the body is the one field whose whole job is to hold a pasted
+ * transcript, backticks included.
+ */
 function fenceFree<T extends z.ZodType<string>>(schema: T) {
   return schema.refine((value) => !value.includes('```'), {
-    message: 'no triple backticks inside a field: they end the envelope fence',
+    message: 'no triple backticks inside this field: they would end a fenced envelope',
   })
 }
 
-const body = fenceFree(z.string().trim().min(1).max(MAX_BODY_CHARS))
+const body = z
+  .string()
+  .trim()
+  .min(1)
+  .refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_BODY_BYTES, {
+    message: `a body carries at most ${MAX_BODY_BYTES} bytes, which is a whole thread; link to the file instead of pasting more`,
+  })
 
 const common = {
   v: z.literal(1),
@@ -196,24 +214,7 @@ export function isReply(envelope: Envelope): envelope is Extract<Envelope, { tas
   )
 }
 
-/**
- * The escaped form of the envelope, which is what Slack stores and what a reader
- * therefore validates. The inverse of `unescapeForm`, and the reason a body at the
- * limit can still arrive too long: `&`, `<` and `>` each cost three characters more
- * on the wire (`&` four), so a sender that only counts what it typed posts an
- * envelope every reader then drops as oversized — silently, with its replies left
- * as orphans.
- */
-function escapeForm(value: unknown): unknown {
-  if (typeof value === 'string') return escapeEntities(value)
-  if (Array.isArray(value)) return value.map(escapeForm)
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, escapeForm(entry)]))
-  }
-  return value
-}
-
-/** What the caller typed, recovered from the escaped form the schema just measured. */
+/** The values a fenced envelope carried before Slack escaped them. */
 function unescapeForm(value: unknown): unknown {
   if (typeof value === 'string') return unescapeEntities(value)
   if (Array.isArray(value)) return value.map(unescapeForm)
@@ -226,82 +227,50 @@ function unescapeForm(value: unknown): unknown {
 }
 
 /**
- * The failure a caller can act on when a field fits only before escaping. When the
- * raw envelope is broken too, that error is the honest one and is kept.
- */
-function escapingRefusal(envelope: Envelope, error: z.ZodError): Error {
-  if (!EnvelopeSchema.safeParse(envelope).success) return error
-  const issue = error.issues[0]
-  const path = issue?.path.join('.') ?? 'field'
-  const typed = path
-    .split('.')
-    .reduce<unknown>(
-      (node, key) => (node as Record<string, unknown> | undefined)?.[key],
-      envelope,
-    )
-  if (typeof typed !== 'string' || issue === undefined) return error
-  const stored = escapeEntities(typed).length
-  const limit =
-    'maximum' in issue && typeof issue.maximum === 'number' ? issue.maximum : undefined
-  const budget =
-    limit === undefined
-      ? ''
-      : ` and the limit is ${limit}, so it needs ${stored - limit} fewer characters`
-  return new StoreError(
-    `The ${path} is ${typed.length} characters, but Slack escapes \`&\`, \`<\` and ` +
-      `\`>\` when it stores a message, so a reader would see ${stored}${budget}. ` +
-      'Shorten it, or leave those symbols out.',
-  )
-}
-
-/**
- * Returns the JSON one-liner. Pretty-printing would cost characters the 4000-char
- * message budget does not have, and a single line is what a reader can copy.
- *
- * The schema runs against the escaped form so every budget is spent the way a
- * reader will spend it, and the wire text then carries the values as typed: Slack
- * escapes them again on its side.
+ * The bytes of the attachment, one line so a reader can open it in anything.
+ * Pretty-printing would buy nothing: nothing parses this by eye.
  */
 export function encode(envelope: Envelope): string {
-  let parsed: Envelope
-  try {
-    parsed = EnvelopeSchema.parse(escapeForm(envelope))
-  } catch (error) {
-    if (error instanceof z.ZodError) throw escapingRefusal(envelope, error)
-    throw error
-  }
-  return JSON.stringify(unescapeForm(parsed))
-}
-
-export function render(summary: string, envelope: Envelope): string {
-  return `${summary}\n\n\`\`\`${FORUM_FENCE}\n${encode(envelope)}\n\`\`\``
+  return JSON.stringify(EnvelopeSchema.parse(envelope))
 }
 
 /**
- * True when the text carries the marker at all, readable or not: this is what counts
- * "there is an envelope here I could not understand" instead of pretending the
- * message was prose.
+ * The fenced form, which nothing writes any more and the decoder still understands.
+ * Kept as the fixture that keeps the legacy reader honest.
  */
-export function looksLikeEnvelope(text: string | undefined): boolean {
-  return text !== undefined && text.includes('```forum')
+export function render(summary: string, envelope: Envelope): string {
+  return `${summary}\n\n\`\`\`${FORUM_FENCE}\n${encode(envelope)}\n\`\`\``
 }
 
 /**
  * Undoes Slack's escaping on every string the JSON carries. It has to happen after
  * `JSON.parse`, never before: the quotes and braces that make the JSON are the
  * sender's, and only the values inside them travelled through Slack's escaping.
- * Anything unrecognised passes through untouched, so prose stays prose.
  */
 export function decode(text: string | undefined): Envelope | undefined {
   const match = text?.match(FENCE)
   if (!match) return undefined
+  return decodeAttachment(match[1]!.trim(), true)
+}
+
+/**
+ * The envelope as it travelled in a file. Slack never touches those bytes, so the
+ * values arrive exactly as they were sent and nothing is unescaped: a body quoting
+ * `&lt;` on purpose has to stay that way. `legacy` is the fenced reader asking for
+ * its escaping undone.
+ */
+export function decodeAttachment(
+  json: string | undefined,
+  legacy = false,
+): Envelope | undefined {
+  if (json === undefined) return undefined
   let parsed: unknown
   try {
-    parsed = JSON.parse(match[1]!.trim())
+    parsed = JSON.parse(json)
   } catch {
     return undefined
   }
-  const result = EnvelopeSchema.safeParse(unescapeForm(parsed))
+  const result = EnvelopeSchema.safeParse(legacy ? unescapeForm(parsed) : parsed)
   return result.success ? result.data : undefined
 }
 

@@ -123,9 +123,10 @@ message whose comment is text, the dry run lists name, type and size, and nothin
 is read or sent until confirm=true.
 
 An agent forum is a channel the user bound by hand so agents can hand each other
-work. Tasks arrive as messages with a fenced forum block; forum_inbox lists what
-is addressed to you, forum_peers lists who is on the channel, whether their machine
-is up and whether anybody is there, forum_task shows one with its thread, and
+work. Tasks arrive as messages carrying a forum-<id>.json attachment, whose text is
+the sentence a person reads; forum_inbox lists what is addressed to you,
+forum_peers lists who is on the channel, whether their machine is up and whether
+anybody is there, forum_task shows one with its thread, and
 forum_post, forum_accept, forum_progress, forum_result, forum_ack, forum_reopen and
 forum_cancel are the moves of the workflow. Every one of them is a dry run until
 it carries confirm=true.
@@ -1845,7 +1846,12 @@ export function buildServer(): McpServer {
           .max(64)
           .describe('`name`, `name@host`, or `*`. A name with two hosts is refused, not guessed.'),
         title: z.string().min(1).max(120).describe('One line: what you are asking for.'),
-        body: z.string().min(1).max(2000).describe('The work request itself.'),
+        body: z
+          .string()
+          .min(1)
+          .describe(
+            'The work request itself. It travels as a file, so it can be a whole pasted thread; the envelope refuses anything over 1 MiB.',
+          ),
         tag: z
           .string()
           .max(24)
@@ -1941,7 +1947,7 @@ export function buildServer(): McpServer {
         'Says no to a direct task before claiming it. A broadcast (`*`) is ignored rather than declined, because declining from every agent turns the channel into a list of refusals.',
       inputSchema: {
         id: z.string().min(4),
-        body: z.string().max(2000).optional().describe('Why not.'),
+        body: z.string().optional().describe('Why not.'),
         confirm: z.boolean().default(false),
       },
       annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true },
@@ -1957,7 +1963,7 @@ export function buildServer(): McpServer {
         'Adds a note to the task thread while it is being worked on. One per real milestone, not a heartbeat.',
       inputSchema: {
         id: z.string().min(4),
-        body: z.string().min(1).max(2000),
+        body: z.string().min(1).describe('What happened. A whole pasted thread fits: it travels as a file.'),
         confirm: z.boolean().default(false),
       },
       annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true },
@@ -1973,7 +1979,7 @@ export function buildServer(): McpServer {
         'Posts the outcome in the task thread. `ok: false` reports a softer failure than an error. Refused while the task is not accepted, and while it is already reported.',
       inputSchema: {
         id: z.string().min(4),
-        body: z.string().min(1).max(2000),
+        body: z.string().min(1).describe('The outcome. It travels as a file, so paste the whole report.'),
         ok: z.boolean().default(true),
         confirm: z.boolean().default(false),
       },
@@ -2005,7 +2011,7 @@ export function buildServer(): McpServer {
         'Reopens a reported task with what is missing, instead of posting a second task and losing the thread.',
       inputSchema: {
         id: z.string().min(4),
-        body: z.string().min(1).max(2000).describe('What is missing.'),
+        body: z.string().min(1).describe('What is missing.'),
         confirm: z.boolean().default(false),
       },
       annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true },
@@ -2021,7 +2027,7 @@ export function buildServer(): McpServer {
         'Withdraws a task that is still open or accepted. Only the agent that posted it can cancel it, and nothing is preempted on the other side: it stops when it reads the thread.',
       inputSchema: {
         id: z.string().min(4),
-        body: z.string().max(2000).optional().describe('Why.'),
+        body: z.string().optional().describe('Why.'),
         confirm: z.boolean().default(false),
       },
       annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true },

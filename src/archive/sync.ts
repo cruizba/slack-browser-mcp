@@ -11,8 +11,12 @@
  * makes a first backfill possible without one enormous burst.
  */
 
+import { readFile } from 'node:fs/promises'
+
 import type { SlackAccount } from '../auth/store.ts'
-import type { HistoryPage, SlackChannel, SlackMessage } from '../slack/client.ts'
+import { forumFileOf } from '../forum/carrier.ts'
+import type { HistoryPage, SlackChannel, SlackFile, SlackMessage } from '../slack/client.ts'
+import { ArchiveFileStore } from './files.ts'
 import { ArchiveIndex } from './index.ts'
 import { SyncLock } from './lock.ts'
 import { changed, channelName, toRecord } from './record.ts'
@@ -41,6 +45,8 @@ export interface SyncClient {
     cursor?: string
   }): Promise<HistoryPage>
   replies(params: { channel: string; thread_ts: string; limit?: number }): Promise<SlackMessage[]>
+  /** Bytes of an attachment, for the envelopes that travel as `forum-*.json` files. */
+  downloadFile?(file: SlackFile): Promise<Uint8Array>
 }
 
 export interface SyncOptions {
@@ -205,6 +211,43 @@ export async function syncAccount(args: {
   return report
 }
 
+/**
+ * The envelope a message carries travels as a file, so the channel file alone is not
+ * enough to read the thread. The bytes land next to the archive — the same store
+ * `read_file` uses — and the envelope is copied into the record, which is what keeps
+ * `inbox --offline`, the ledger rebuild and the inbox cursor honest without a
+ * download on every read.
+ */
+async function collectEnvelopes(args: {
+  client: SyncClient
+  store: ArchiveStore
+  teamId: string
+  messages: readonly SlackMessage[]
+  deadline: number
+}): Promise<Map<string, string>> {
+  const found = new Map<string, string>()
+  const files = new ArchiveFileStore(args.store.root)
+  for (const message of args.messages) {
+    if (Date.now() > args.deadline) break
+    const file = forumFileOf(message.files)
+    if (!file?.id || !args.client.downloadFile) continue
+    try {
+      const cached = await files.find(args.teamId, file.id)
+      if (cached) {
+        found.set(message.ts, await readFile(cached.path, 'utf8'))
+        continue
+      }
+      const bytes = await args.client.downloadFile(file)
+      await files.save(args.teamId, file, bytes)
+      found.set(message.ts, new TextDecoder().decode(bytes))
+    } catch {
+      // An envelope that will not download is a record the next run can still
+      // complete; failing the channel over one attachment is worse than retrying.
+    }
+  }
+  return found
+}
+
 async function syncChannel(args: {
   client: SyncClient
   store: ArchiveStore
@@ -257,8 +300,18 @@ async function syncChannel(args: {
 
   if (reconcileDue) await collect({ oldest: daysAgo(options.now, options.reconcileDays) })
 
+  const envelopes = await collectEnvelopes({
+    client,
+    store,
+    teamId,
+    messages: [...fetched.values()],
+    deadline: args.deadline,
+  })
+
   for (const message of fetched.values()) {
     const record = toRecord(channel, message, options.now)
+    const forum = envelopes.get(message.ts)
+    if (forum !== undefined) record.forum = forum
     if (changed(cachedByTs.get(message.ts), record)) records.push(record)
   }
 

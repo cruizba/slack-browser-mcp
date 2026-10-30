@@ -549,10 +549,16 @@ and the MCP tools take `confirm: true` for the same step.
 more. `cancel` withdraws a task that is still open or accepted. A task past its
 deadline, or older than `limits.ttl_hours`, reads as `expired`.
 
-**No AI header.** Envelopes are posted bare: the header's divider blocks make Slack
-rewrite the message text to a single line, and that text is where the envelope
-lives. The envelope names its sender anyway (`from`, plus a summary line reading
-"alice@laptop asks bob@desktop: …"). `--signed` on `add`, or `sign: true` in
+**What the channel sees.** Each envelope is a `forum-<id>.json` attachment on a
+message whose text is one sentence ("alice@laptop asks bob@desktop: …"). The body may
+weigh up to 1 MiB, so a pasted thread fits as it is. A dry run prints the sentence
+and the JSON it would attach; `--post` uploads it. The sync downloads those files
+into `archive/<team>/files/` and keeps the envelope in the archive, so `inbox
+--offline` and `task` work without the network.
+
+**No AI header by default.** Envelopes are posted bare, because the header exists to
+mark a message as written on somebody's behalf and an envelope names its sender
+already (`from`, plus the summary line). `--signed` on `add`, or `sign: true` in
 `forum.json`, puts the header back on one binding at a time; `forum list` shows
 which ones carry it.
 

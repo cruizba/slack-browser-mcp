@@ -16,6 +16,7 @@ import { FileSettingsStore } from '../config/settings.ts'
 import { resolveNickname, signingFor, type Signing } from '../config/assist.ts'
 import { ForumError } from '../errors.ts'
 import { toRecord } from '../archive/record.ts'
+import type { ArchivedFile } from '../archive/store.ts'
 import { recordSend } from '../slack/audit.ts'
 import { signedMessage } from '../slack/assist.ts'
 import { SlackClient, type SlackChannel } from '../slack/client.ts'
@@ -33,9 +34,10 @@ import {
   presenceDisabled,
   type PresenceClaim,
 } from './presence.ts'
+import { forumFileName } from './carrier.ts'
 import {
   assertFits,
-  render,
+  encode,
   summaryFor,
   type Envelope,
   type ReplyKind,
@@ -172,21 +174,39 @@ export async function deliver(
   envelope: Envelope,
   threadTs?: string,
 ): Promise<{ ts: string; audit: string }> {
+  // The channel gets a sentence a person can read; the envelope travels beside it as
+  // a file, where nothing escapes it, nothing truncates it and backticks are just
+  // backticks.
   const summary = summaryFor(envelope)
-  const text = render(summary, envelope)
-  assertFits(text)
+  assertFits(summary)
 
+  const json = encode(envelope)
+  const name = forumFileName(envelope.id)
+  const bytes = new TextEncoder().encode(json)
   const nickname = resolveNickname(transport.signing, {
     agent: relabel(context),
     user: transport.account.user,
   })
-  const signed = nickname && binding.sign ? signedMessage(text, nickname) : { text }
-  const posted = await transport.client.postMessage({
+  const signed = nickname && binding.sign ? signedMessage(summary, nickname) : { text: summary }
+  const posted = await transport.client.uploadFiles({
     channel: binding.channel,
+    files: [{ name, bytes: new Uint8Array(bytes) }],
     text: signed.text,
-    ...(signed.blocks ? { blocks: signed.blocks } : {}),
     ...(threadTs ? { thread_ts: threadTs } : {}),
   })
+  if (!posted.ts) {
+    throw new ForumError(
+      `Slack accepted ${name} but did not say where it landed, so the thread cannot be followed.`,
+      'Check the channel: the file is there. Replies to it need the message ts, which Slack only reports sometimes.',
+    )
+  }
+  const fileId = posted.fileIds[0]
+  const file = {
+    ...(fileId ? { id: fileId } : {}),
+    name,
+    mimetype: 'application/json',
+    size: bytes.byteLength,
+  }
   const audit = await recordSend({
     workspace: transport.account.team_name,
     channel: `#${binding.name}`,
@@ -198,14 +218,18 @@ export async function deliver(
   // The poster's own archive has to know immediately: deriving the state from a copy
   // that only catches up on the next sync makes "accept, then report" fail with
   // "still open" in the same session.
-  await rememberOwn(context, binding, posted.ts, signed.text, transport.account.user_id, threadTs)
+  await rememberOwn(context, binding, posted.ts, signed.text, transport.account.user_id, threadTs, {
+    file,
+    json,
+  })
   return { ts: posted.ts, audit }
 }
 
 /**
  * Files the message this machine just posted. The cursor is left alone on purpose:
  * moving `newest_ts` here would make the next backfill skip the gap between its own
- * cursor and this message.
+ * cursor and this message. The envelope goes in whole: this machine already has the
+ * bytes, and a read must not need a download to see what it just said.
  */
 async function rememberOwn(
   context: ForumContext,
@@ -214,14 +238,19 @@ async function rememberOwn(
   text: string,
   user: string | undefined,
   threadTs: string | undefined,
+  envelope: { file: ArchivedFile; json: string },
 ): Promise<void> {
   try {
     await context.archive.append(binding.workspace, binding.channel, [
-      toRecord(
-        { id: binding.channel, name: binding.name },
-        { ts, text, ...(user ? { user } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) },
-        new Date(),
-      ),
+      {
+        ...toRecord(
+          { id: binding.channel, name: binding.name },
+          { ts, text, ...(user ? { user } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) },
+          new Date(),
+        ),
+        files: [envelope.file],
+        forum: envelope.json,
+      },
     ])
   } catch {
     // A failed cache write must never fail a send that already reached Slack.
@@ -233,14 +262,29 @@ function relabel(context: ForumContext): string {
   return context.identity?.name ?? context.identityKey
 }
 
+/**
+ * What the channel will read, plus the envelope laid out for the person approving it.
+ * The JSON is shown in a `json` fence on purpose: it is not what gets posted, and a
+ * `forum` fence here would read like the old wire format coming back.
+ */
 function preview(
   binding: Binding,
   envelope: Envelope,
   target: string,
   warning?: string,
 ): WriteResult {
-  const text = render(summaryFor(envelope), envelope)
-  assertFits(text)
+  const summary = summaryFor(envelope)
+  assertFits(summary)
+  const json = encode(envelope)
+  const text = [
+    summary,
+    '',
+    `It travels as ${forumFileName(envelope.id)} (${Buffer.byteLength(json, 'utf8')} bytes), and this line is all the channel shows.`,
+    '',
+    '```json',
+    json,
+    '```',
+  ].join('\n')
   return { kind: 'preview', envelope, binding, text, target, ...(warning ? { warning } : {}) }
 }
 

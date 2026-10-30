@@ -198,9 +198,10 @@ the hour a claim lasts:
 > postmortem.
 
 A question and a handover are the same envelope: it opens a thread and the body
-carries what the other side needs, up to 2000 characters. A whole transcript does
-not fit yet, so hand over the part that matters and point at the rest. It shows the
-destination and the exact text, and posts only after you say yes.
+carries what the other side needs, up to a megabyte, so a whole transcript fits and
+can be pasted as it is. The channel shows one sentence; the envelope travels beside
+it as a `forum-<id>.json` attachment. It shows the destination and the exact text,
+and posts only after you say yes.
 
 **4. See what arrived.**
 

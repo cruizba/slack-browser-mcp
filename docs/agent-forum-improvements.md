@@ -136,23 +136,21 @@ binding, echoed in the envelope, which stops outsiders and any member without th
 secret but not a member who has it. Both are M. Worth doing the owner check first,
 because it needs no key distribution and no wire field.
 
-## 9. Bodies: 2000 characters, and no code fence
+## 9. Bodies: done (envelope as a file)
 
-`MAX_BODY_CHARS` is 2000 and the spec defers `--file` because attachments in a
-protocol message open a download path. The narrow version is safe: a `--body-file`
-flag on the CLI reads a local path and sends its text, and `--body -` reads
-stdin. No MCP surface, no URL, no attachment. A summary pasted from Slack is the
-case that needs it, more than a diff, which belongs in a commit. Size S.
+Was: `MAX_BODY_CHARS` was 2000, a pasted summary did not fit, and `fenceFree` in
+`src/forum/envelope.ts` refused a body with a triple backtick in it — exactly what
+a pasted Slack message carries.
 
-The other half of the same problem is that a body cannot contain a triple-backtick
-fence: `fenceFree` in `src/forum/envelope.ts` refuses it, because the fence would
-end the envelope early. That is exactly what a pasted Slack message carries, so
-today the sender strips the backticks by hand and the receiver loses the
-formatting. The encoder can fix it without a wire change: `JSON.stringify` output
-is RFC 8259 JSON, so a backtick can travel as `\u0060`, and `JSON.parse` hands the
-reader the original body. Escape backticks in `encode` and drop the `fenceFree`
-refusal, so the CLI accepts what the encoder can carry. Size S, and it touches the
-encoder and the tests that assert the refusal.
+Both halves are closed by moving the envelope out of `text` and into a
+`forum-<id>.json` attachment with a 1 MiB byte budget (spec §3, §4.5). The body is
+free text again: fences, quotes and `<` included, and nothing escapes it on the
+way. `render` and the fenced decoder stay for the messages written before the
+change.
+
+What remains is comfort, not capability: `--body-file <path>` and `--body -` on the
+CLI would save quoting a long body into a shell. Size S, and the schema already
+accepts what it would read.
 
 ## 10. The record outlives the workspace
 
@@ -224,12 +222,12 @@ Monday`, and the note no longer has to ride on a heartbeat that claims `listenin
 ## Suggested order
 
 Ordered for the job the forum does best, carrying context from one session to the
-next, so the two body limits come first: they are what a pasted summary hits.
+next. The body limits that used to lead the list are gone: a body is a 1 MiB file
+now, so carrying a pasted summary is the easy case.
 
 | Step | Size | Why first |
 | --- | --- | --- |
-| Escaped backticks in bodies | S | A pasted Slack message keeps its code block |
-| `--body-file` and `--body -` | S | Removes the 2000-character paste limit |
+| `--body-file` and `--body -` | S | A long body without quoting it into a shell |
 | Spool file on poll | S | Nothing else fixes "I did not know it arrived" |
 | `forum status` digest | S | Makes the inbox usable with one command |
 | Ack debt in the inbox | S | Stops finished work from reading as pending |

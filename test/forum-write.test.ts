@@ -149,6 +149,8 @@ async function seedArchive(): Promise<void> {
 
 interface Harness {
   calls: Array<{ method: string; body: URLSearchParams }>
+  /** Bytes of every `forum-*.json` that reached the pre-signed upload URL. */
+  uploads: Array<{ name: string; json: string }>
   client: Client
 }
 
@@ -162,12 +164,21 @@ async function setup(
   await seedArchive()
 
   const calls: Array<{ method: string; body: URLSearchParams }> = []
+  const uploads: Array<{ name: string; json: string }> = []
   const originalFetch = globalThis.fetch
   ;(globalThis as { fetch: typeof fetch }).fetch = (async (
     input: string | URL | Request,
     init?: RequestInit,
   ) => {
-    const method = String(input).split('/api/')[1] ?? ''
+    const target = String(input)
+    const method = target.split('/api/')[1] ?? ''
+    // The pre-signed upload: bytes, no token, and the only place the envelope exists.
+    if (target.startsWith('https://files.slack.com/')) {
+      const form = init?.body as FormData
+      const blob = form.get('file') as Blob
+      uploads.push({ name: String(form.get('filename')), json: await blob.text() })
+      return new Response('OK', { status: 200 })
+    }
     const body = new URLSearchParams(String(init?.body ?? ''))
     calls.push({ method, body })
     if (method === 'users.conversations') {
@@ -197,6 +208,25 @@ async function setup(
         message: { text: body.get('text') },
       })
     }
+    if (method === 'files.getUploadURLExternal') {
+      return json({
+        ok: true,
+        upload_url: 'https://files.slack.com/upload/v1/test',
+        file_id: `F0TEST${uploads.length + 1}`,
+      })
+    }
+    if (method === 'files.completeUploadExternal') {
+      NEXT_POST_TS += 1
+      const channel = String(body.get('channel_id'))
+      const files = JSON.parse(String(body.get('files'))) as Array<{ id: string; title: string }>
+      return json({
+        ok: true,
+        files: files.map((file) => ({
+          id: file.id,
+          shares: { private: { [channel]: [{ ts: `${NEXT_POST_TS}.000100` }] } },
+        })),
+      })
+    }
     return json({ ok: false, error: 'unexpected_method' })
   }) as typeof fetch
   t.after(() => {
@@ -213,15 +243,20 @@ async function setup(
     await server.close()
   })
 
-  return { calls, client }
+  return { calls, uploads, client }
 }
 
+/** One entry per envelope that was posted: the upload that carried it. */
 function posts(calls: Harness['calls']) {
-  return calls.filter((call) => call.method === 'chat.postMessage')
+  return calls.filter((call) => call.method === 'files.completeUploadExternal')
+}
+
+function uploaded(uploads: Harness['uploads']): Array<Record<string, unknown>> {
+  return uploads.map((upload) => JSON.parse(upload.json) as Record<string, unknown>)
 }
 
 test('forum_post is a dry run until confirm, then posts once and audits it', async (t) => {
-  const { calls, client } = await setup(t)
+  const { calls, uploads, client } = await setup(t)
 
   const preview = await client.callTool({
     name: 'forum_post',
@@ -229,7 +264,7 @@ test('forum_post is a dry run until confirm, then posts once and audits it', asy
   })
   const previewText = textOf(preview)
   assert.match(previewText, /Nothing sent/)
-  assert.match(previewText, /```forum/)
+  assert.match(previewText, /It travels as forum-\w+\.json/)
   assert.equal(posts(calls).length, 0, 'a preview must not send')
 
   const posted = await client.callTool({
@@ -244,29 +279,36 @@ test('forum_post is a dry run until confirm, then posts once and audits it', asy
   assert.match(textOf(posted), /Posted to private:agent-hub at ts/)
   const sends = posts(calls)
   assert.equal(sends.length, 1)
-  assert.equal(sends[0]?.body.get('channel'), 'C0HUB')
-  assert.match(String(sends[0]?.body.get('text')), /```forum/)
+  assert.equal(sends[0]?.body.get('channel_id'), 'C0HUB')
+  assert.match(
+    String(sends[0]?.body.get('initial_comment')),
+    /asks reviewer@laptop: devuelve el favor/,
+    'the channel gets the sentence a person reads, and nothing else',
+  )
+  const [envelope] = uploaded(uploads)
+  assert.equal(envelope?.kind, 'task')
+  assert.equal(envelope?.to, 'reviewer@laptop')
+  assert.equal(uploads[0]?.name, `forum-${String(envelope?.id)}.json`)
   assert.equal(
     sends[0]?.body.get('blocks'),
     null,
-    'an envelope is not wrapped in the AI block: its blocks flatten the text',
+    'an upload takes no blocks: Slack builds the message from the bytes',
   )
-  assert.doesNotMatch(String(sends[0]?.body.get('text')), /Message Sent by AI/)
+  assert.doesNotMatch(String(sends[0]?.body.get('initial_comment')), /Message Sent by AI/)
 
   const audit = await readFile(join(root, 'data', 'slack-browser-mcp', 'audit.jsonl'), 'utf8')
   assert.match(audit, /agent-hub/)
 })
 
 test('a bare name is resolved to name@host in the envelope', async (t) => {
-  const { calls, client } = await setup(t)
+  const { uploads, client } = await setup(t)
   const posted = await client.callTool({
     name: 'forum_post',
     arguments: { to: 'builder', title: 'sin host', body: 'pero con destino', confirm: true },
   })
   assert.match(textOf(posted), /Posted to/)
-  const text = String(posts(calls)[0]?.body.get('text'))
-  assert.match(text, /"to":"builder@desktop"/, 'the reader only knows the full label')
-  assert.doesNotMatch(text, /"to":"builder"/)
+  const [envelope] = uploaded(uploads)
+  assert.equal(envelope?.to, 'builder@desktop', 'the reader only knows the full label')
 })
 
 test('a peer that is not in the roster is refused instead of guessed', async (t) => {
@@ -324,7 +366,7 @@ test('a second move is refused with the state instead of posting again', async (
 })
 
 test('registering announces the peer name in the bound channel', async (t) => {
-  const { calls } = await setup(t)
+  const { calls, uploads } = await setup(t)
   const { openForum } = await import('../src/forum/context.ts')
   const { registerIdentity, announce, transportFor } = await import('../src/forum/service.ts')
   const { FileCredentialStore } = await import('../src/auth/store.ts')
@@ -342,13 +384,13 @@ test('registering announces the peer name in the bound channel', async (t) => {
   assert.equal(announced.posted, 1)
 
   const send = posts(calls)[0]
-  assert.equal(send?.body.get('channel'), 'C0HUB')
-  assert.match(String(send?.body.get('text')), /analyst@desktop joined the forum/)
-  assert.match(String(send?.body.get('text')), /"kind":"register"/)
+  assert.equal(send?.body.get('channel_id'), 'C0HUB')
+  assert.match(String(send?.body.get('initial_comment')), /analyst@desktop joined the forum/)
+  assert.equal(uploaded(uploads)[0]?.kind, 'register')
 })
 
 test('a session says it is here once, and the claim mark keeps it quiet', async (t) => {
-  const { calls } = await setup(t)
+  const { calls, uploads } = await setup(t)
   const { openForum } = await import('../src/forum/context.ts')
   const { announceLiveness, transportFor } = await import('../src/forum/service.ts')
   const { FileCredentialStore } = await import('../src/auth/store.ts')
@@ -362,10 +404,11 @@ test('a session says it is here once, and the claim mark keeps it quiet', async 
 
   const first = await announceLiveness(await openForum(), resolver, { path: 'session' })
   assert.equal(first.posted, 1)
-  const text = String(posts(calls)[0]?.body.get('text'))
-  assert.match(text, /"kind":"presence"/)
-  assert.match(text, /"state":"here"/)
+  const text = String(posts(calls)[0]?.body.get('initial_comment'))
   assert.match(text, /reviewer@laptop is here/)
+  const [envelope] = uploaded(uploads)
+  assert.equal(envelope?.kind, 'presence')
+  assert.equal(envelope?.state, 'here')
 
   const second = await announceLiveness(await openForum(), resolver, { path: 'session' })
   assert.equal(second.posted, 0, 'a fresh claim keeps the channel quiet')
@@ -373,7 +416,7 @@ test('a session says it is here once, and the claim mark keeps it quiet', async 
 })
 
 test('the poll path posts a beacon and can never answer', async (t) => {
-  const { calls } = await setup(t)
+  const { calls, uploads } = await setup(t)
   const { openForum } = await import('../src/forum/context.ts')
   const { announceLiveness, transportFor, locateTask } = await import('../src/forum/service.ts')
   const { loadViews } = await import('../src/forum/inbox.ts')
@@ -394,21 +437,21 @@ test('the poll path posts a beacon and can never answer', async (t) => {
 
   const first = await announceLiveness(context, resolver, { path: 'poll' })
   assert.equal(first.posted, 1)
-  const text = String(posts(calls)[0]?.body.get('text'))
-  assert.match(text, /"kind":"beacon"/)
+  const text = String(posts(calls)[0]?.body.get('initial_comment'))
   assert.match(text, /reviewer@laptop is up/)
-  assert.doesNotMatch(text, /"state"/, 'a beacon claims nothing about the person')
+  const envelopes = uploaded(uploads)
+  assert.equal(envelopes[0]?.kind, 'beacon')
+  assert.equal(envelopes[0]?.state, undefined, 'a beacon claims nothing about the person')
 
   const second = await announceLiveness(context, resolver, { path: 'poll' })
   assert.equal(second.posted, 0, 'the beacon window keeps the poller quiet')
 
-  const sent = posts(calls).map((call) => String(call.body.get('text')))
+  const sent = uploaded(uploads)
   assert.equal(sent.length, 1, 'a poll writes once and only once')
-  for (const body of sent) {
-    assert.match(body, /"kind":"beacon"/)
-  }
+  assert.equal(sent[0]?.kind, 'beacon')
   assert.equal(
-    sent.filter((body) => /"kind":"(presence|accept|result|ack|progress|note)"/.test(body)).length,
+    sent.filter((body) => ['presence', 'accept', 'result', 'ack', 'progress'].includes(String(body.kind)))
+      .length,
     0,
     'the listener never answers in the user’s name',
   )
@@ -465,7 +508,7 @@ test('a write retries once when the thread lags behind', async (t) => {
 })
 
 test('unregistering says goodbye, forgets the identity and retires the label', async (t) => {
-  const { calls } = await setup(t)
+  const { calls, uploads } = await setup(t)
   const { openForum } = await import('../src/forum/context.ts')
   const { unregisterIdentity, transportFor } = await import('../src/forum/service.ts')
   const { FileCredentialStore } = await import('../src/auth/store.ts')
@@ -481,8 +524,8 @@ test('unregistering says goodbye, forgets the identity and retires the label', a
   const result = await unregisterIdentity(await openForum(), resolver)
   assert.equal(result.label, 'reviewer@laptop')
   assert.equal(result.posted, 1)
-  assert.match(String(posts(calls)[0]?.body.get('text')), /"state":"gone"/)
-  assert.match(String(posts(calls)[0]?.body.get('text')), /left the forum/)
+  assert.equal(uploaded(uploads)[0]?.state, 'gone')
+  assert.match(String(posts(calls)[0]?.body.get('initial_comment')), /left the forum/)
 
   const file = await new ForumStore(join(configDir, 'forum.json')).read()
   assert.deepEqual(Object.keys(file.identities), [], 'the identity is gone')

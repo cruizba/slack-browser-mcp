@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { ArchiveStore } from '../src/archive/store.ts'
-import { render, summaryFor, type Envelope } from '../src/forum/envelope.ts'
+import { encode, render, summaryFor, type Envelope } from '../src/forum/envelope.ts'
 import { newId } from '../src/forum/id.ts'
 
 const TASK = '01J9Z7K3QX4MB8WN2R5T6Y7Z8A'
@@ -182,4 +182,47 @@ test('a task from an unknown peer is hidden and counted, never shown as work', a
   const report = inboxEntries(context, await loadViews(context))
   assert.equal(report.entries.length, 2)
   assert.equal(report.hidden, 1)
+})
+
+test('a body bigger than the context prints its head and the file id', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'forum-render-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  process.env.SLACK_BROWSER_MCP_CONFIG_DIR = join(root, 'config')
+  process.env.XDG_DATA_HOME = join(root, 'data')
+  process.env.SLACK_BROWSER_MCP_AGENT = 'pi'
+
+  await seed(root)
+  const { openForum } = await import('../src/forum/context.ts')
+  const { loadViews } = await import('../src/forum/inbox.ts')
+  const { renderTask } = await import('../src/forum/render.ts')
+
+  const context = await openForum({ now: new Date('2026-10-28T09:30:00Z') })
+  const view = (await loadViews(context))[0]!
+  const task = view.ledger.tasks.find((entry) => entry.id === TASK)!
+  const long = 'x'.repeat(5000)
+  const envelope = {
+    v: 1,
+    kind: 'task',
+    id: TASK,
+    from: 'builder@desktop',
+    to: 'reviewer@laptop',
+    sent: '2026-10-28T09:05:00Z',
+    title: 'revisar el PR',
+    body: long,
+  } as Envelope
+  assert.ok(encode(envelope).length > long.length)
+
+  const text = renderTask(
+    context,
+    { ...task, body: long, fileId: 'F0FORUM' },
+    view.binding,
+    undefined,
+    view,
+  )
+  assert.match(text, /x{4000}… \[truncated: 5000 characters; the whole envelope is `read_file F0FORUM`\]/)
+  assert.doesNotMatch(text, /x{5000}/, 'the rest stays out of the context')
+
+  // Without a file — a legacy fenced envelope — it points at the archive instead.
+  const legacy = renderTask(context, { ...task, body: long }, view.binding, undefined, view)
+  assert.match(legacy, /the whole envelope is in the local archive/)
 })
