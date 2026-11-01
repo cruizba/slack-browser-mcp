@@ -1112,7 +1112,6 @@ async function commandUpdate(args: ParsedArgs): Promise<number> {
     check: args.flags.get('check') === true,
     ...(target !== undefined ? { target } : {}),
     prerelease: args.flags.get('pre') === true,
-    systemd: args.flags.get('no-systemd') !== true,
   })
 }
 

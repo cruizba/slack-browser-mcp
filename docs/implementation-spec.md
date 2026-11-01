@@ -473,10 +473,11 @@ than stylistic:
   a tool call either blows the budget or makes a search feel hung.
 - N agent sessions would mean N servers racing for the same files.
 
-So the archive is refreshed by two things that are not the request path: a
-systemd unit that runs once per session (`OnBootSec=`), and a detached nudge a
-read may start. The nudge only covers the case the unit cannot: time passing
-while a session stays open. Reads report the archive's age and spawn
+So the archive is refreshed by two things that are not the request path: a sync
+the MCP server fires when it boots (a systemd unit with `OnBootSec=` before that),
+and a detached nudge a read may start. The nudge covers the case
+the boot run cannot: time passing while a session stays open. Reads report the
+archive's age and spawn
 `sync --quiet --deadline 180` when that age passes the threshold of the question,
 after checking that the lock is free, then answer from the current index. There
 are two thresholds because there are two questions: a read that reaches the
@@ -542,8 +543,8 @@ keeps a 91-channel pass from looking like a scrape. Before pacing a full pass to
 
 ### 9.5 Schema and migrations
 
-The archive outlives a single build: a systemd unit, an MCP server and a shell
-can be running different versions against the same files. So the layout carries a
+The archive outlives a single build: the sync a read starts, an MCP server and a
+shell can be running different versions against the same files. So the layout carries a
 version in `archive/schema.json` (`{"version": 2, …}`), and data written before
 that marker existed counts as version 1, because the layout has not changed since.
 
@@ -697,7 +698,7 @@ Manual checklist for the login path (cannot be automated without a real account)
 - [x] JSONL archive per channel with tombstones and a rebuildable FTS5 index
 - [x] Incremental sync with a daily reconcile window and a persisted thread backlog
 - [x] CLI `sync`, `archive search|stats|reindex`; MCP `search_messages`
-- [x] systemd user unit that syncs once per session (`OnBootSec=2min`)
+- [x] one sync at session start, from the MCP server (a systemd unit before it)
 - [x] Tests without network, plus a real run over 91 conversations
 - [x] Single-writer lock, freshness reporting, and a detached catch-up nudge
 

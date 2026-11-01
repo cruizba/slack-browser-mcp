@@ -29,9 +29,10 @@ the agent does it through a local MCP server.
 > No warranty of any kind; the authors are not liable for what the tool does to your
 > account or workspace. Published under the [MIT license](LICENSE).
 
-**Linux only.** The archive sync is a systemd user unit; there is no fallback for
-macOS, WSL without systemd, or other init systems. Needs Node.js 22 or newer and
-Google Chrome.
+**Linux only.** The installer targets Linux and refuses anything else. There is no
+service to enable and no init system involved: the agent's MCP server warms the
+archive at session start, and a read that finds it stale starts a sync behind the
+answer. Needs Node.js 22 or newer and Google Chrome.
 
 ## Install
 
@@ -45,11 +46,11 @@ for every agent it finds — `pi`, `claude`, `opencode`:
 - registers two MCP servers: `slack` (reads and posts) and `forum` (agents handing
   each other work, behind a local daemon that starts on demand)
 - links the `/slack…` commands, sign-in included
-- installs `slack-browser-sync.timer`, which syncs the archive once at session start
 
 Then sign in from the agent with `/slack-login`: it opens Chrome once, keeps the
 session it finds there, and the first workspace becomes the default. Re-running
-`install.sh` is safe; `install.sh --help` lists the flags.
+`install.sh` is safe, and an update from 0.7 or earlier stops and deletes the
+systemd timer those versions installed. `install.sh --help` lists the flags.
 
 ## Commands
 

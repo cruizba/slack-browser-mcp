@@ -5,8 +5,7 @@
  * work lands, and a release is the commit a machine is allowed to stand on. The
  * update command fetches the tags, compares the one at `HEAD` with the latest
  * stable one, checks it out detached and then hands the build to `install.sh
- * --no-pull`, so linking the agents and rewriting the units keeps a single
- * implementation.
+ * --no-pull`, so linking the agents keeps a single implementation.
  *
  * A checkout that sits on `main` past the latest tag is left alone. Moving it
  * back to the tag is a pin, not an update, and `--to` is how a user asks for it.
@@ -266,8 +265,6 @@ export interface UpdateOptions {
   check?: boolean
   target?: string
   prerelease?: boolean
-  /** `false` adds install.sh's --no-systemd. */
-  systemd?: boolean
   run?: Runner
   log?: (line: string) => void
 }
@@ -366,7 +363,7 @@ export async function update(options: UpdateOptions): Promise<number> {
   await run('git', ['-C', root, 'checkout', '--detach', plan.target], { cwd: root })
   log('rebuilding with install.sh --no-pull')
   try {
-    await run('bash', [install, '--no-pull', ...(options.systemd === false ? ['--no-systemd'] : [])], {
+    await run('bash', [install, '--no-pull'], {
       cwd: root,
       inherit: true,
     })
@@ -380,8 +377,8 @@ export async function update(options: UpdateOptions): Promise<number> {
   const after = await readInstalled(root, run)
   log(`updated to ${after ? describeInstalled(after) : plan.target}`)
   log(
-    'restart the agent so its MCP server loads the new build; the sync timer runs the ' +
-      'new code on its next tick, and the forum daemon picks it up when it next starts.',
+    'restart the agent so its MCP server loads the new build; the forum daemon picks ' +
+      'it up when it next starts, and the next session sync runs the new code.',
   )
   return 0
 }

@@ -64,7 +64,6 @@ const FLAGS: Readonly<Record<string, FlagDoc>> = {
   limit: { value: '<n>', doc: 'how many messages or hits to show (default 20)' },
   'no-post': { doc: 'keep the change local instead of announcing it' },
   'no-presence': { doc: 'never announce this machine in that channel' },
-  'no-systemd': { doc: 'skip reinstalling the units after the rebuild' },
   offline: { doc: 'read the archive only; do not refresh from Slack' },
   oldest: { value: '<ts>', doc: 'Slack ts to bound the page on the older side' },
   parent: { value: '<id>', doc: 'the task this one continues' },
@@ -158,7 +157,7 @@ const COMMANDS: Readonly<Record<string, Command>> = {
     flags: ['full', 'since', 'deadline', 'quiet', 'reconcile-days', 'workspace'],
     notes: [
       'Refreshes the local archive from every stored workspace unless --workspace names one. The deadline is one budget for the whole run, not per workspace.',
-      'It upgrades an archive written by an older layout before touching it. The systemd timer calls it at session start with a deadline.',
+      'It upgrades an archive written by an older layout before touching it. The server starts one at session start with the same deadline.',
     ],
   },
   archive: {
@@ -333,8 +332,8 @@ const COMMANDS: Readonly<Record<string, Command>> = {
     },
   },
   update: {
-    summary: `${PROGRAM} update [--check] [--to <tag>] [--pre] [--no-systemd]`,
-    flags: ['check', 'to', 'pre', 'no-systemd'],
+    summary: `${PROGRAM} update [--check] [--to <tag>] [--pre]`,
+    flags: ['check', 'to', 'pre'],
     notes: [
       'Moves the checkout this build runs from to a release: the latest semver tag, or the one named with --to. It fetches the tags, checks the tag out detached and re-runs `install.sh --no-pull` to rebuild and relink.',
       '--check only says what it would do. A checkout on main that is already past the latest release is left alone. Restart the agent afterwards so its MCP server loads the new build.',
@@ -371,7 +370,7 @@ const INDEX_NOTES: readonly string[] = [
   'Without --workspace, a command uses SLACK_BROWSER_MCP_TEAM, then the default saved by "workspace use", then the only stored session. "sync" without --workspace covers every stored workspace.',
   `With nothing configured, every sent message is still marked: the header reads "*Message Sent by AI Agent '<client>' of <account>*", naming the MCP client and the account it goes out from. Set your own with "assist <nickname>"; --no-assist posts the text alone, and ${ASSISTED_NICKNAME_ENV} wins over config.json.`,
   '"agent-forum" (alias "forum") is the channel where agents hand each other work: bind a channel once, register a name, then post tasks to a peer by name. Every write is a dry run unless --post, and every post is audited.',
-  'The forum runs behind a local daemon: it starts when an agent needs it, serves every agent on the machine over a socket, and exits after a quiet window. No systemd unit and no timer are installed for it.',
+  'The forum runs behind a local daemon: it starts when an agent needs it, serves every agent on the machine over a socket, and exits after a quiet window. There is no service to enable for it.',
   'Every command answers --help with its own page: what it does, its usage and the flags it takes. `slack-browser help <command>` prints the same page.',
 ]
 

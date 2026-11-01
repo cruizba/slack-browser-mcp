@@ -17,7 +17,8 @@ per session, so history survives and a read answers from it instead of the API.
 
 ## Requirements
 
-- Linux with systemd (user units and `loginctl`). Nothing else is supported.
+- Linux. `install.sh` refuses anything else. There is no service to enable and no
+  init system involved: the agent's MCP server warms the archive at session start.
 - Node.js 22 or newer
 - Google Chrome. The login starts it as a normal browser and attaches over CDP;
   set `CHROME_PATH` if it is not in a standard location. Playwright's bundled
@@ -292,24 +293,14 @@ message to update `slack-browser`, never read with wrong assumptions. A line tha
 cannot be parsed is moved to `<channel>.jsonl.corrupt` instead of blocking the
 upgrade.
 
-Once per session, through the systemd user units in `systemd/`. `install.sh` does
-this for you; by hand it is:
-
-```bash
-sed -e "s|@NODE@|$(command -v node)|" -e "s|@REPO@|$PWD|" \
-  systemd/slack-browser-sync.service.in > ~/.config/systemd/user/slack-browser-sync.service
-install -m 0644 systemd/slack-browser-sync.timer ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now slack-browser-sync.timer
-loginctl enable-linger "$USER"        # keep syncing while logged out
-systemctl --user list-timers slack-browser-sync.timer
-systemctl --user start slack-browser-sync.service   # run one now
-```
-
-The timer uses `OnBootSec=2min`, counted from the moment the user manager starts,
-so a fresh login or a reboot syncs 2 minutes later. There is no schedule: while you
-use the archive, reads keep it current, and anything they had to fetch from Slack
-is written back.
+Two things keep it current, and neither is a service. The `slack` MCP server starts
+a sync when it boots, so a session begins with a warm archive instead of a stale
+answer; and every read that finds the archive too old for the question starts
+another, behind the answer. One `.nudge` stamp throttles both to one run per five
+minutes, so a sync that keeps failing cannot turn every read into a process. There
+is no schedule: while you use the archive, reads keep it current, and anything they
+had to fetch from Slack is written back. By hand, one pass is
+`slack-browser sync --quiet --deadline 180`.
 
 **One writer at a time.** Every entry point takes a lock directory
 (`archive/.sync.lock`) before touching the archive; a second run exits with
@@ -612,9 +603,11 @@ cannot run. The agent surface above never needs it.
 The README installs with it. It pulls `main`, runs `npm ci` and `npm run build`,
 `npm link`, then walks the agents found in `PATH` and, for each, links the
 `commands/` slash commands into that agent's directory and registers the MCP
-server `slack`. Finally it renders `systemd/slack-browser-sync.service.in` into
-`~/.config/systemd/user/`, installs the sync timer, enables it and turns on linger.
-It never opens a browser: signing in is a command the agent runs. Re-running it
+server `slack`. Nothing is left running afterwards: there is no unit, no timer and
+no linger to enable. Up to 0.7.x it installed `slack-browser-sync.timer`, so an
+install over one of those stops, disables and deletes it (and its service and the
+`timers.target.wants` link) instead of leaving a timer pointing at nothing. It never
+opens a browser: signing in is a command the agent runs. Re-running it
 is safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left
 on its branch). It always follows `main`; releases are installed by
 `slack-browser update`, and re-running install.sh on a release checkout brings it
@@ -626,7 +619,6 @@ back to the branch.
   --dir <path>      where to install (default: ~/slack-browser-mcp)
   --branch <name>   branch to install (default: main)
   --no-pull         keep the checkout as it is, do not fetch or pull
-  --no-systemd      skip the archive sync unit
 ```
 
 ### Install by hand

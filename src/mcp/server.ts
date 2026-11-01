@@ -2267,6 +2267,9 @@ function registerDaemonTools(server: McpServer, self?: () => string | undefined)
 }
 
 export async function main(): Promise<void> {
+  // Fire and forget: the archive warms while the client handshakes, and the `.nudge`
+  // stamp keeps a burst of sessions from stacking syncs behind each other.
+  void nudgeSync(true)
   const server = buildServer({ surface: 'slack' })
   await server.connect(new StdioServerTransport())
 }

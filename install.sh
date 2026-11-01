@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Linux only: the archive sync is a systemd user unit, with no fallback.
-# Re-runnable: pulls the branch, rebuilds, rewrites the units and agent entries.
+# Re-runnable: pulls the branch, rebuilds, and rewrites the agent entries.
+# Nothing is left running afterwards: the archive is synced by the server at
+# session start and by the reads that find it stale.
 
 set -euo pipefail
 
@@ -9,7 +10,6 @@ BRANCH=main
 DIR="${HOME}/slack-browser-mcp"
 DIR_GIVEN=0
 PULL=1
-SYSTEMD=1
 
 usage() {
   cat <<'EOF'
@@ -18,7 +18,6 @@ Usage: install.sh [options]
   --dir <path>      where to install (default: ~/slack-browser-mcp)
   --branch <name>   branch to install (default: main)
   --no-pull         keep the checkout as it is, do not fetch or pull
-  --no-systemd      skip the archive sync unit
   -h, --help        show this help
 EOF
 }
@@ -37,7 +36,6 @@ while [ $# -gt 0 ]; do
     --dir) DIR="$2"; DIR_GIVEN=1; shift 2 ;;
     --branch) BRANCH="$2"; shift 2 ;;
     --no-pull) PULL=0; shift ;;
-    --no-systemd) SYSTEMD=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
   esac
@@ -122,33 +120,32 @@ if command -v opencode >/dev/null 2>&1; then
 fi
 [ "$AGENTS" = 1 ] || echo "    no pi, claude or opencode in PATH; the server is $DIR/dist/mcp/server.js"
 
-if [ "$SYSTEMD" = 1 ]; then
-  step "Installing the archive sync"
-  if [ ! -d /run/systemd/system ]; then
-    echo "    systemd is not running here; skipped"
-  else
-    UNIT_DIR="$HOME/.config/systemd/user"
-    NODE_BIN="$(command -v node)"
-    mkdir -p "$UNIT_DIR"
-    RENDERED="$(mktemp)"
-    sed -e "s|@NODE@|$(printf '%s' "$NODE_BIN" | sed 's/[&|]/\\&/g')|g" \
-        -e "s|@REPO@|$(printf '%s' "$DIR" | sed 's/[&|]/\\&/g')|g" \
-        "$DIR/systemd/slack-browser-sync.service.in" > "$RENDERED"
-    if grep -q '@NODE@\|@REPO@' "$RENDERED"; then
-      rm -f "$RENDERED"
-      die "the service template still has placeholders"
-    fi
-    # rm first: a previous run may have left a symlink into the checkout.
-    rm -f "$UNIT_DIR/slack-browser-sync.service" "$UNIT_DIR/slack-browser-sync.timer"
-    install -m 0644 "$RENDERED" "$UNIT_DIR/slack-browser-sync.service"
-    install -m 0644 "$DIR/systemd/slack-browser-sync.timer" "$UNIT_DIR/slack-browser-sync.timer"
-    rm -f "$RENDERED"
-    systemctl --user daemon-reload
-    systemctl --user enable --now slack-browser-sync.timer >/dev/null
-    loginctl enable-linger "$USER" >/dev/null 2>&1 \
-      || echo "    could not enable linger; the sync only runs while you are logged in"
-    echo "    slack-browser-sync.timer enabled (runs at session start; reads keep it current)"
-  fi
+step "Removing the old archive timer"
+# Up to 0.7.x this installed a systemd user unit that synced once per session. The
+# server does that itself now, so an update has to take the unit away: left behind,
+# it keeps firing against a checkout that no longer ships its service file.
+UNIT_DIR="$HOME/.config/systemd/user"
+OLD_UNITS="slack-browser-sync.timer slack-browser-sync.service"
+FOUND=0
+for unit in $OLD_UNITS; do
+  if [ -e "$UNIT_DIR/$unit" ]; then FOUND=1; fi
+done
+if [ "$FOUND" = 0 ]; then
+  echo "    nothing to remove"
+elif [ ! -d /run/systemd/system ]; then
+  # No user manager to talk to: the files still have to go, and daemon-reload
+  # would only fail on a unit nobody is running.
+  for unit in $OLD_UNITS; do rm -f "$UNIT_DIR/$unit"; done
+  rm -f "$UNIT_DIR/timers.target.wants/slack-browser-sync.timer"
+  echo "    unit files removed (systemd is not running here)"
+else
+  systemctl --user stop slack-browser-sync.timer slack-browser-sync.service >/dev/null 2>&1 || true
+  systemctl --user disable slack-browser-sync.timer >/dev/null 2>&1 || true
+  for unit in $OLD_UNITS; do rm -f "$UNIT_DIR/$unit"; done
+  rm -f "$UNIT_DIR/timers.target.wants/slack-browser-sync.timer"
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  systemctl --user reset-failed slack-browser-sync.service >/dev/null 2>&1 || true
+  echo "    slack-browser-sync.timer stopped and removed; the server syncs at session start"
 fi
 
 step "Done"
@@ -157,7 +154,4 @@ echo "    checkout        $DIR"
 echo "    sign in         /slack-login in your agent, or: slack-browser login"
 echo "    agent forum     slack-browser agent-forum add <channel>   # then register <name>"
 echo "                    slack-browser agent-forum daemon start   # or let the first agent start it"
-if [ "$SYSTEMD" = 1 ] && [ -f "$HOME/.config/systemd/user/slack-browser-sync.timer" ]; then
-  echo "    timer           systemctl --user list-timers slack-browser-sync.timer"
-  echo "    sync now        systemctl --user start slack-browser-sync.service"
-fi
+echo "    sync now        slack-browser sync --quiet  # or let the first read do it"

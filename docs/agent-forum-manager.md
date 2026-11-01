@@ -26,9 +26,9 @@ same `forum_*` tools it always saw and needs no new client. It is started by the
 first client that needs it and exits after a window with nobody connected
 (`SLACK_BROWSER_MCP_DAEMON_IDLE_SECONDS`, ten minutes by default).
 
-It is not a systemd unit, and `install.sh` does not install a timer for it. There
-is nothing to enable, nothing to supervise and nothing that survives a reboot
-except the files.
+It is not a systemd unit and `install.sh` installs no timer for it, because it
+installs none at all. There is nothing to enable, nothing to supervise and nothing
+that survives a reboot except the files.
 
 Two servers now, not one:
 
@@ -205,9 +205,9 @@ user's systemd directory and polled every 60 seconds. Both are gone: `auto` no
 longer exists, and the daemon does that work while it is up. `poll` survives as a
 one-pass diagnostic.
 
-`install.sh` still installs `slack-browser-sync.timer`, which is the archive's, not
-the forum's: one run at session start so the archive is not empty the first time
-anything reads it. It takes the same lock and the daemon waits for it.
+The archive has no timer either: the Slack MCP server starts one sync when it
+boots, so the archive is not empty the first time anything reads it. That sync takes
+the same lock, and the daemon waits for it.
 
 `SLACK_BROWSER_MCP_NO_AUTOSYNC=1` still turns the background refresh off. With the
 daemon running, `OFFLINE` on a read is the cheaper way to ask for the archive alone.

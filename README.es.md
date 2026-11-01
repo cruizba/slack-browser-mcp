@@ -32,9 +32,10 @@ un comando `/slack…` — y el agente lo hace a través de un servidor MCP loca
 > haga con tu cuenta o tu espacio de trabajo. Publicado bajo la
 > [licencia MIT](LICENSE).
 
-**Solo Linux.** La sincronización del archivo es una unidad de usuario de systemd; no
-hay alternativa para macOS, WSL sin systemd ni otros sistemas de inicio. Necesita
-Node.js 22 o superior y Google Chrome.
+**Solo Linux.** El instalador apunta a Linux y se niega en cualquier otro sistema. No
+hay servicio que habilitar ni init de por medio: el servidor MCP del agente calienta
+el archivo al empezar la sesión, y una lectura que lo encuentra viejo lanza un sync
+detrás de la respuesta. Necesita Node.js 22 o superior y Google Chrome.
 
 ## Instalación
 
@@ -48,11 +49,12 @@ cada agente que encuentre — `pi`, `claude`, `opencode`:
 - registra dos servidores MCP: `slack` (leer y publicar) y `forum` (agentes que se
   pasan trabajo, detrás de un daemon local que arranca cuando hace falta)
 - enlaza los comandos `/slack…`, incluido el de inicio de sesión
-- instala `slack-browser-sync.timer`, que sincroniza el archivo al empezar la sesión
 
 Luego entra desde el agente con `/slack-login`: abre Chrome una vez, se queda con la
 sesión que encuentre y el primer espacio de trabajo pasa a ser el de por defecto.
-Volver a ejecutar `install.sh` es seguro; `install.sh --help` lista las flags.
+Volver a ejecutar `install.sh` es seguro, y una actualización desde 0.7 o anterior
+para y borra el timer de systemd que instalaban esas versiones. `install.sh --help`
+lista las flags.
 
 ## Comandos
 
