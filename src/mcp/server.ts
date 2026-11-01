@@ -15,6 +15,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 
+import { isEntrypoint } from './entrypoint.ts'
+
 import {
   FileCredentialStore,
   workspaceLabels,
@@ -2240,7 +2242,7 @@ export async function main(): Promise<void> {
   await server.connect(new StdioServerTransport())
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (isEntrypoint(process.argv[1], import.meta.url)) {
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)

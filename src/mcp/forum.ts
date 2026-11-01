@@ -14,10 +14,11 @@
  */
 
 import { mkdirSync } from 'node:fs'
-import { dirname, } from 'node:path'
+import { dirname } from 'node:path'
 
 import { daemonPaths, ensureDaemon } from '../forum/daemon.ts'
 import { connectSocket } from '../forum/socket.ts'
+import { isEntrypoint } from './entrypoint.ts'
 
 function fail(message: string): never {
   process.stderr.write(`slack-browser forum: ${message}\n`)
@@ -121,7 +122,7 @@ function filterToolsList(line: string): string {
   return JSON.stringify(parsed)
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (isEntrypoint(process.argv[1], import.meta.url)) {
   main().catch((error: unknown) => {
     fail(error instanceof Error ? error.message : String(error))
   })
