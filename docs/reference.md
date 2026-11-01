@@ -84,14 +84,15 @@ skips the GitHub release.
 The release notes are grouped from the commits instead of listing them: the range is
 the previous tag to the new one, each subject is read as
 `type(scope): summary`, and the entries land under `Breaking changes`, `Features`,
-`Fixes`, `Performance`, `Refactoring`, `Documentation`, `Tests`, `Dependencies`,
-`Build and CI` or `Maintenance`, with a compare link at the end. `chore: release vX`
-commits are skipped, so the bump does not appear as a change of its own. A `!` after
-the type or a `BREAKING CHANGE:` footer moves an entry to `Breaking changes`, which
-is the only section that shows a second line. The rules live in
-`src/release/notes.ts` and the script that feeds them, `src/release/notes-cli.ts`,
-reads `git log` on stdin; if the generation fails, `release.sh` warns and falls back
-to `--generate-notes` rather than block a release.
+`Fixes`, `Performance`, `Refactoring`, `Dependencies`, `Build and CI` or
+`Maintenance`, with a compare link at the end. `chore: release vX` commits are
+skipped, so the bump does not appear as a change of its own, and so are `docs:` and
+`test:`: a release implies both and listing them buries what a reader came for. A
+`!` after the type or a `BREAKING CHANGE:` footer moves an entry to
+`Breaking changes`, which is the only section that shows a second line. The rules
+live in `src/release/notes.ts` and the script that feeds them,
+`src/release/notes-cli.ts`, reads `git log` on stdin; if the generation fails,
+`release.sh` warns and falls back to `--generate-notes` rather than block a release.
 
 `.github/workflows/release.yml` runs the same script from the Actions tab: a
 manual run takes the version or the bump as its input, checks out `main` with the

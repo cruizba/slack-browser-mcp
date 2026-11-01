@@ -102,13 +102,22 @@ test('the sections come out in the declared order, not the commit order', () => 
   const raw = log(
     ['a000', 'feat: something'],
     ['b000', 'ci: pin the action'],
-    ['c000', 'docs: describe the wire'],
+    ['c000', 'chore: tidy the scripts'],
     ['d000', 'fix: a crash'],
   )
   const rendered = renderNotes(parseLog(raw))
-  const positions = ['## Features', '## Fixes', '## Documentation', '## Build and CI'].map((title) =>
+  const positions = ['## Features', '## Fixes', '## Build and CI', '## Maintenance'].map((title) =>
     rendered.indexOf(title),
   )
   assert.ok(positions.every((at) => at >= 0), 'every section is there')
   assert.deepEqual(positions, [...positions].sort((left, right) => left - right))
+})
+
+test('documentation and test commits never reach the notes', () => {
+  const raw = log(
+    ['a000', 'docs: describe the wire'],
+    ['b000', 'test(forum): cover the reader'],
+    ['c000', 'feat: something'],
+  )
+  assert.equal(renderNotes(parseLog(raw)), '## Features\n\n- something (`c000`)\n')
 })

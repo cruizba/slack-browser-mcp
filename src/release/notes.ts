@@ -3,6 +3,10 @@
  * a reader looks for, instead of `gh release create --generate-notes`' flat list of
  * every commit including the release bump itself.
  *
+ * Documentation and test commits are left out on purpose. They are implied by a
+ * release — the code came with both — and a changelog that lists them buries the
+ * handful of lines somebody actually reads.
+ *
  * The input is `git log --format='%H%x1f%s%x1f%b%x1e'`, so this module never calls
  * git: the shell decides the range and the tests feed a fixture.
  */
@@ -34,12 +38,13 @@ const SECTIONS: ReadonlyArray<{ title: string; types: readonly string[] }> = [
   { title: 'Fixes', types: ['fix'] },
   { title: 'Performance', types: ['perf'] },
   { title: 'Refactoring', types: ['refactor'] },
-  { title: 'Documentation', types: ['docs'] },
-  { title: 'Tests', types: ['test'] },
   { title: 'Dependencies', types: ['deps'] },
   { title: 'Build and CI', types: ['build', 'ci'] },
   { title: 'Maintenance', types: ['chore', 'style'] },
 ]
+
+/** Types that never reach the notes: nobody learns anything from them. */
+const SKIPPED = new Set(['docs', 'test'])
 
 const OTHER = 'Other changes'
 const BREAKING_TITLE = 'Breaking changes'
@@ -75,6 +80,7 @@ export function entries(commits: readonly Commit[]): Entry[] {
       continue
     }
     const [, type = '', scope, bang, summary = ''] = match
+    if (SKIPPED.has(type)) continue
     const breaking = footer ?? (bang ? '' : undefined)
     out.push({
       section: SECTIONS.find((section) => section.types.includes(type))?.title ?? OTHER,
