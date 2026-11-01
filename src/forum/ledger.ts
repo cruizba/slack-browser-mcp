@@ -59,7 +59,7 @@ export interface ForumTask {
   tag?: string
   title: string
   body: string
-  /** The `forum-*.json` attachment, when the envelope arrived as a file. */
+  /** The `forum-*` attachment, when the envelope arrived as a file. */
   fileId?: string
   deadline?: string
   parent?: string

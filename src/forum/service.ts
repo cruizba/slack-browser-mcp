@@ -186,9 +186,9 @@ export async function deliver(
   const summary = summaryFor(envelope)
   assertFits(summary)
 
-  const json = encode(envelope)
+  const document = encode(envelope)
   const name = forumFileName(envelope.id)
-  const bytes = new TextEncoder().encode(json)
+  const bytes = new TextEncoder().encode(document)
   const nickname = resolveNickname(transport.signing, {
     agent: relabel(context),
     user: transport.account.user,
@@ -204,7 +204,7 @@ export async function deliver(
   const file = {
     ...(fileId ? { id: fileId } : {}),
     name,
-    mimetype: 'application/json',
+    mimetype: 'text/markdown',
     size: bytes.byteLength,
   }
   const audit = await recordSend({
@@ -221,7 +221,7 @@ export async function deliver(
     // "still open" in the same session.
     await rememberOwn(context, binding, posted.ts, signed.text, transport.account.user_id, threadTs, {
       file,
-      json,
+      document,
     })
     return { ts: posted.ts, audit }
   }
@@ -250,7 +250,7 @@ async function rememberOwn(
   text: string,
   user: string | undefined,
   threadTs: string | undefined,
-  envelope: { file: ArchivedFile; json: string },
+  envelope: { file: ArchivedFile; document: string },
 ): Promise<void> {
   try {
     await context.archive.append(binding.workspace, binding.channel, [
@@ -261,7 +261,7 @@ async function rememberOwn(
           new Date(),
         ),
         files: [envelope.file],
-        forum: envelope.json,
+        forum: envelope.document,
       },
     ])
   } catch {
@@ -276,8 +276,8 @@ function relabel(context: ForumContext): string {
 
 /**
  * What the channel will read, plus the envelope laid out for the person approving it.
- * The JSON is shown in a `json` fence on purpose: it is not what gets posted, and a
- * `forum` fence here would read like the old wire format coming back.
+ * The document is shown in a `markdown` fence on purpose: it is not what gets posted,
+ * and a `forum` fence here would read like the old wire format coming back.
  */
 function preview(
   binding: Binding,
@@ -287,14 +287,14 @@ function preview(
 ): WriteResult {
   const summary = summaryFor(envelope)
   assertFits(summary)
-  const json = encode(envelope)
+  const body = encode(envelope)
   const text = [
     summary,
     '',
-    `It travels as ${forumFileName(envelope.id)} (${Buffer.byteLength(json, 'utf8')} bytes), and this line is all the channel shows.`,
+    `It travels as ${forumFileName(envelope.id)} (${Buffer.byteLength(body, 'utf8')} bytes), and this line is all the channel shows.`,
     '',
-    '```json',
-    json,
+    '```markdown',
+    body,
     '```',
   ].join('\n')
   return { kind: 'preview', envelope, binding, text, target, ...(warning ? { warning } : {}) }

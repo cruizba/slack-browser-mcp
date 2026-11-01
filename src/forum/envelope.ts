@@ -1,14 +1,15 @@
 /**
  * The wire format: a human summary in the message `text`, and the envelope itself as
- * a `forum-<id>.json` attachment on the same message.
+ * a `forum-<id>.md` attachment on the same message — frontmatter for the fields,
+ * markdown for the body (`frontmatter.ts`).
  *
- * It travelled inside a fenced `forum` block in `text` up to v0.2.1, which is why
- * the fence is still decoded here: the channels hold those messages and the ledger
- * rebuilds itself from them. Nothing writes one any more. Slack escapes `&`, `<`
- * and `>` in `text`, so a body near any limit arrived longer than it was sent, and a
- * fence also cannot carry a body with three backticks in it — exactly what a pasted
- * Slack thread has. A file is bytes nobody rewrites, so the body budget is a real
- * megabyte and a transcript fits.
+ * It travelled inside a fenced `forum` block in `text` up to v0.2.1, then as a
+ * `forum-<id>.json` file up to v0.3.2. Both are still decoded here: the channels hold
+ * those messages and the ledger rebuilds itself from them. Nothing writes either any
+ * more. Slack escapes `&`, `<` and `>` in `text`, so a body near any limit arrived
+ * longer than it was sent, and a fence also cannot carry a body with three backticks
+ * in it — exactly what a pasted Slack thread has. A file is bytes nobody rewrites, so
+ * the body budget is a real megabyte and a transcript fits.
  *
  * Not Slack's `metadata` either: that needs a schema registered in an app manifest
  * and an `xoxc` session has no app, so Slack answers `invalid_metadata_schema` and
@@ -25,6 +26,7 @@ import { z } from 'zod'
 import { MAX_TEXT_CHARS } from '../slack/assist.ts'
 import { unescapeEntities } from '../slack/entities.ts'
 import { StoreError } from '../errors.ts'
+import { readFrontmatter, writeFrontmatter } from './frontmatter.ts'
 import { ID_LENGTH, isId } from './id.ts'
 
 export const FORUM_FENCE = 'forum'
@@ -50,18 +52,6 @@ const idSchema = z.string().length(ID_LENGTH).refine(isId, 'not a forum id')
 const who = z.string().trim().min(1).max(MAX_FROM_CHARS)
 const when = z.string().trim().min(10).max(MAX_DEADLINE_CHARS)
 const tag = z.string().trim().min(1).max(MAX_TAG_CHARS)
-
-/**
- * A field carrying a fence would end a fenced envelope early and unparse the
- * message. Only the legacy format can be broken that way, so only the short fields
- * keep the rule: the body is the one field whose whole job is to hold a pasted
- * transcript, backticks included.
- */
-function fenceFree<T extends z.ZodType<string>>(schema: T) {
-  return schema.refine((value) => !value.includes('```'), {
-    message: 'no triple backticks inside this field: they would end a fenced envelope',
-  })
-}
 
 const body = z
   .string()
@@ -125,7 +115,7 @@ const presenceSchema = z
     host: z.string().trim().min(1).max(MAX_NAME_CHARS),
     /** `gone` retires the peer: readers drop it from the roster. */
     state: z.enum(['here', 'away', 'gone', 'listening', 'idle']),
-    note: fenceFree(z.string().trim().max(80)).optional(),
+    note: z.string().trim().max(80).optional(),
   })
   .refine((value) => value.from === `${value.name}@${value.host}`, {
     message: 'from must be name@host',
@@ -137,7 +127,7 @@ const taskSchema = z
     ...common,
     kind: z.literal('task'),
     to: z.string().trim().min(1).max(MAX_TARGET_CHARS),
-    title: fenceFree(z.string().trim().min(1).max(MAX_TITLE_CHARS)),
+    title: z.string().trim().min(1).max(MAX_TITLE_CHARS),
     body,
     tag: tag.optional(),
     deadline: when.optional(),
@@ -227,42 +217,78 @@ function unescapeForm(value: unknown): unknown {
 }
 
 /**
- * The bytes of the attachment, one line so a reader can open it in anything.
- * Pretty-printing would buy nothing: nothing parses this by eye.
+ * The order a person reading the file sees, independent of the order the schema
+ * happens to declare: what the envelope is, who sent it, what it says.
  */
+const FIELD_ORDER = [
+  'v',
+  'kind',
+  'id',
+  'from',
+  'to',
+  'name',
+  'host',
+  'state',
+  'sent',
+  'title',
+  'tag',
+  'deadline',
+  'task',
+  'parent',
+  'depth',
+  'ok',
+  'capabilities',
+  'note',
+  'version',
+]
+
+function ordered(values: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const key of FIELD_ORDER) if (key in values) out[key] = values[key]
+  for (const [key, value] of Object.entries(values)) if (!(key in out)) out[key] = value
+  return out
+}
+
+/** The bytes of the attachment: fields in frontmatter, body as markdown below it. */
 export function encode(envelope: Envelope): string {
+  const { body, ...fields } = EnvelopeSchema.parse(envelope) as Record<string, unknown>
+  return writeFrontmatter(ordered(fields), typeof body === 'string' ? body : undefined)
+}
+
+/** The JSON form, which only the legacy writers and their fixtures still use. */
+export function encodeJson(envelope: Envelope): string {
   return JSON.stringify(EnvelopeSchema.parse(envelope))
 }
 
 /**
  * The fenced form, which nothing writes any more and the decoder still understands.
- * Kept as the fixture that keeps the legacy reader honest.
+ * Kept as the fixture that keeps the legacy reader honest, which is also why it is
+ * the one writer that would break on a field carrying a fence.
  */
 export function render(summary: string, envelope: Envelope): string {
-  return `${summary}\n\n\`\`\`${FORUM_FENCE}\n${encode(envelope)}\n\`\`\``
+  return `${summary}\n\n\`\`\`${FORUM_FENCE}\n${encodeJson(envelope)}\n\`\`\``
 }
 
 /**
- * Undoes Slack's escaping on every string the JSON carries. It has to happen after
- * `JSON.parse`, never before: the quotes and braces that make the JSON are the
- * sender's, and only the values inside them travelled through Slack's escaping.
+ * The envelope as it travels now: a file Slack never touches, so a body quoting
+ * `&lt;` on purpose stays as written.
  */
-export function decode(text: string | undefined): Envelope | undefined {
-  const match = text?.match(FENCE)
-  if (!match) return undefined
-  return decodeAttachment(match[1]!.trim(), true)
+export function decodeMarkdown(text: string | undefined): Envelope | undefined {
+  if (text === undefined) return undefined
+  const document = readFrontmatter(text)
+  if (!document) return undefined
+  return parse({
+    ...document.values,
+    ...(document.body !== undefined ? { body: document.body } : {}),
+  })
 }
 
 /**
- * The envelope as it travelled in a file. Slack never touches those bytes, so the
- * values arrive exactly as they were sent and nothing is unescaped: a body quoting
- * `&lt;` on purpose has to stay that way. `legacy` is the fenced reader asking for
- * its escaping undone.
+ * The envelope as it travelled in a `forum-<id>.json` file, still in the channels.
+ * Slack never touched those bytes either, so nothing is unescaped; `legacy` is the
+ * fenced reader asking for its escaping undone.
  */
-export function decodeAttachment(
-  json: string | undefined,
-  legacy = false,
-): Envelope | undefined {
+export function decodeJson(json: string | undefined, legacy = false): Envelope | undefined {
   if (json === undefined) return undefined
   let parsed: unknown
   try {
@@ -270,7 +296,23 @@ export function decodeAttachment(
   } catch {
     return undefined
   }
-  const result = EnvelopeSchema.safeParse(legacy ? unescapeForm(parsed) : parsed)
+  return parse(legacy ? unescapeForm(parsed) : parsed)
+}
+
+/**
+ * The fenced form written up to v0.2.1. It is the one path that has to undo Slack's
+ * escaping, and it has to happen after `JSON.parse`, never before: the quotes and
+ * braces that make the JSON are the sender's, and only the values inside them
+ * travelled through Slack's escaping.
+ */
+export function decodeFence(text: string | undefined): Envelope | undefined {
+  const match = text?.match(FENCE)
+  if (!match) return undefined
+  return decodeJson(match[1]!.trim(), true)
+}
+
+function parse(value: unknown): Envelope | undefined {
+  const result = EnvelopeSchema.safeParse(value)
   return result.success ? result.data : undefined
 }
 

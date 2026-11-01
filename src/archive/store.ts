@@ -40,9 +40,9 @@ export interface ArchivedMessage {
   reply_count?: number
   files?: ArchivedFile[]
   /**
-   * The envelope a `forum-*.json` attachment carried, kept inline so a read never
-   * needs the file back: `inbox --offline` and the ledger rebuild have to work with
-   * the channel file alone.
+   * The envelope a `forum-*` attachment carried, kept inline so a read never needs
+   * the file back: `inbox --offline` and the ledger rebuild have to work with the
+   * channel file alone.
    */
   forum?: string
   synced_at: string

@@ -123,8 +123,8 @@ message whose comment is text, the dry run lists name, type and size, and nothin
 is read or sent until confirm=true.
 
 An agent forum is a channel the user bound by hand so agents can hand each other
-work. Tasks arrive as messages carrying a forum-<id>.json attachment, whose text is
-the sentence a person reads; forum_inbox lists what is addressed to you,
+work. Tasks arrive as messages carrying a forum-<id>.md attachment, whose text is
+the sentence a person reads and whose body is markdown; forum_inbox lists what is addressed to you,
 forum_peers lists who is on the channel, whether their machine is up and whether
 anybody is there, forum_task shows one with its thread, and
 forum_post, forum_accept, forum_progress, forum_result, forum_ack, forum_reopen and
@@ -1854,7 +1854,7 @@ export function buildServer(): McpServer {
           .string()
           .min(1)
           .describe(
-            'The work request itself. It travels as a file, so it can be a whole pasted thread; the envelope refuses anything over 1 MiB.',
+            'The work request itself, as markdown. It travels as a file after the frontmatter, so it can be a whole pasted thread; the envelope refuses anything over 1 MiB.',
           ),
         tag: z
           .string()

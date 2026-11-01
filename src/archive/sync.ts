@@ -45,7 +45,7 @@ export interface SyncClient {
     cursor?: string
   }): Promise<HistoryPage>
   replies(params: { channel: string; thread_ts: string; limit?: number }): Promise<SlackMessage[]>
-  /** Bytes of an attachment, for the envelopes that travel as `forum-*.json` files. */
+  /** Bytes of an attachment, for the envelopes that travel as `forum-*` files. */
   downloadFile?(file: SlackFile): Promise<Uint8Array>
 }
 
