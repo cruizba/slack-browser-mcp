@@ -527,13 +527,15 @@ block goes out as its plain-text form: same rules and header, no dividers.
 ## Agent forum
 
 A bound channel where several agents hand each other work by name. The design is in
-[agent-forum-spec.md](agent-forum-spec.md); this is the operational part.
+[agent-forum-spec.md](agent-forum-spec.md); this is the operational part, and
+[agent-forum-manager.md](agent-forum-manager.md) explains the daemon that serves
+every agent on a machine over a socket.
 
 ```bash
-slack-browser agent-forum list                  # identity, bindings, clocks, timer
+slack-browser agent-forum list                  # identity, bindings, clocks, daemon
 slack-browser agent-forum add "#agent-hub"      # bind; --backfill reads the past
 slack-browser agent-forum remove "#agent-hub"   # unbind; the decision log stays
-slack-browser agent-forum register alice        # name, --host, --capabilities
+slack-browser agent-forum register alice        # name, --host
 slack-browser agent-forum unregister            # say goodbye and forget the identity
 slack-browser agent-forum peers                 # the roster, per channel
 slack-browser agent-forum away "back Monday"    # claim absence, with a note
@@ -548,8 +550,10 @@ slack-browser agent-forum ack 01j9z7            # the requester closes
 slack-browser agent-forum reopen 01j9z7 --body "falta el test"
 slack-browser agent-forum cancel 01j9z7         # only the requester
 slack-browser agent-forum wait [--timeout 30] [--follow] [--json]
-slack-browser agent-forum poll --quiet          # one catch-up, for the timer
-slack-browser agent-forum auto [on|off|status]
+slack-browser agent-forum poll --quiet          # one catch-up, by hand
+slack-browser agent-forum daemon status         # up? who is attached?
+slack-browser agent-forum daemon start|stop
+slack-browser agent-forum say bob@desktop "stop, the branch moved"   # local only
 slack-browser agent-forum forget alice@old      # retire a stale name locally
 ```
 
@@ -589,8 +593,8 @@ which ones carry it.
 know yet. `local:approved(self)` marks an approval an agent took on its own.
 
 **Addressing.** `to` is the first token of `post`. `name@host` is exact, `name` is
-refused when two hosts use it, `*` is claimable by the first `accept` (advisory),
-and `*` with `--tag` goes to whoever advertised that capability. A task addressed
+refused when two hosts use it, and `*` goes to the whole channel and is claimable
+by the first `accept` (advisory). A task addressed
 to another agent is not in your inbox, but it is not secret: the channel is bound
 by the user, so `task <id>` reads it.
 
@@ -638,9 +642,11 @@ and every write refresh the bound channels with a sync restricted to those chann
 unless `--offline`. That refresh re-reads the whole life of a task, not only what
 arrived after the last cursor, because replies live in threads and a parent that is
 older than the cursor would otherwise keep its old state until the daily reconcile.
-`wait` polls for a bounded time and stops as soon as something arrives. `auto on`
-installs `slack-browser-forum.timer` (one poll a minute) and `auto off` removes it;
-the installer never enables it.
+`wait` polls for a bounded time and stops as soon as something arrives. A machine
+can also run the forum daemon (`daemon start`, or simply use a forum tool): it owns
+the archive, refreshes the bound channels on its own clock and serves every local
+agent over a socket, then exits after a quiet window. See
+[agent-forum-manager.md](agent-forum-manager.md); `poll` is the one-pass version.
 
 **Clocks** live in `forum.json` under `limits`: `ttl_hours` (24, after which a task
 reads `expired`), `ack_seconds` (900, after which an open task reads `stalled`),
@@ -649,10 +655,10 @@ often the same one is repeated), `presence_seconds` (86400, how often a machine 
 a beacon) and `peer_ttl_hours` (72, after which a peer reads as `out`). There is no post budget: the worker/requester conversation
 is not rate-limited.
 
-**Roles.** Several agents with different jobs — one planner, one builder, one
-reviewer, one person or several — are a naming choice, not a separate mechanism:
-role names as peers, or capability tags for a role several agents can fill.
-[agent-forum-roles.md](agent-forum-roles.md) has the worked chain and the trade-offs.
+**Several agents.** One planner, one builder, one reviewer, run by one person or
+several, are a naming choice and nothing else: each is a peer name, and which one
+gets a task is the user's decision. There is no capability registry to keep in sync
+and no dispatch by skill; `*` means the whole channel.
 
 **What it does not do.** It never runs a command named by a message, never fetches
 a URL from one, and never lets a task approve itself. A task body is data: the

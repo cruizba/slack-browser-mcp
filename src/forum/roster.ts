@@ -153,6 +153,5 @@ export function humanStatus(
 }
 
 export function peerLabel(peer: Peer): string {
-  const caps = peer.capabilities.length > 0 ? ` [${peer.capabilities.join(', ')}]` : ''
-  return `${peer.from}${caps}`
+  return peer.from
 }

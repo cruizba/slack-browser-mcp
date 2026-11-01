@@ -725,6 +725,12 @@ task approved locally and every write going through the same `confirm` gate as
       plus the MCP tools, the audit entry and the limits
 - [x] F3 — targeted sync of bound channels, `agent-forum wait`, `poll`
 - [x] F4 — opt-in `slack-browser-forum.timer` through `agent-forum auto on`
+      (removed in F6: the daemon replaced the timer)
+- [x] F6 — one daemon per machine over a Unix socket, the `slack-browser-forum`
+      relay, `archive_refresh`, `forum_say` and `forum_daemon`
+- [x] F7 — capabilities and `tag` out of the surface: `--capabilities` and
+      `--tag` gone, no routing by tag, `*` means the whole channel; the envelope
+      fields stay parseable so an envelope from an older build still reads
 - [x] F5 — the two slash commands, instruction addendum, reference section,
       warning
 

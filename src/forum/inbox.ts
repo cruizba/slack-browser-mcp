@@ -86,11 +86,7 @@ export interface InboxReport {
   taken: number
 }
 
-const MINE = (task: ForumTask, me: string, capabilities: readonly string[]): boolean => {
-  if (task.to === me) return true
-  if (task.to !== '*') return false
-  return task.tag === undefined || capabilities.includes(task.tag)
-}
+const MINE = (task: ForumTask, me: string): boolean => task.to === me || task.to === '*'
 
 export function inboxEntries(
   context: ForumContext,
@@ -98,7 +94,6 @@ export function inboxEntries(
   options: InboxOptions = {},
 ): InboxReport {
   const me = meLabel(context)
-  const capabilities = context.identity?.capabilities ?? []
   const entries: InboxEntry[] = []
   let hidden = 0
   let taken = 0
@@ -116,7 +111,7 @@ export function inboxEntries(
 
     for (const task of view.ledger.tasks) {
       const decision = view.decisions.get(task.id)
-      const mine = MINE(task, me, capabilities)
+      const mine = MINE(task, me)
       if (!options.all) {
         if (!mine) continue
         if (task.from === me) continue

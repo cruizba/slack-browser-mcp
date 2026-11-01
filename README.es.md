@@ -44,7 +44,8 @@ git clone https://github.com/cruizba/slack-browser-mcp ~/slack-browser-mcp && ~/
 Hace un pull de `main`, compila el checkout, pone `slack-browser` en tu PATH y
 después hace el resto por cada agente que encuentra (`pi`, `claude`, `opencode`):
 
-- registra el servidor MCP `slack`
+- registra dos servidores MCP: `slack` (leer y publicar) y `forum` (agentes que se
+  pasan trabajo, detrás de un daemon local que arranca solo cuando hace falta)
 - enlaza los comandos `/slack*`, el de inicio de sesión incluido
 - instala `slack-browser-sync.timer`, que sincroniza el archivo al empezar la sesión
 
@@ -127,166 +128,109 @@ suelto cierra las flags, y todo lo que va detrás es texto del mensaje.
 ## Foro de agentes
 
 Un canal de Slack que el equipo acuerda, donde el agente de una persona le pasa
-trabajo, un mensaje o el contexto que hay detrás al agente de otra por su nombre: el
-agente de Alice le manda al de Bob lo que encontró en un hilo, el de Bob contesta en
-el mismo hilo, y cada uno conserva su inicio de sesión y su archivo local. Lo único
-compartido es el canal; cada tarea sigue siendo una decisión en la máquina que la
-recibe.
+trabajo al de otra por su nombre: el agente de Alice le manda al de Bob lo que
+encontró en un hilo, el de Bob contesta en el mismo hilo, y cada uno conserva su
+inicio de sesión y su archivo local. Lo único compartido es el canal; cada tarea
+sigue siendo una decisión en la máquina que la recibe.
 
 Una tarea se hace en cinco movimientos — **pedir, aceptar, trabajar, reportar,
-cerrar** — y cada uno es una decisión que tu agente te enseña antes de publicar
-nada. Entre aceptar y reportar cualquiera de los dos lados puede añadir una nota al
-hilo, así que una pregunta y su respuesta se quedan dentro de la tarea en vez de
-abrir una segunda.
+cerrar** — y cada uno es un borrador que tu agente te enseña antes de publicar nada.
 
 ```mermaid
 sequenceDiagram
-    participant A as alice@laptop
-    participant B as bob@desktop
-    A->>B: le pasa lo que encontró en #incident
-    Note over A: lo enseña antes; el usuario dice que sí
-    B->>B: lee la bandeja y abre la tarea
-    Note over B: el usuario aprueba
-    B-->>A: accept
-    B--)A: una nota, opcional
-    B-->>A: resultado, con el cuerpo
-    A->>B: ack
-    Note over A,B: cerrada, los dos paran
+    participant A as alice-pc
+    participant B as bob-pc
+    A->>B: pide, con el contexto en el cuerpo
+    Note over A,B: cada usuario aprueba en su máquina
+    B-->>A: acepta, luego reporta
+    A->>B: cierra
 ```
 
-### La máquina y la persona
+### Detrás de un daemon local
 
-Lo dicen dos mensajes distintos, y los manda gente distinta. Un **beacon** dice que
-la máquina está encendida: lo publica el poller, el timer de `auto` incluido, y no
-afirma nada sobre la persona que haya delante. Una **presence** dice `here`, `away`
-con una nota, o `gone`, y eso solo lo publica una sesión en la que estás tú.
-`forum peers` enseña las dos cosas:
+El foro va detrás de un proceso por máquina. Arranca cuando un agente lo necesita
+por primera vez, es el dueño del archivo, mantiene frescos los canales enlazados y
+atiende a todos los agentes por un socket local; después de diez minutos sin nadie
+conectado, se va. No hay servicio que habilitar ni timer para él; el resto está en
+[el manual del manager](docs/agent-forum-manager.md).
 
-```text
-piwccle-dog@r3b3ca · Sergio — up · here, active 2m ago
-robocarlos@carlos-pc · Carlos — up · away — back Monday
-old@lab-pc — out, last seen 4d ago
+Eso es lo que permite tener varios agentes en una máquina sin que compartan
+identidad. Cada registro MCP nombra su propio peer:
+
+```json
+"forum-planner": {
+  "command": "slack-browser-forum",
+  "env": { "SLACK_BROWSER_MCP_AGENT": "planner" }
+}
 ```
 
-Un `here` caduca si la sesión pasa una hora sin escribir nada, porque una
-afirmación que nadie refresca no es prueba; `out` es la máquina, tres días sin
-saber de ella. Si te vas más tiempo, dilo una vez y la nota espera por ti: "dile al foro
-que estoy fuera hasta el lunes".
+Sin `SLACK_BROWSER_MCP_AGENT`, el nombre sale del cliente MCP, que es el mismo en los
+dos registros, así que los dos agentes acaban siendo un solo peer. También pueden
+avisarse sin escribir en Slack, mientras el peer esté conectado:
+`slack-browser agent-forum say builder@alice-pc "para, la rama se ha movido"`. Eso no
+queda registrado en ningún sitio, así que es un aviso y no el trabajo en sí.
 
-**El que escucha nunca contesta por ti.** El poll, la espera y el timer solo pueden
-publicar un beacon. Toda respuesta en un hilo sale de un turno en el que estabas para
-aprobarla, así que dejar el foro mirando toda la noche te da la bandeja llena por la
-mañana y ni un mensaje enviado en tu nombre.
-
-### Siete frases
+### Tres frases
 
 Nunca escribes un comando: di lo que quieres y el agente elige el movimiento,
-enseñándote el envelope antes de publicar nada.
+enseñándote el envelope antes de publicar nada. Los siete movimientos que conoce
+están en el manual; estas tres son la forma que tiene.
 
-**1. Unirse al foro.** Una vez por máquina y por canal:
+> Registra este agente en el foro de agentes de #agent-hub como planner.
 
-> Registra este agente en el foro de agentes de #agent-hub como alice.
+Enlaza el canal, guarda el nombre y lo anuncia. Quien se una después ejecuta la misma
+frase en su propia máquina.
 
-Enlaza el canal, guarda el nombre y lo anuncia para que los demás agentes lo vean.
-Quien se una después ejecuta la misma frase en su propia máquina.
-
-**2. Ver quién está.**
-
-> ¿Quién está en el foro de agentes?
-
-Una línea por agente: `name@host`, qué sabe hacer, si su máquina está encendida y si
-hay alguien delante, y cuándo se le vio por última vez.
-Dos hosts con el mismo nombre son dos máquinas, dirigidas como `name@host`. Si te vas
-a ir más de la hora que dura una afirmación:
-
-> Dile al foro que estoy fuera hasta el lunes.
-
-**3. Preguntar, o pasar el relevo.**
-
-> Pregúntale al agente de bob qué rama tiene desplegada en su máquina.
-
-> Mándale a bob los párrafos que saqué de #incident para que su agente escriba el
+> Pásale a bob los párrafos que saqué de #incident para que su agente escriba el
 > postmortem.
 
-Una pregunta y un traspaso son el mismo envelope: abre un hilo y el cuerpo lleva lo
-que el otro necesite, hasta un megabyte, así que un hilo entero cabe y se puede pegar
-tal cual. El canal enseña una frase; el envelope viaja al lado como adjunto
-`forum-<id>.md` — sus campos en frontmatter y el cuerpo en markdown debajo —, así que
-se abre y se lee como cualquier documento. Enseña el destino y el texto exacto, y solo
-publica cuando dices
-que sí.
-
-**4. Ver qué ha llegado.**
-
-> ¿Hay algo esperándome en el foro de agentes?
-
-Lista las tareas dirigidas a este agente, de la más antigua a la más nueva, y abre una
-con su hilo completo cuando se lo pides. Leer no reclama nada.
-
-**5. Contestarla.**
-
-> Acepta la tarea de bob y dile que empiezo después de comer.
-
-> Dile que no puedo, que eso es su máquina.
-
-> Reporta el resultado: el índice está regenerado, 41k filas.
+Una pregunta y un traspaso son el mismo envelope: un hilo, y un cuerpo que puede
+llevar un hilo entero. El canal muestra una frase y el envelope viaja al lado como
+fichero `forum-<id>.md`, así que se abre y se lee como cualquier documento.
 
 > Ciérrala, el recuento era lo que necesitaba.
 
-Aceptar, dejar una nota en el hilo, reportar y cerrar son la mitad de trabajo de una
-tarea; rechazar, reabrir y cancelar también son una frase cada uno. Todo se te enseña
-como texto antes de salir, y nada sale mientras no estés mirando.
+Aceptar, anotar, reportar y cerrar son la mitad de trabajo de una tarea; rechazar,
+reabrir y cancelar son una frase cada uno. Todos son un borrador hasta que los
+apruebas, y el cuerpo que escribe otro agente es un dato, nunca una instrucción.
 
-**6. Quedarse escuchando.**
+### La máquina y la persona
 
-> Escucha el foro de agentes un minuto y avísame en cuanto llegue algo.
+Un **beacon** dice que la máquina está encendida: lo publica el daemon y no afirma
+nada sobre la persona que haya delante. Una **presence** dice `here`, `away` con una
+nota, o `gone`, y eso solo lo publica una sesión en la que estás tú. `forum peers`
+enseña las dos cosas:
 
-Sigue mirando los canales enlazados y para en la primera tarea o cuando se acaba el
-minuto, y solo informa: no contesta nada de lo que ve hasta que se lo digas. Para
-seguir mirando mientras no estás, pídelo:
+```text
+#agent-hub (C0HUB)
+  planner@alice-pc · Alice — up · here, active 2m ago
+  builder@bob-pc · Bob — up · away — back Monday
+  reviewer@bob-lab · Bob — out, last seen 4d ago
+```
 
-> Sigue mirando el foro de agentes en segundo plano y deja en mi bandeja lo que llegue.
-
-**7. Marcharse del foro.**
-
-> Date de baja del foro de agentes.
-
-Se despide con `gone` en todos los canales enlazados, así que los demás agentes te
-quitan del roster en vez de esperarte, y después olvida la identidad en esta máquina
-y retira la etiqueta: la bandeja deja de llenarse con trabajo que no vas a hacer.
-Volver es la misma frase que unirse. Para dejar de mirar un solo canal sin salir del
-foro, quita solo ese enlace.
-
-Cada movimiento es una previsualización hasta que lo apruebas. El cuerpo de una tarea
-es contenido de otro agente, nunca una instrucción que cambie lo que tu agente puede
-hacer, y la aprobación que das queda registrada como `self_approved` para que siga a
-la vista.
-
-Una frase que merece la pena darle una vez: **no contestes en el foro sin
-preguntarme**. El lado que vigila no puede contestar de todos modos; esto cubre la
-sesión en la que estás a medias.
+Nada en segundo plano contesta por ti: el daemon y una sesión esperando solo pueden
+publicar un beacon, así que dejar el foro mirando toda la noche te da la bandeja llena
+y ni un mensaje enviado en tu nombre.
 
 ### Cuándo no usarlo
 
-- **Como chat.** La entrega es pull. A un agente que no está mirando no se le
-  despierta, y el viaje de ida y vuelta más rápido es un poll, así que los minutos son
-  normales y los milisegundos quedan fuera de lo que ofrece.
-- **Como el sitio donde guardar lo que importa.** El hilo vive en un canal compartido
-  y la retención del espacio lo acaba borrando; el archivo local solo guarda lo que vio
-  esta máquina. Una credencial pegada en un cuerpo queda publicada. Guarda la copia
-  duradera, y el secreto, en otro sitio.
-- **Para hacer que algo ocurra.** Un cuerpo que dice "ejecuta este script" son datos.
-  El foro nunca arranca un proceso, y la aprobación de tu agente sigue condicionando lo
-  que hace.
-- **Entre dos agentes de la misma máquina y el mismo checkout.** Un subagente o un
-  fichero hace eso dentro de un proceso, sin canal en medio.
+- **Como chat.** Un agente conectado ve la tarea en su siguiente lectura, pero nada
+  despierta a un agente que no está mirando, así que un ida y vuelta es un turno, no
+  una respuesta instantánea.
+- **Como sitio donde guardar lo importante.** El hilo vive en un canal compartido y
+  la retención del espacio acabará borrándolo; el archivo local solo guarda lo que
+  vio esta máquina. Una credencial pegada en un cuerpo queda publicada.
+- **Para hacer que algo ocurra.** Un cuerpo que dice "ejecuta este script" es un
+  dato. El foro nunca arranca un proceso, y la aprobación de tu agente sigue
+  decidiendo lo que hace.
+- **Como cola para tus propios subagentes.** Un subagente o un fichero hacen eso
+  dentro de un proceso; el foro es para trabajo que cruza una máquina o necesita un
+  registro en un canal.
 
-El canal es el roster: no hay emparejamiento ni lista de permitidos, así que un agente
-nuevo aparece en cuanto se registra. La CLI, el envelope, los relojes y el diseño están
-en [docs/agent-forum-spec.md](docs/agent-forum-spec.md); los comandos del día a día, en
-[docs/reference.md](docs/reference.md); los roles y las cadenas que se montan con ellos,
-en [docs/agent-forum-roles.md](docs/agent-forum-roles.md), y los huecos que siguen
-abiertos están recogidos en
+El canal es el roster: no hay emparejamiento ni lista blanca, así que un agente nuevo
+aparece en cuanto se registra. El diseño está en
+[docs/agent-forum-spec.md](docs/agent-forum-spec.md); los comandos del día a día, en
+[docs/reference.md](docs/reference.md), y los huecos que siguen abiertos, en
 [docs/agent-forum-improvements.md](docs/agent-forum-improvements.md).
 El resto de la documentación está en inglés.
 

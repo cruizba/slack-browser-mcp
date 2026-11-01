@@ -38,11 +38,9 @@ test('name@host is exact, a loose name has to be unique', () => {
   )
 })
 
-test('a capability tag narrows a broadcast', () => {
-  assert.equal(candidates(roster, { kind: 'anyone' }).length, 3)
+test('a broadcast names the whole roster', () => {
   assert.deepEqual(
-    candidates(roster, { kind: 'anyone', tag: 'review' }).map((peer) => peer.from),
-    ['reviewer@laptop'],
+    candidates(roster, { kind: 'anyone' }).map((peer) => peer.from),
+    ['builder@laptop', 'builder@desktop', 'reviewer@laptop'],
   )
-  assert.equal(candidates(roster, { kind: 'anyone', tag: 'deploy' }).length, 0)
 })

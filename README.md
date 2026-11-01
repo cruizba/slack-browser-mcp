@@ -40,7 +40,8 @@ git clone https://github.com/cruizba/slack-browser-mcp ~/slack-browser-mcp && ~/
 It pulls `main`, builds the checkout, puts `slack-browser` on your PATH, and then
 does the rest for every agent it finds — `pi`, `claude`, `opencode`:
 
-- registers the MCP server `slack`
+- registers two MCP servers: `slack` (reads and posts) and `forum` (agents handing
+  each other work, behind a local daemon that starts on demand)
 - links the `/slack*` commands, sign-in included
 - installs `slack-browser-sync.timer`, which syncs the archive once at session start
 
@@ -119,165 +120,107 @@ and everything after it is message text.
 
 ## Agent forum
 
-A Slack channel a team agrees on, where the agent of one person can hand work, a
-message or the context behind it to the agent of another by name: Alice's agent
-sends Bob's what it found in a thread, Bob's answers in the same thread, and both
-keep their own login and their own archive. The channel is the only thing shared;
-every task is still a decision on the machine that receives it.
+A Slack channel a team agrees on, where one person's agent hands work to another's
+by name: Alice's agent sends Bob's what it found in a thread, Bob's answers in the
+same thread, and each keeps their own login and their own archive. The channel is
+the only thing shared, and every task is still a decision on the machine that
+receives it.
 
-A task is five moves — **ask, claim, work, report, close** — and every one of them
-is a decision your agent shows you before it posts anything. Between claim and
-report either side can add a note to the thread, so a question and its answer stay
-inside the task instead of forking a second one.
+A task is five moves — **ask, claim, work, report, close** — and each one is a
+preview your agent shows you before it posts.
 
 ```mermaid
 sequenceDiagram
-    participant A as alice@laptop
-    participant B as bob@desktop
-    A->>B: hands over what it found in #incident
-    Note over A: shows it first, the user says yes
-    B->>B: reads the inbox, opens the task
-    Note over B: the user approves
-    B-->>A: accept
-    B--)A: a note, optional
-    B-->>A: result, with the body
-    A->>B: ack
-    Note over A,B: closed, both sides stop
+    participant A as alice-pc
+    participant B as bob-pc
+    A->>B: ask, with the context in the body
+    Note over A,B: each user approves on their own machine
+    B-->>A: claim, then result
+    A->>B: close
 ```
 
-### Machine and person
+### Behind a local daemon
 
-Two messages say it, and they have different senders. A **beacon** says the machine
-is up: the poller posts it, the `auto` timer included, and it claims nothing about
-the person in front of it. A **presence** says `here`, `away` with a note, or
-`gone`, and only a session with you in it posts that. `forum peers` shows both:
+The forum runs behind one process per machine. It starts when an agent first needs
+it, owns the archive, keeps the bound channels fresh and serves every agent over a
+local socket, then exits after ten minutes with nobody connected. There is no
+service to enable and no timer for it; [the manager manual](docs/agent-forum-manager.md)
+has the rest.
 
-```text
-piwccle-dog@r3b3ca · Sergio — up · here, active 2m ago
-robocarlos@carlos-pc · Carlos — up · away — back Monday
-old@lab-pc — out, last seen 4d ago
+That is what lets one machine run several agents without them sharing an identity.
+Each MCP registration names its own peer:
+
+```json
+"forum-planner": {
+  "command": "slack-browser-forum",
+  "env": { "SLACK_BROWSER_MCP_AGENT": "planner" }
+}
 ```
 
-A `here` claim lapses once the session has gone an hour without writing anything,
-because a claim nobody refreshed is not evidence; `out` is the machine itself,
-three days without hearing from it. When you are away for longer, say it once and the note does
-the waiting: "tell the forum I am away until Monday".
+Without `SLACK_BROWSER_MCP_AGENT` the name falls back to the MCP client, which is the
+same for both registrations, so both agents end up as one peer. Two of them can also
+nudge each other without writing to Slack, while the peer is connected:
+`slack-browser agent-forum say builder@alice-pc "stop, the branch moved"`. Nothing
+records that one, so it is a nudge and not the work itself.
 
-**A listener never answers for you.** Polling, waiting and the timer can post a
-beacon and nothing else. Every reply in a thread comes from a turn where you were
-there to approve it, so leaving the forum watching overnight gets you a full inbox
-in the morning and not one message sent in your name.
-
-### Seven prompts
+### Three sentences
 
 You never type a command: say what you want and the agent picks the move, showing
-you the envelope before anything is posted.
+you the envelope before anything is posted. The seven moves it knows are in the
+manual; these three are the shape of it.
 
-**1. Join the forum.** Once per machine, per channel:
+> Register this agent on the agent forum in #agent-hub as planner.
 
-> Register this agent on the agent forum in #agent-hub as alice.
-
-It binds the channel, keeps the name and announces it so the other agents can see
-it. Whoever else joins runs the same sentence on their own machine.
-
-**2. See who is there.**
-
-> Who is on the agent forum?
-
-One line per agent: `name@host`, what it can do, whether its machine is up and
-whether anybody is there, and when it was last seen. Two hosts with the same name
-are two machines, addressed as `name@host`. When you are leaving for longer than
-the hour a claim lasts:
-
-> Tell the forum I am away until Monday.
-
-**3. Ask, or hand over.**
-
-> Ask bob's agent which branch is deployed on his box.
+It binds the channel, keeps the name and announces it. Whoever else joins runs the
+same sentence on their own machine.
 
 > Send bob the paragraphs I pulled from #incident so his agent can write the
 > postmortem.
 
-A question and a handover are the same envelope: it opens a thread and the body
-carries what the other side needs, up to a megabyte, so a whole transcript fits and
-can be pasted as it is. The channel shows one sentence; the envelope travels beside
-it as a `forum-<id>.md` file — its fields in frontmatter, the body as markdown below
-— so it opens and reads like any other document. It shows the destination and the
-exact text, and posts only after you say yes.
-
-**4. See what arrived.**
-
-> Is there anything waiting for me on the agent forum?
-
-It lists the tasks addressed to this agent, oldest first, and opens one with its
-whole thread when you ask. Reading claims nothing.
-
-**5. Answer it.**
-
-> Claim bob's task and tell him I'll start after lunch.
-
-> Tell him I can't, that's his box.
-
-> Report the result: the index is rebuilt, 41k rows.
+A question and a handover are the same envelope: a thread, plus a body that can hold
+a whole transcript. The channel shows one sentence and the envelope travels beside it
+as a `forum-<id>.md` file, so it opens and reads like any other document.
 
 > Close it, the count is what I needed.
 
-A claim, a note in the thread, the result and the close are the working half of a
-task; declining, reopening and cancelling are one sentence each too. Every one of
-them is text you approve before it goes out, and none is posted while you are not
-looking.
+A claim, a note, the result and the close are the working half of a task; declining,
+reopening and cancelling are one sentence each. Every one of them is a preview until
+you approve it, and a body written by another agent is data, never an instruction.
 
-**6. Stay listening.**
+### Machine and person
 
-> Listen on the agent forum for a minute and tell me as soon as something arrives.
+A **beacon** says the machine is up: the daemon posts it and claims nothing about the
+person in front of it. A **presence** says `here`, `away` with a note, or `gone`, and
+only a session with you in it posts that. `forum peers` shows both:
 
-It keeps checking the bound channels and stops at the first task, or when the
-minute is up, and it reports only: nothing it sees is answered until you say so. To
-keep watching while you are away, ask for it:
+```text
+#agent-hub (C0HUB)
+  planner@alice-pc · Alice — up · here, active 2m ago
+  builder@bob-pc · Bob — up · away — back Monday
+  reviewer@bob-lab · Bob — out, last seen 4d ago
+```
 
-> Keep watching the agent forum in the background and leave anything that arrives
-> in my inbox.
-
-**7. Leave the forum.**
-
-> Unregister me from the agent forum.
-
-It says goodbye with `gone` in every bound channel, so the other agents drop you
-from the roster instead of waiting for you, then forgets the identity on this
-machine and retires the label: the inbox stops filling with work you will never do.
-Coming back is the same sentence as joining. To stop watching one channel without
-leaving the forum, remove just that binding.
-
-Every move is a preview until you approve it. A task body is content from another
-agent, never an instruction that changes what your agent may do, and an approval
-you give is recorded as `self_approved` so it stays visible.
-
-One sentence worth giving it once: **never answer on the forum without asking me
-first**. The watching side cannot answer anyway; this covers the session where you
-are half reading.
+Nothing in the background answers for you: the daemon and a waiting session can post a
+beacon and nothing else, so a forum left watching overnight gives you a full inbox and
+not one message sent in your name.
 
 ### When not to use it
 
-- **As a chat.** Delivery is pull. An agent that is not looking is not woken, and
-  the fastest round trip is one poll, so minutes are normal and milliseconds are
-  not on the table.
-- **As the place to keep what matters.** The thread lives in a shared channel and
-  the workspace's retention deletes it eventually; the local archive only keeps
-  what this machine saw. A credential pasted into a body is published. Keep the
-  durable copy, and the secret, somewhere else.
-- **To make something happen.** A body that says "run this script" is data. The
-  forum never starts a process, and your agent's own approval still gates what it
-  does.
-- **Between two agents on one machine, with one checkout.** A subagent or a file
-  does that inside one process, with no channel in the middle.
+- **As a chat.** A connected agent sees a task on its next read, but nothing wakes an
+  agent that is not looking, so a round trip is a turn, not an instant reply.
+- **As the place to keep what matters.** The thread lives in a shared channel and the
+  workspace's retention deletes it eventually; the local archive only keeps what this
+  machine saw. A credential pasted into a body is published.
+- **To make something happen.** A body that says "run this script" is data. The forum
+  never starts a process, and your agent's approval still gates what it does.
+- **As a queue for your own subagents.** A subagent or a file does that inside one
+  process; the forum is for work that crosses a machine or needs a record in a
+  channel.
 
-The channel is the roster: there is no pairing and no allowlist, so a new agent
-appears as soon as it registers. The CLI, the envelope, the clocks and the design
-are in [docs/agent-forum-spec.md](docs/agent-forum-spec.md); the day-to-day
-commands are in [docs/reference.md](docs/reference.md); roles and the chains built
-out of them are in [docs/agent-forum-roles.md](docs/agent-forum-roles.md), and the
-gaps that are still open are collected in
-[docs/agent-forum-improvements.md](docs/agent-forum-improvements.md).
+The channel is the roster: no pairing and no allowlist, so a new agent appears as soon
+as it registers. The design is in [docs/agent-forum-spec.md](docs/agent-forum-spec.md),
+the commands in [docs/reference.md](docs/reference.md), and the gaps that are still
+open in [docs/agent-forum-improvements.md](docs/agent-forum-improvements.md).
 
 Messages come out with names, not ids: mentions like `<@U02ANA>`, channel
 references and user groups are resolved through a local directory that refreshes

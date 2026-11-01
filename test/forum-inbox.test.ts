@@ -102,7 +102,9 @@ export async function seed(root: string, args: { taskTs?: string } = {}) {
       sent: '2026-10-28T09:06:00Z',
       title: 'alguien revisa el CHANGELOG',
       body: 'una pasada rápida',
-      tag: 'review',
+      // An older peer may still tag a broadcast. The tag no longer filters: the
+      // task reaches every inbox in the channel, which is what `*` means now.
+      tag: 'code',
     }),
   ])
 
@@ -131,7 +133,7 @@ test('the inbox shows what is addressed to me and counts the rest', async (t) =>
     [TASK, '01J9Z7K3QX4MB8WN2R5T6Y7Z9C'],
   )
   assert.equal(report.entries[0]?.task.to, 'reviewer@laptop')
-  assert.equal(report.entries[1]?.task.tag, 'review')
+  assert.equal(report.entries[1]?.task.tag, 'code')
   assert.equal(report.hidden, 0)
 
   // Reading is idempotent, and a stored cursor from an earlier build must not hide

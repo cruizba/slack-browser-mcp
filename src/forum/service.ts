@@ -335,7 +335,6 @@ export interface PostTaskArgs {
   to: string
   title: string
   body: string
-  tag?: string
   deadline?: string
   parent?: string
   binding?: string
@@ -351,7 +350,6 @@ export interface PostTaskArgs {
 function pickBinding(
   views: readonly BindingView[],
   to: string,
-  tag: string | undefined,
   only: string | undefined,
 ): { view: BindingView; toValue: string; target: string; peer?: Peer } {
   if (only) {
@@ -359,7 +357,7 @@ function pickBinding(
     if (!view) fail(`No bound channel called "${only}".`, '`agent-forum list` shows the bindings.')
     const target = parseTarget(to)
     if (target.kind === 'anyone') {
-      return { view, toValue: '*', target: tag ? `*#${tag}` : '*' }
+      return { view, toValue: '*', target: '*' }
     }
     const peer = resolvePeer(view.roster, target)
     return { view, toValue: peer.from, target: peer.from, peer }
@@ -374,7 +372,7 @@ function pickBinding(
       )
     }
     const view = views[0]!
-    return { view, toValue: '*', target: tag ? `*#${tag}` : '*' }
+    return { view, toValue: '*', target: '*' }
   }
 
   const knowing = views.filter((view) => candidates(view.roster, target).length > 0)
@@ -418,7 +416,7 @@ export async function postTask(
     fail('No forum channel bound on this machine.', 'Bind one: `agent-forum add <channel>`.')
   }
 
-  const { view, toValue, target, peer } = pickBinding(views, args.to, args.tag, args.binding)
+  const { view, toValue, target, peer } = pickBinding(views, args.to, args.binding)
   const warning = targetWarning(context, parseTarget(args.to), view.roster, peer)
 
   let depth = 0
@@ -436,7 +434,6 @@ export async function postTask(
     sent: context.now.toISOString(),
     title: args.title,
     body: args.body,
-    ...(args.tag && toValue === '*' ? { tag: args.tag } : {}),
     ...(args.deadline ? { deadline: args.deadline } : {}),
     ...(args.parent ? { parent: args.parent } : {}),
     ...(depth > 0 ? { depth } : {}),
@@ -649,12 +646,6 @@ export async function bindChannel(
 
 function describeChannel(channel: SlackChannel): string {
   return channel.name ? `#${channel.name}` : channel.id
-}
-
-export interface RegisterArgs {
-  name: string
-  host: string
-  capabilities: string[]
 }
 
 export async function registerIdentity(

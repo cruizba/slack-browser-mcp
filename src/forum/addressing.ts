@@ -3,7 +3,7 @@
  *
  * `to` is a string on the wire, but it carries three intended shapes: one exact
  * agent (`name@host`), one name that must resolve uniquely (`name`), and a
- * broadcast (`*`), optionally narrowed by a capability tag. Resolving here rather
+ * broadcast (`*`) to the whole channel. Resolving here rather
  * than at posting time keeps the rules in one place: an ambiguous name is refused
  * with the candidates instead of guessed, because sending work to the wrong agent
  * looks exactly like sending it to the right one.
@@ -13,16 +13,14 @@ import { ForumError } from '../errors.ts'
 import { normalizeName } from './identity.ts'
 import { hostsOf, type Peer } from './roster.ts'
 
-export type Target =
-  | { kind: 'peer'; name: string; host?: string }
-  | { kind: 'anyone'; tag?: string }
+export type Target = { kind: 'peer'; name: string; host?: string } | { kind: 'anyone' }
 
 export function parseTarget(raw: string): Target {
   const value = raw.trim()
   if (value === '') {
     throw new ForumError(
       'A task needs a destination.',
-      'Use `name@host`, a unique `name`, or `*` for anyone (optionally with --tag).',
+      'Use `name@host`, a unique `name`, or `*` for everyone in the channel.',
     )
   }
   if (value === '*') return { kind: 'anyone' }
@@ -43,16 +41,12 @@ export function parseTarget(raw: string): Target {
 }
 
 export function targetLabel(target: Target): string {
-  if (target.kind === 'anyone') return target.tag ? `*#${target.tag}` : '*'
+  if (target.kind === 'anyone') return '*'
   return target.host ? `${target.name}@${target.host}` : target.name
 }
 
 export function candidates(roster: readonly Peer[], target: Target): Peer[] {
-  if (target.kind === 'anyone') {
-    return target.tag === undefined
-      ? [...roster]
-      : roster.filter((peer) => peer.capabilities.includes(target.tag!))
-  }
+  if (target.kind === 'anyone') return [...roster]
   const matching = roster.filter((peer) => peer.name === target.name)
   return target.host === undefined
     ? matching

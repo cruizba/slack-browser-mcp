@@ -8,9 +8,17 @@ import { fileURLToPath } from 'node:url'
 
 import { parseArgs, type ParsedArgs } from './args.ts'
 import { login } from './auth/login.ts'
-import { autoOff, autoOn, autoStatus } from './forum/auto.ts'
 import { openForum, reload, requireIdentity, type ForumContext } from './forum/context.ts'
-import { defaultHost, normalizeCapabilities, normalizeName } from './forum/identity.ts'
+import {
+  callDaemon,
+  daemonPaths,
+  daemonStatus,
+  serveDaemon,
+  startDaemon,
+  stopDaemon,
+} from './forum/daemon.ts'
+import { buildServer } from './mcp/server.ts'
+import { defaultHost, normalizeName } from './forum/identity.ts'
 import { inboxEntries, loadViews, type InboxEntry } from './forum/inbox.ts'
 import { describeLimits, refreshWindowDays } from './forum/limits.ts'
 import { locateTask, postTask, replyTo, transportFor, announce, announceLiveness, registerIdentity, unregisterIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
@@ -669,8 +677,12 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       }
       const limits = context.limits
       console.log(`timings: ${describeLimits(limits)}`)
-      const auto = await autoStatus()
-      console.log(`auto: ${auto.detail}${auto.enabled ? ' (enabled)' : ''}`)
+      const daemon = await daemonStatus()
+      console.log(
+        daemon.running
+          ? `daemon: running at ${daemon.socket}, ${daemon.peers.length} peer(s) connected`
+          : `daemon: not running; the next forum client starts it (${daemon.socket})`,
+      )
       if (context.file.ignored.length > 0) {
         console.log(`retired: ${context.file.ignored.join(', ')}`)
       }
@@ -720,21 +732,14 @@ async function commandForum(args: ParsedArgs): Promise<number> {
     case 'register': {
       const name = rest[0]
       if (!name) throw new Error('agent-forum register needs a name')
-      const capabilities = (stringFlag(args, 'capabilities') ?? '')
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean)
       const identity = {
         name: normalizeName(name),
         host: normalizeName(stringFlag(args, 'host') ?? defaultHost()),
-        capabilities: normalizeCapabilities(capabilities),
+        capabilities: [],
       }
       if (!identity.name) throw new Error(`"${name}" is not a usable name`)
       const result = await registerIdentity(context, identity)
-      console.log(
-        `registered ${identity.name}@${identity.host} as ${context.identityKey}` +
-          (identity.capabilities.length > 0 ? ` [${identity.capabilities.join(', ')}]` : ''),
-      )
+      console.log(`registered ${identity.name}@${identity.host} as ${context.identityKey}`)
       // The one write that does not ask first: it announces this machine's own
       // name, and a peer nobody can discover is a peer nobody can address.
       if (args.flags.get('no-post') === true) {
@@ -856,7 +861,6 @@ async function commandForum(args: ParsedArgs): Promise<number> {
           to,
           title,
           body,
-          ...(stringFlag(args, 'tag') ? { tag: stringFlag(args, 'tag')! } : {}),
           ...(stringFlag(args, 'deadline') ? { deadline: stringFlag(args, 'deadline')! } : {}),
           ...(stringFlag(args, 'parent') ? { parent: stringFlag(args, 'parent')! } : {}),
           ...(stringFlag(args, 'binding') ? { binding: stringFlag(args, 'binding')! } : {}),
@@ -967,20 +971,72 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       }
     }
 
-    case 'auto': {
+    case 'daemon': {
       const action = rest[0] ?? 'status'
-      if (action === 'on') {
-        console.log(await autoOn())
+      if (action === 'serve') {
+        // The daemon is the forum server; the proxy in `src/mcp/forum.ts` is what
+        // agents speak to, and it starts this process when nobody else has.
+        await serveDaemon({
+          build: (hooks) =>
+            buildServer({
+              surface: 'forum',
+              daemon: true,
+              onIdentity: hooks.onIdentity,
+              localMessages: hooks.localMessages,
+            }),
+        })
         return 0
       }
-      if (action === 'off') {
-        console.log(await autoOff())
+      if (action === 'start') {
+        const result = await startDaemon()
+        console.log(
+          result.spawned
+            ? `started the forum daemon${result.pid ? ` (pid ${result.pid})` : ''}; it leaves after a quiet window`
+            : `the forum daemon was already running${result.pid ? ` (pid ${result.pid})` : ''}`,
+        )
         return 0
       }
-      if (action !== 'status') throw new Error(`unknown auto action: ${action}`)
-      const status = await autoStatus()
-      console.log(`auto: ${status.detail}${status.enabled ? ' (enabled)' : ''}`)
-      return 0
+      if (action === 'stop') {
+        const result = await stopDaemon()
+        console.log(
+          result.stopped
+            ? `stopped the forum daemon${result.pid ? ` (pid ${result.pid})` : ''}`
+            : 'no forum daemon was running',
+        )
+        return 0
+      }
+      if (action !== 'status') throw new Error(`unknown daemon action: ${action}`)
+      const status = await daemonStatus()
+      const lines = [
+        `socket: ${status.socket}`,
+        status.running
+          ? `state: running${status.pid ? `, pid ${status.pid}` : ''}, ${status.peers.length} peer(s) connected`
+          : 'state: not running; the next forum client starts it',
+        `idle exit: after ${status.idle_seconds}s with no clients`,
+      ]
+      for (const peer of status.peers) {
+        lines.push(`peer: ${peer.label ?? 'unregistered'}${peer.client ? ` (${peer.client})` : ''}`)
+      }
+      console.log(lines.join('\n'))
+      return status.running ? 0 : 1
+    }
+
+    case 'say': {
+      const to = rest[0]
+      const text = rest.slice(1).join(' ').trim()
+      if (!to || !text) {
+        throw new Error('agent-forum say needs a peer (`name@host`) and a message')
+      }
+      const status = await daemonStatus()
+      if (!status.running) {
+        throw new ForumError(
+          'The forum daemon is not running, so there is nothing to deliver to.',
+          'Start it with `slack-browser agent-forum daemon start`, or post in Slack instead.',
+        )
+      }
+      const result = await callDaemon('forum_say', { to, text })
+      console.log(result.text)
+      return result.isError ? 1 : 0
     }
 
     case 'forget': {
@@ -1000,7 +1056,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
     default:
       throw new Error(
         `unknown agent-forum subcommand: ${subcommand}\n` +
-          'try list, add, remove, register, peers, inbox, task, post, accept, decline, progress, result, ack, reopen, cancel, wait, poll, auto, forget',
+          'try list, add, remove, register, peers, inbox, task, post, accept, decline, progress, result, ack, reopen, cancel, wait, poll, say, daemon, forget',
       )
   }
 }

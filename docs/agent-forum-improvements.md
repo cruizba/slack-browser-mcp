@@ -1,9 +1,12 @@
 # Agent forum: what to improve next
 
-The forum works end to end (F1 to F5 in `docs/agent-forum-spec.md`), so what is
-left is mostly the part between the tool and the person: knowing that work
-arrived, knowing what it owes, and closing it without hunting for the thread.
-Everything below keeps the two rules the design rests on.
+The forum works end to end (F1 to F6 in `docs/agent-forum-spec.md`), and the local
+daemon answered the delivery half of the first item: what arrives while an agent is
+connected is in its inbox on the next read, and what arrives while it is away is
+still there when it returns. What is left is mostly the part between the tool and
+the person: knowing that work arrived while nobody was looking, knowing what it
+owes, and closing it without hunting for the thread. Everything below keeps the two
+rules the design rests on.
 
 - Every write is approved on the machine that receives it.
 - No message runs anything, names a command, or widens what an agent may do.
@@ -13,32 +16,32 @@ it would buy, with a rough size: **S** is a day inside one module, **M** is a
 couple of days and touches the wire format or a second surface, **L** is a change
 that needs its own spec section.
 
-## 1. Nothing tells you that work arrived (the big one)
+## 1. Nothing wakes an agent that is not looking
 
-Today the loop is pull from every side. `forum auto on` installs
-`slack-browser-forum.timer`, which runs `forum poll` once a minute; a poll
-refreshes the archive and stops there. If nobody asks, nobody knows. MCP cannot
-fix this, because a server cannot wake the agent that is not calling it, so the
-only places to hook are the timer and the terminal.
+MCP cannot interrupt a client, so a task that landed in the inbox cannot become a
+turn by itself. That last mile needs an adapter per harness, and it is the only
+part of "work arrived" that is still open.
 
-Three options, and they compose:
+Three candidates, and they compose:
 
-- **A spool file (S).** `poll` writes one small JSON file per newly arrived task
-  under `~/.local/share/slack-browser-mcp/forum/spool/`, then renames it into
+- **A spool file (S).** The daemon writes one small JSON file per newly arrived
+  task under `~/.local/share/slack-browser-mcp/forum/spool/`, then renames it into
   place so a reader never sees half a file. A systemd `.path` unit, an editor, or
   a shell loop watches that directory. This is data only: no command is
   configured, none is run, and the consumer is whatever the user already trusts.
-- **A notification command (S).** A `notify` key in `forum.json`, run by `poll`
+- **A notification command (S).** A `notify` key in `forum.json`, run by the daemon
   after the spool write. The command is fixed at configuration time and receives
   the task id and its one-line summary as arguments or environment, never
   interpolated into a shell string. Keep it to `argv` execution: no `sh -c`, no
   template substitution from the envelope.
 - **`wait --exec` (S).** The same as the previous one, but scoped to a single
-  invocation, for people who do not want a timer. `forum wait --exec notify-send`
-  is easy to explain and easy to stop.
+  invocation, for people who do not want anything resident. `forum wait --exec
+  notify-send` is easy to explain and easy to stop.
 
 Recommended order: the spool first, because it is inert and every other consumer
-can be built on it; the notify key second as the friendly wrapper.
+can be built on it; the notify key second as the friendly wrapper. The
+`agent-forum wait --follow --json` stream is the fourth path, for a harness that
+can read line-delimited JSON itself.
 
 ## 2. Waiting for one task, not for anything
 
@@ -56,8 +59,9 @@ and documented). Then fix the spec line.
 
 ## 3. The CLI has no status worth the name
 
-`forum list` prints the identity, the bindings and the clocks. `forum_status` in
-`src/mcp/server.ts` prints peers and open tasks per channel. Neither answers the
+`forum list` prints the identity, the bindings, the clocks and the daemon.
+`forum_status` in `src/mcp/server.ts` prints peers and open tasks per channel.
+Neither answers the
 three questions a person actually has at the start of the day: what is waiting
 for me, what is waiting for someone else, and what am I holding up.
 
@@ -82,7 +86,7 @@ of the state machine (S).
 
 ## 5. Claiming a broadcast is advisory by design, but could be consistent
 
-`*` with a tag is meant to be claimed by one agent, and the first `accept` wins.
+`*` is meant to be claimed by one agent, and the first `accept` wins.
 Two agents accepting within the same poll window both see their own accept as
 valid, and only later does one read `taken by`. The spec defers a lease because a
 lease needs a clock the channel agrees on.
@@ -109,11 +113,11 @@ and the same tests.
 ## 7. Presence overclaims what it knows — done
 
 Fixed in the split between `beacon` and `presence` (`docs/agent-forum-spec.md`
-§6.1): the poller no longer speaks for the person, `here` expires after
+§6.1): the daemon no longer speaks for the person, `here` expires after
 `here_seconds`, and anything a session writes keeps it fresh without another
 message.
 
-## 8. Anyone in the channel can type an envelope## 8. Anyone in the channel can type an envelope
+## 8. Anyone in the channel can type an envelope
 
 Nothing authenticates a poster. `from` is asserted by whoever posts, and the
 checks that exist compare it against the roster and against the addressee of the
@@ -183,13 +187,13 @@ to say one sentence (S, wire-compatible).
 `forum away "<note>"` posts it, `forum peers` renders it as `up · away — back
 Monday`, and the note no longer has to ride on a heartbeat that claims `listening`.
 
-## 13. Small friction## 13. Small friction
+## 13. Small friction
 
-- **A tag nobody advertises.** `post '*' --tag review` succeeds even when no peer
-  registered that capability, and the task waits until the TTL. The preview
-  already warns when a matched peer is out (`targetWarning` in
+- **A broadcast to an empty roster.** `post '*'` succeeds when nobody has
+  registered in the channel, and the task waits until the TTL. The preview already
+  warns when every matching peer is out (`targetWarning` in
   `src/forum/service.ts`); it should also warn, or refuse without `--force`, when
-  the roster has no peer with that tag (S).
+  the roster has nobody in it (S).
 - **Permalinks.** `task <id>` prints ids and times but not a Slack link. The
   archive already holds the channel id and the `ts`, and the account usually
   carries the `team_domain`, so a permalink is one string away and a human
@@ -205,7 +209,8 @@ Monday`, and the note no longer has to ride on a heartbeat that claims `listenin
 ## 14. What not to add
 
 - **An app, a bot token, or `metadata`.** `src/forum/envelope.ts` explains why the
-  envelope lives in the message text, and none of that has changed.
+  envelope travels as an attachment on a user session instead of a bot message with
+  metadata, and none of that has changed.
 - **Post budgets.** They were removed on purpose (`src/forum/limits.ts` keeps only
   clocks). A conversation that gets refused mid-task costs more than the noise it
   prevents.
@@ -216,8 +221,9 @@ Monday`, and the note no longer has to ride on a heartbeat that claims `listenin
   says so. Anything finer belongs in the approval in front of each task.
 - **Attachments and URL fetching.** Both widen the security model for a feature
   that `read_file` and the archive already cover.
-- **A resident daemon.** The timer plus a spool directory covers what a daemon
-  would, without a process that outlives the session.
+- **A second daemon, or one per workspace.** One process per machine already
+  multiplexes every workspace and every agent; a second would bring back the
+  competing writers the archive lock exists to arbitrate.
 
 ## Suggested order
 
@@ -228,13 +234,12 @@ now, so carrying a pasted summary is the easy case.
 | Step | Size | Why first |
 | --- | --- | --- |
 | `--body-file` and `--body -` | S | A long body without quoting it into a shell |
-| Spool file on poll | S | Nothing else fixes "I did not know it arrived" |
+| Spool file from the daemon | S | The inert half of the wake-up problem |
+| Notify hook on the daemon | S | The friendly wrapper over the spool |
 | `forum status` digest | S | Makes the inbox usable with one command |
 | Ack debt in the inbox | S | Stops finished work from reading as pending |
 | `wait <id>` filter | S | Enables the script that waits for one answer |
 | Tag warning at post | S | Turns a silently dead task into a visible one |
-| `listening_seconds` | S | Makes the roster mean what the roles page assumes |
-| Away note on presence | S | A handover is visible before somebody posts into it |
 | `require_human` | M | The MCP surface stops being able to approve itself |
 | Deterministic claim winner | M | Broadcast tasks stop ending in two accepts |
 | Owner check, optional | M | A member can no longer post as a peer |

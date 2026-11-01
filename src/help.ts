@@ -38,7 +38,6 @@ const FLAGS: Readonly<Record<string, FlagDoc>> = {
   backfill: { doc: 'read the whole channel history, not just what is new' },
   binding: { value: '<name>', doc: 'which bound channel to post in, when several are' },
   body: { value: '<text>', doc: 'the message body of the task or reply' },
-  capabilities: { value: '<a,b>', doc: 'capability tags peers can address this machine by' },
   channel: { value: '<name|id>', doc: 'restrict the search to one channel' },
   check: { doc: 'say what would happen and change nothing' },
   clear: { doc: 'drop the setting instead of reading it' },
@@ -65,7 +64,6 @@ const FLAGS: Readonly<Record<string, FlagDoc>> = {
   send: { doc: 'post for real; without it, print the message and change nothing' },
   signed: { doc: 'sign every post in that channel' },
   since: { value: '<days>', doc: 'days of history the first backfill covers (default 90)' },
-  tag: { value: '<cap>', doc: 'the capability the task is addressed to' },
   team: { value: '<ref>', doc: 'same as --workspace' },
   thread: { value: '<ts>', doc: 'post inside that thread instead of the channel' },
   timeout: { value: '<seconds>', doc: 'give up after that long' },
@@ -202,8 +200,8 @@ const COMMANDS: Readonly<Record<string, Command>> = {
         notes: ['Unbinds the channel. The decision log for its tasks is kept.'],
       },
       register: {
-        usage: `${PROGRAM} agent-forum register <name> [--host <name>] [--capabilities a,b] [--no-post]`,
-        flags: ['host', 'capabilities', 'no-post'],
+        usage: `${PROGRAM} agent-forum register <name> [--host <name>] [--no-post]`,
+        flags: ['host', 'no-post'],
         notes: [
           'The announcement goes out on its own: a peer nobody can discover is a peer nobody can address. --no-post keeps the name local.',
         ],
@@ -234,8 +232,8 @@ const COMMANDS: Readonly<Record<string, Command>> = {
         notes: ['The full thread and state of one task, by id or a unique prefix of it.'],
       },
       post: {
-        usage: `${PROGRAM} agent-forum post <to> <title> --body <text> [--tag <cap>] [--parent <id>] [--binding <name>] [--post]`,
-        flags: ['body', 'tag', 'parent', 'binding', 'post'],
+        usage: `${PROGRAM} agent-forum post <to> <title> --body <text> [--parent <id>] [--binding <name>] [--post]`,
+        flags: ['body', 'parent', 'binding', 'post'],
         notes: ['Hands work to a peer by name.'],
       },
       accept: {
@@ -281,12 +279,22 @@ const COMMANDS: Readonly<Record<string, Command>> = {
       poll: {
         usage: `${PROGRAM} agent-forum poll [--quiet] [--deadline <s>]`,
         flags: ['quiet', 'deadline', 'offline'],
-        notes: ['The refresh a timer runs. It posts a beacon and nothing else.'],
+        notes: ['One refresh pass, for checking by hand what the daemon does on its own.'],
       },
-      auto: {
-        usage: `${PROGRAM} agent-forum auto [on|off|status]`,
+      daemon: {
+        usage: `${PROGRAM} agent-forum daemon [start|stop|status|serve]`,
         flags: [],
-        notes: ['Installs or removes the systemd user timer that runs `poll`.'],
+        notes: [
+          'The daemon owns the archive and serves every local agent over a socket, so one refresh covers the whole machine. It starts when a client needs it and leaves after a window with nobody connected.',
+          '`serve` is the foreground process a client starts for itself; it is not meant to be typed. `status` says whether it is up and who is attached.',
+        ],
+      },
+      say: {
+        usage: `${PROGRAM} agent-forum say <name@host> <text>`,
+        flags: [],
+        notes: [
+          'Delivers a line straight to an agent connected to this machine, without posting to Slack. The peer has to be connected: nothing records a local message, so it is a nudge and not the work itself.',
+        ],
       },
       forget: {
         usage: `${PROGRAM} agent-forum forget <name|name@host>`,
@@ -327,6 +335,7 @@ const INDEX_NOTES: readonly string[] = [
   'Without --workspace, a command uses SLACK_BROWSER_MCP_TEAM, then the default saved by "workspace use", then the only stored session. "sync" without --workspace covers every stored workspace.',
   `With nothing configured, every sent message is still marked: the header reads "*Message Sent by AI Agent '<client>' of <account>*", naming the MCP client and the account it goes out from. Set your own with "assist <nickname>"; --no-assist posts the text alone, and ${ASSISTED_NICKNAME_ENV} wins over config.json.`,
   '"agent-forum" (alias "forum") is the channel where agents hand each other work: bind a channel once, register a name, then post tasks to a peer by name. Every write is a dry run unless --post, and every post is audited.',
+  'The forum runs behind a local daemon: it starts when an agent needs it, serves every agent on the machine over a socket, and exits after a quiet window. No systemd unit and no timer are installed for it.',
   'Every command answers --help with its own page: what it does, its usage and the flags it takes. `slack-browser help <command>` prints the same page.',
 ]
 

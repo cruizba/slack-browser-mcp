@@ -9,7 +9,8 @@
     "node": ">=22"
   },
   "bin": {
-    "slack-browser": "dist/cli.js"
+    "slack-browser": "dist/cli.js",
+    "slack-browser-forum": "dist/mcp/forum.js"
   },
   "files": [
     "dist"

@@ -16,7 +16,7 @@ import { z } from 'zod'
 
 import { forumPath } from '../config/paths.ts'
 import { StoreError } from '../errors.ts'
-import { agentName, type Identity } from './identity.ts'
+import { AGENT_ENV, agentName, normalizeName, type Identity } from './identity.ts'
 import { DEFAULT_LIMITS, LimitsSchema, type ForumLimits } from './limits.ts'
 
 export const FORUM_VERSION = 1
@@ -152,6 +152,11 @@ export class ForumStore {
    * name, so `pi` and `claude` on one machine keep separate names and cursors.
    */
   resolveIdentity(file: ForumFile, clientName?: string): { key: string; identity?: StoredIdentity } {
+    // An explicit name is a request for that key, not a hint: borrowing the only
+    // identity on the machine when the named key does not exist yet would make the
+    // first `register` of a second agent overwrite the first one.
+    const named =
+      normalizeName(process.env[AGENT_ENV] ?? '') || normalizeName(clientName ?? '')
     const key = agentName({
       env: process.env,
       client: clientName,
@@ -159,8 +164,9 @@ export class ForumStore {
     })
     const identity = file.identities[key]
     if (identity) return { key, identity }
-    // One registered identity on the machine is the answer for any client: the
-    // usual way to register is the CLI, which has no client name to key on.
+    if (named) return { key }
+    // With no name to key on (a plain CLI call), one registered identity is the
+    // answer for any client.
     const only = Object.keys(file.identities)
     if (only.length === 1) {
       const stored = file.identities[only[0]!]!

@@ -224,7 +224,7 @@ test('the roster prints the machine and the person as two columns', async () => 
     decisions: new Map(),
   }
   const text = renderPeers(view as never, NOW, DEFAULT_LIMITS).join('\n')
-  assert.match(text, /builder@laptop · bob \[code\] — up · here, active now/)
-  assert.match(text, /planner@alice-pc · bob \[code\] — up · away — back Monday/)
-  assert.match(text, /old@lab-pc · bob \[code\] — out, last seen \d+d ago/)
+  assert.match(text, /builder@laptop · bob — up · here, active now/)
+  assert.match(text, /planner@alice-pc · bob — up · away — back Monday/)
+  assert.match(text, /old@lab-pc · bob — out, last seen \d+d ago/)
 })

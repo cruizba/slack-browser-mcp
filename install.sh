@@ -101,20 +101,24 @@ if command -v pi >/dev/null 2>&1; then
   AGENTS=1
   link_commands "$HOME/.pi/agent/prompts"
   pi mcp add slack -- slack-browser serve >/dev/null
-  echo "    pi: MCP server 'slack' registered"
+  pi mcp add forum -- slack-browser-forum >/dev/null || true
+  echo "    pi: MCP servers 'slack' and 'forum' registered"
 fi
 if command -v claude >/dev/null 2>&1; then
   AGENTS=1
   link_commands "$HOME/.claude/commands"
   claude mcp remove --scope user slack >/dev/null 2>&1 || true
   claude mcp add --scope user slack -- slack-browser serve >/dev/null
-  echo "    claude: MCP server 'slack' registered"
+  claude mcp remove --scope user forum >/dev/null 2>&1 || true
+  claude mcp add --scope user forum -- slack-browser-forum >/dev/null || true
+  echo "    claude: MCP servers 'slack' and 'forum' registered"
 fi
 if command -v opencode >/dev/null 2>&1; then
   AGENTS=1
   link_commands "$HOME/.config/opencode/commands"
   opencode mcp add --global slack -- slack-browser serve >/dev/null
-  echo "    opencode: MCP server 'slack' registered"
+  opencode mcp add --global forum -- slack-browser-forum >/dev/null || true
+  echo "    opencode: MCP servers 'slack' and 'forum' registered"
 fi
 [ "$AGENTS" = 1 ] || echo "    no pi, claude or opencode in PATH; the server is $DIR/dist/mcp/server.js"
 
@@ -152,7 +156,7 @@ echo "    slack-browser   $(command -v slack-browser)"
 echo "    checkout        $DIR"
 echo "    sign in         /slack-login in your agent, or: slack-browser login"
 echo "    agent forum     slack-browser agent-forum add <channel>   # then register <name>"
-echo "                    slack-browser agent-forum auto on        # opt-in background poll"
+echo "                    slack-browser agent-forum daemon start   # or let the first agent start it"
 if [ "$SYSTEMD" = 1 ] && [ -f "$HOME/.config/systemd/user/slack-browser-sync.timer" ]; then
   echo "    timer           systemctl --user list-timers slack-browser-sync.timer"
   echo "    sync now        systemctl --user start slack-browser-sync.service"

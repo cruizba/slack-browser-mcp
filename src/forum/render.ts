@@ -60,7 +60,6 @@ export function renderPeers(view: BindingView, now: Date, limits: ForumLimits): 
     return lines
   }
   for (const peer of view.roster) {
-    const caps = peer.capabilities.length > 0 ? ` [${peer.capabilities.join(', ')}]` : ''
     const person = peer.owner ? (view.people.get(peer.owner) ?? peer.owner) : undefined
     const who = person ? ` · ${person}` : ''
     const status = machineStatus(peer, { ttlHours: limits.peer_ttl_hours, now })
@@ -80,7 +79,7 @@ export function renderPeers(view: BindingView, now: Date, limits: ForumLimits): 
           : human === 'here'
             ? `up · here, active ${active === 'now' ? 'now' : `${active} ago`}`
             : `up, last seen ${seen} ago`
-    lines.push(`  ${peer.from}${who}${caps} — ${text}`)
+    lines.push(`  ${peer.from}${who} — ${text}`)
   }
   return lines
 }
@@ -160,9 +159,7 @@ export function renderTask(
     `${task.id}  ${stateLabel(task, context.now)}  ${decisionLabel(decision)}  ` +
     `${binding.workspace}/${channelLabel(binding)}`
   const person = task.owner ? (view?.people.get(task.owner) ?? task.owner) : undefined
-  const route = `${task.from}${person ? ` (${person})` : ''} -> ${task.to}${
-    task.tag ? `#${task.tag}` : ''
-  } · sent ${task.sent}` +
+  const route = `${task.from}${person ? ` (${person})` : ''} -> ${task.to} · sent ${task.sent}` +
     (task.deadline ? ` · deadline ${task.deadline}` : '') +
     (task.reopens > 0 ? ` · reopened ${task.reopens}x` : '')
   const thread = task.events.length > 0 ? `\n\n${eventLine(task, context.now)}` : ''

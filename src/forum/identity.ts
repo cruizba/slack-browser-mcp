@@ -1,6 +1,9 @@
 /**
- * Who an agent is on the forum: a name, a host, and the capabilities it
- * advertises.
+ * Who an agent is on the forum: a name and a host.
+ *
+ * `capabilities` survives in the stored shape only so a file written by an older
+ * build, or a register envelope from an older peer, still parses. Nothing routes
+ * by it any more, and a new registration stores an empty list.
  *
  * The identity is per process, not per machine. Two agents on one laptop share
  * `forum.json`, so a single name would make 1:1 addressing collapse into a queue:
@@ -13,7 +16,6 @@ import { hostname } from 'node:os'
 
 export const AGENT_ENV = 'SLACK_BROWSER_MCP_AGENT'
 export const MAX_NAME_CHARS = 32
-export const MAX_CAPABILITIES = 8
 
 export interface Identity {
   name: string
@@ -33,16 +35,6 @@ export function normalizeName(raw: string, max: number = MAX_NAME_CHARS): string
     .replace(/-{2,}/g, '-')
     .replace(/^[-.]+|[-.]+$/g, '')
   return flat.slice(0, max).replace(/[-.]+$/g, '')
-}
-
-export function normalizeCapabilities(raw: readonly string[]): string[] {
-  const seen = new Set<string>()
-  for (const entry of raw) {
-    const tag = normalizeName(entry, 24)
-    if (tag) seen.add(tag)
-    if (seen.size >= MAX_CAPABILITIES) break
-  }
-  return [...seen].sort()
 }
 
 export function defaultHost(): string {
