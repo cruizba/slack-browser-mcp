@@ -51,7 +51,27 @@ const BREAKING_TITLE = 'Breaking changes'
 
 const SUBJECT = /^([a-z]+)(?:\(([^)]+)\))?(!)?: (\S.*)$/
 const RELEASE = /^chore(\(.+\))?: release v\d+\.\d+\.\d+/
-const BREAKING_FOOTER = /^BREAKING[ -]CHANGE:\s*(.+)$/im
+const BREAKING_FOOTER = /^BREAKING[ -]CHANGE:[ \t]*(.*)$/i
+const FOOTER_TOKEN = /^[A-Za-z][A-Za-z-]*:[ \t]/
+
+/**
+ * A `BREAKING CHANGE:` footer may run over several lines. A blank line or the next
+ * `Token: value` ends it, and what is left is folded into one line so that the entry
+ * stays a single bullet instead of a paragraph inside a list.
+ */
+function breakingFooter(body: string): string | undefined {
+  const lines = body.split('\n')
+  const index = lines.findIndex((line) => BREAKING_FOOTER.test(line))
+  if (index === -1) return undefined
+  const first = BREAKING_FOOTER.exec(lines[index]!)?.[1]?.trim() ?? ''
+  const rest: string[] = []
+  for (const line of lines.slice(index + 1)) {
+    if (line.trim() === '' || FOOTER_TOKEN.test(line)) break
+    rest.push(line.trim())
+  }
+  const text = [first, ...rest].filter((part) => part !== '').join(' ')
+  return text === '' ? undefined : text
+}
 
 export function parseLog(raw: string): Commit[] {
   return raw
@@ -68,7 +88,7 @@ export function entries(commits: readonly Commit[]): Entry[] {
   const out: Entry[] = []
   for (const commit of commits) {
     if (RELEASE.test(commit.subject)) continue
-    const footer = BREAKING_FOOTER.exec(commit.body)?.[1]?.trim()
+    const footer = breakingFooter(commit.body)
     const match = SUBJECT.exec(commit.subject)
     if (!match) {
       out.push({

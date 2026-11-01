@@ -121,3 +121,18 @@ test('documentation and test commits never reach the notes', () => {
   )
   assert.equal(renderNotes(parseLog(raw)), '## Features\n\n- something (`c000`)\n')
 })
+
+test('a breaking footer that runs over several lines keeps all of it', () => {
+  const body = 'The flag is gone.\n\nBREAKING CHANGE: `--old` is refused,\nand so is `install.sh --no-old`.\n\nRefs: #12'
+  const raw = log(['aaaa111', 'feat(cli)!: drop the old flag', body])
+  assert.equal(
+    renderNotes(parseLog(raw)),
+    [
+      '## Breaking changes',
+      '',
+      '- **cli:** drop the old flag (`aaaa111`)',
+      '  `--old` is refused, and so is `install.sh --no-old`.',
+      '',
+    ].join('\n'),
+  )
+})
