@@ -104,7 +104,24 @@ fi
 
 step "Release notes"
 if [ "$PUSH" = 1 ] && [ "$NOTES" = 1 ] && command -v gh >/dev/null 2>&1; then
-  if gh release create "$TAG" --generate-notes --title "$TAG"; then
+  # The notes are grouped from the conventional subjects, so a reader gets Features
+  # and Fixes instead of every commit in the range, the release bump included.
+  NOTES_ARGS=(--generate-notes)
+  PREVIOUS="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
+  RANGE="${PREVIOUS:+$PREVIOUS..}$TAG"
+  NOTES_FILE="$(mktemp)"
+  trap 'rm -f "$NOTES_FILE"' EXIT
+  if git log --no-merges --format='%H%x1f%s%x1f%b%x1e' "$RANGE" \
+      | node --experimental-strip-types src/release/notes-cli.ts "$PREVIOUS" "$TAG" --slug "$SLUG" \
+      > "$NOTES_FILE" \
+    && [ -s "$NOTES_FILE" ]; then
+    NOTES_ARGS=(--notes-file "$NOTES_FILE")
+    echo "    grouped $RANGE into sections"
+  else
+    echo "    could not group the commits; falling back to --generate-notes"
+  fi
+
+  if gh release create "$TAG" "${NOTES_ARGS[@]}" --title "$TAG"; then
     echo "    release $TAG published"
   else
     echo "    gh could not create the release; the tag is already pushed"
