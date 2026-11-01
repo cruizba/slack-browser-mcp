@@ -20,6 +20,9 @@ Usage: release.sh <version> [options]
   --no-notes     skip `gh release create`
   --dry-run      say what would happen and change nothing
   -h, --help     show this help
+
+Inside an agent session the release commit gets its Assisted-by trailer; a human
+release stays a plain "chore: release vX". AGENT_ATTRIBUTION overrides the path.
 EOF
 }
 
@@ -86,6 +89,28 @@ fi
 
 step "Bumping and tagging"
 npm version "$NEXT" -m "chore: release v%s"
+
+# `npm version` commits with `-m`, and git's cleanup collapses consecutive blank
+# lines, so the trailer's two-line gap cannot survive that message. Amend before
+# tagging: the tag has to point at the commit that gets pushed.
+ATTRIBUTION="${AGENT_ATTRIBUTION:-$HOME/.local/bin/agent-attribution}"
+if [ -n "${PI_MODEL:-}" ] && [ -x "$ATTRIBUTION" ]; then
+  TRAILER="$("$ATTRIBUTION" -q --harness pi 2>/dev/null || true)"
+  if [ -n "$TRAILER" ]; then
+    MESSAGE="$(mktemp)"
+    # Command substitution drops the trailing newlines `git log` adds, so the gap is
+    # exactly the two empty lines the trailer contract asks for.
+    BODY="$(git log -1 --format=%B)"
+    printf '%s\n\n\n%s\n' "$BODY" "$TRAILER" > "$MESSAGE"
+    git commit --amend --quiet -F "$MESSAGE" --cleanup=verbatim
+    rm -f "$MESSAGE"
+    echo "    attributed: $TRAILER"
+  else
+    echo "    agent-attribution said nothing; the commit stays unattributed"
+  fi
+fi
+git tag -f -a "$TAG" -m "$TAG" >/dev/null
+
 TAGGED="$(git describe --tags --exact-match HEAD)"
 [ "$TAGGED" = "$TAG" ] || die "git tagged $TAGGED, expected $TAG"
 echo "    $TAG at $(git rev-parse --short HEAD)"
