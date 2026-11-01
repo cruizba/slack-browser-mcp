@@ -230,7 +230,7 @@ Common to every kind:
 | `title` | string | 120 | one line, no newline |
 | `body` | string | 1 MiB | the work request; free text, fences and quotes included |
 | `tag` | string | 24 | legacy: parsed so an envelope from an older build still reads; never emitted, routes nothing |
-| `deadline` | string | 20 | optional; after it the task reads as `expired` |
+| `deadline` | string | 24 | optional, ISO 8601; an unreadable or already-past one is refused when the task is posted |
 | `parent` | string | 26 | optional; the task this one was split from |
 | `depth` | int | 0–3 | optional; `parent` depth + 1, capped by the binding |
 
@@ -1067,13 +1067,13 @@ stubbed client) and `test/sync.test.ts` (fake history pages).
 | `test/forum-envelope.test.ts` | encode/decode round-trip per kind; unknown `v`; unknown `kind`; bad JSON; no fence; a fence in the middle of prose; size limits |
 | `test/forum-id.test.ts` | monotonic ordering within a millisecond; prefix matching; ambiguity |
 | `test/forum-binding.test.ts` | bind/remove, `since_ts` default and `--backfill`, private channels, membership refusal, broken `forum.json` |
-| `test/forum-roster.test.ts` | register parsing, `from`/`name`/`host` agreement, latest wins, duplicate names, retired names |
+| `test/forum-presence.test.ts` | register parsing, `from`/`name`/`host` agreement, latest wins, retired names, beacon versus presence, and the two local marks per identity |
 | `test/forum-addressing.test.ts` | `name@host`, bare `name`, ambiguity, `tag` only with `*`, routing across two bindings, `--binding` disambiguation, refused `to` |
 | `test/forum-ledger.test.ts` | every transition in §7.2; closed-state stickiness; `ack` from the wrong side; `reopen` and its limit; foreign `accept` ignored; `*` claim; expiry by deadline and TTL; `stalled` markers; local/channel disagreement |
-| `test/forum-inbox.test.ts` | filters (`to`, `*`, `tag` matched and unmatched, self, rejected, expired), `taken by`, cursor behaviour, ordering, counts for hidden tasks |
+| `test/forum-inbox.test.ts` | filters (`to`, `*`, `tag` matched and unmatched, self, rejected, expired), `taken by`, cursor behaviour, ordering, counts for hidden tasks, and the wait loop honouring `all` and `offline` |
 | `test/forum-write.test.ts` | `forum_post`/`accept`/`decline`/`progress`/`result`/`ack`/`reopen` refuse without `confirm`; post once with it; audit entry with `kind: forum`; `self_approved` on the agent path; `result` refused on a closed task unless `--force`; two posts back to back both go out (no budget); presence throttled to one post per window |
-| `test/forum-workflow.test.ts` | the ladder of §7.5 end to end against two fake identities sharing one archive: ask, claim, progress, report, ack; then the failure branches (decline, error, cancel, stall, reopen) |
-| `test/forum-wait.test.ts` | targeted catch-up calls history with the cursor; respects `SyncLock`; `wait_seconds` stops at the budget; `--json` NDJSON shape |
+| `test/forum-workflow.test.ts` | the ladder of §7.5 end to end over the MCP transport, with two identities sharing one archive and one fake Slack: ask, claim, progress, report, ack; then decline, a failed result, cancel and reopen |
+| `test/forum-daemon.test.ts` | two clients on one real Unix socket, `forum say` between them, a daemon spawned as a child process and stopped, the idle window, and the two surfaces staying disjoint |
 
 Manual checklist (needs a real workspace):
 
