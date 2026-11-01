@@ -72,7 +72,8 @@ place, with the index rebuilt from the JSONL.
 
 Maintainers cut a release with `./release.sh patch` (or `minor`, `major`, or a
 full version): it bumps `package.json`, commits, tags, pushes and opens the
-GitHub release. `--dry-run` says what it would do, `--no-push` stops after the
+GitHub release, with the notes grouped into features, fixes and the rest from the
+commit subjects. `--dry-run` says what it would do, `--no-push` stops after the
 tag, and a prerelease such as `0.3.0-rc.1` is only installed with `update --pre`.
 
 The same script runs from the Actions tab: the `release` workflow takes the

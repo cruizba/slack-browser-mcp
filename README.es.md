@@ -78,9 +78,10 @@ formato y se migra en el sitio, con el índice reconstruido desde el JSONL.
 
 Quien mantiene el repo saca una release con `./release.sh patch` (o `minor`,
 `major`, o una versión completa): sube `package.json`, hace el commit, el tag, el
-push y abre la release de GitHub. `--dry-run` dice lo que haría, `--no-push` se
-queda en el tag, y una prerelease como `0.3.0-rc.1` solo se instala con
-`update --pre`.
+push y abre la release de GitHub, con las notas agrupadas en features, fixes y lo
+demás a partir de los subjects de los commits. `--dry-run` dice lo que haría,
+`--no-push` se queda en el tag, y una prerelease como `0.3.0-rc.1` solo se instala
+con `update --pre`.
 
 El mismo script corre desde la pestaña Actions: el workflow `release` recibe la
 versión (o el salto) como input, pasa los tests y empuja el commit, el tag y las
