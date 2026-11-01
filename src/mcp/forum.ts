@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * The forum MCP entrypoint: a stdio server that is really a relay.
  *
