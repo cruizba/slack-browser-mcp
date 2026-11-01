@@ -442,20 +442,44 @@ export class SlackClient {
     await this.call('chat.delete', { channel: params.channel, ts: params.ts })
   }
 
+  /**
+   * One page of a thread. `conversations.replies` caps a page at 200, so a busy
+   * thread has to be walked with the cursor or it is filed short for good.
+   */
+  async repliesPage(params: {
+    channel: string
+    thread_ts: string
+    limit?: number
+    cursor?: string
+  }): Promise<HistoryPage> {
+    const payload = await this.call<
+      SlackEnvelope & {
+        messages?: SlackMessage[]
+        has_more?: boolean
+        response_metadata?: { next_cursor?: string }
+      }
+    >('conversations.replies', {
+      channel: params.channel,
+      ts: params.thread_ts,
+      limit: params.limit ?? 100,
+      ...(params.cursor ? { cursor: params.cursor } : {}),
+    })
+    const next = payload.response_metadata?.next_cursor || undefined
+    return {
+      messages: payload.messages ?? [],
+      has_more: Boolean(payload.has_more),
+      ...(next ? { next_cursor: next } : {}),
+    }
+  }
+
+  /** The first page of a thread, which is what `get_thread` shows. */
   async replies(params: {
     channel: string
     thread_ts: string
     limit?: number
   }): Promise<SlackMessage[]> {
-    const payload = await this.call<SlackEnvelope & { messages?: SlackMessage[] }>(
-      'conversations.replies',
-      {
-        channel: params.channel,
-        ts: params.thread_ts,
-        limit: params.limit ?? 100,
-      },
-    )
-    return payload.messages ?? []
+    const page = await this.repliesPage(params)
+    return page.messages
   }
 
   /**

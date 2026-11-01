@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -58,6 +59,47 @@ describe('ArchiveFileStore', () => {
       assert.equal(again.bytes, 2)
       assert.deepEqual([...(await readFile(again.path))], [2, 3])
       assert.equal((await store.find('T01ACME', 'F0ABC'))?.bytes, 2)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps one copy when the same id comes back under another name', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'slack-browser-mcp-files-'))
+    try {
+      const store = new ArchiveFileStore(root)
+      const first = await store.save('T01ACME', { id: 'F0ABC', name: 'foto.png' }, new Uint8Array([1]))
+      const renamed = await store.save(
+        'T01ACME',
+        { id: 'F0ABC', name: 'vacaciones.png' },
+        new Uint8Array([2, 3]),
+      )
+
+      assert.notEqual(renamed.path, first.path)
+      assert.equal(existsSync(first.path), false, 'the old name is removed, not shadowed')
+      assert.deepEqual([...(await readFile(renamed.path))], [2, 3])
+      const found = await store.find('T01ACME', 'F0ABC')
+      assert.equal(found?.name, 'vacaciones.png')
+      assert.equal(found?.bytes, 2)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('prefers the newest copy when two are left for one id', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'slack-browser-mcp-files-'))
+    try {
+      const dir = join(root, 'T01ACME', 'files')
+      await mkdir(dir, { recursive: true })
+      const older = join(dir, 'F0ABC-vieja.png')
+      const newer = join(dir, 'F0ABC-nueva.png')
+      await writeFile(older, 'vieja')
+      await writeFile(newer, 'nueva')
+      const past = new Date(Date.now() - 60_000)
+      await utimes(older, past, past)
+
+      const found = await new ArchiveFileStore(root).find('T01ACME', 'F0ABC')
+      assert.equal(found?.name, 'nueva.png')
     } finally {
       await rm(root, { recursive: true, force: true })
     }

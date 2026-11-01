@@ -82,7 +82,7 @@ export interface InboxReport {
   orphans: number
   /** Tasks addressed to me whose author is not in the roster, or is retired. */
   hidden: number
-  /** `*` tasks another agent already claimed. */
+  /** `*` tasks another agent already claimed; listed with `taken:<peer>` rather than hidden. */
   taken: number
 }
 
@@ -119,8 +119,9 @@ export function inboxEntries(
         if (decision?.decision === 'rejected') continue
         if (task.closed) continue
         if (task.takenBy !== undefined && task.takenBy !== me) {
+          // Still the channel's work, and hiding it is what makes a second agent think
+          // nobody took it. It stays listed, counted, and labelled with who has it.
           taken += 1
-          continue
         }
       }
       entries.push({ view, task, ...(decision ? { decision } : {}) })

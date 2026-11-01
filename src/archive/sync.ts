@@ -49,7 +49,12 @@ export interface SyncClient {
     latest?: string
     cursor?: string
   }): Promise<HistoryPage>
-  replies(params: { channel: string; thread_ts: string; limit?: number }): Promise<SlackMessage[]>
+  repliesPage(params: {
+    channel: string
+    thread_ts: string
+    limit?: number
+    cursor?: string
+  }): Promise<HistoryPage>
   /** Bytes of an attachment, for the envelopes that travel as `forum-*` files. */
   downloadFile?(file: SlackFile): Promise<Uint8Array>
 }
@@ -338,6 +343,35 @@ async function syncChannel(args: {
     if (storedCount !== message.reply_count) pending.add(message.ts)
   }
 
+  /**
+   * Every reply of one thread. `conversations.replies` serves 200 at most, so a busy
+   * thread is walked page by page; a walk that stopped early says so.
+   */
+  const collectThread = async (
+    parentTs: string,
+  ): Promise<{ replies: SlackMessage[]; complete: boolean }> => {
+    const collected = new Map<string, SlackMessage>()
+    let threadCursor: string | undefined
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      if (Date.now() > args.deadline) {
+        return { replies: [...collected.values()], complete: false }
+      }
+      const result = await client.repliesPage({
+        channel: channel.id,
+        thread_ts: parentTs,
+        limit: PAGE_SIZE,
+        ...(threadCursor ? { cursor: threadCursor } : {}),
+      })
+      for (const message of result.messages) collected.set(message.ts, message)
+      if (!result.has_more) return { replies: [...collected.values()], complete: true }
+      if (!result.next_cursor || result.next_cursor === threadCursor) {
+        return { replies: [...collected.values()], complete: false }
+      }
+      threadCursor = result.next_cursor
+    }
+    return { replies: [...collected.values()], complete: false }
+  }
+
   // The threads come first: `accept`, `progress`, `result` and `ack` are replies, so
   // a reply carries an envelope exactly like a channel message does, and its file has
   // to be fetched before the record is built. Reading only the history left every
@@ -346,21 +380,15 @@ async function syncChannel(args: {
   const replyMessages: SlackMessage[] = []
   for (const parentTs of threadParents) {
     if (Date.now() > args.deadline) break
-    const thread = await client.replies({ channel: channel.id, thread_ts: parentTs, limit: 200 })
-    for (const message of thread) {
-      if (message.ts === parentTs) continue
-      replyMessages.push(message)
-    }
+    const thread = await collectThread(parentTs)
+    const replies = thread.replies.filter((message) => message.ts !== parentTs)
+    replyMessages.push(...replies)
     // Slack can serve a thread a moment before its newest reply is visible. Keeping
     // the parent queued retries it on the next run instead of trusting a half
     // thread forever, which would leave a task stuck one state behind.
-    const expected = Math.min(
-      fetched.get(parentTs)?.reply_count ?? cachedByTs.get(parentTs)?.reply_count ?? 0,
-      199,
-    )
-    const got = thread.filter((message) => message.ts !== parentTs).length
+    const expected = fetched.get(parentTs)?.reply_count ?? cachedByTs.get(parentTs)?.reply_count ?? 0
     pending.delete(parentTs)
-    if (got < expected) pending.add(parentTs)
+    if (!thread.complete || replies.length < expected) pending.add(parentTs)
   }
 
   // A record written before this build read envelopes from files still names the file

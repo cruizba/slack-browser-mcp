@@ -55,6 +55,9 @@ export function changed(cached: ArchivedMessage | undefined, record: ArchivedMes
     cached.text !== record.text ||
     cached.edited_ts !== record.edited_ts ||
     cached.reply_count !== record.reply_count ||
+    // A rename leaves every archived line with the old name, and the archive filters
+    // by the current one. Only when the fresh copy carries a name, like `forum` below.
+    (record.channel_name !== undefined && cached.channel_name !== record.channel_name) ||
     // Only when the fresh copy carries one: a sync that could not download must not
     // erase the envelope a previous run stored.
     (record.forum !== undefined && cached.forum !== record.forum) ||

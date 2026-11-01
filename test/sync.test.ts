@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { ArchiveFileStore } from '../src/archive/files.ts'
+import { localThread } from '../src/archive/local.ts'
 import { ArchiveIndex } from '../src/archive/index.ts'
 import { ArchiveStore } from '../src/archive/store.ts'
 import { DEFAULT_BACKFILL_DAYS, syncAccount, type SyncClient } from '../src/archive/sync.ts'
@@ -49,9 +50,9 @@ class FakeClient implements SyncClient {
     }
   }
 
-  async replies(params: { channel: string; thread_ts: string }): Promise<SlackMessage[]> {
+  async repliesPage(params: { channel: string; thread_ts: string }): Promise<HistoryPage> {
     this.repliesCalls.push(params.thread_ts)
-    return this.threads[params.thread_ts] ?? []
+    return { messages: this.threads[params.thread_ts] ?? [], has_more: false }
   }
 }
 
@@ -95,8 +96,43 @@ class PagedClient implements SyncClient {
     }
   }
 
-  async replies(): Promise<SlackMessage[]> {
-    return []
+  async repliesPage(): Promise<HistoryPage> {
+    return { messages: [], has_more: false }
+  }
+}
+
+/** Serves one thread in pages, the way `conversations.replies` does. */
+class ThreadClient implements SyncClient {
+  readonly pages: Array<string | undefined> = []
+  private readonly parentMessage: SlackMessage
+  private readonly threads: SlackMessage[]
+  private readonly pageSize: number
+
+  constructor(parentMessage: SlackMessage, threads: SlackMessage[], pageSize: number) {
+    this.parentMessage = parentMessage
+    this.threads = threads
+    this.pageSize = pageSize
+  }
+
+  async listMyChannels(): Promise<SlackChannel[]> {
+    return [channel]
+  }
+
+  async history(): Promise<HistoryPage> {
+    return { messages: [this.parentMessage], has_more: false }
+  }
+
+  async repliesPage(params: { cursor?: string }): Promise<HistoryPage> {
+    this.pages.push(params.cursor)
+    const all = [this.parentMessage, ...this.threads]
+    const start = Number(params.cursor ?? 0)
+    const page = all.slice(start, start + this.pageSize)
+    const next = start + this.pageSize < all.length ? String(start + this.pageSize) : undefined
+    return {
+      messages: page,
+      has_more: next !== undefined,
+      ...(next ? { next_cursor: next } : {}),
+    }
   }
 }
 
@@ -315,6 +351,38 @@ test('a thread that came back short stays queued until Slack shows the reply', a
 
   entry = (await store.loadState()).teams[account.team_id]?.channels[channel.id]
   assert.deepEqual(entry?.pending_threads ?? [], [])
+})
+
+test('a thread with more replies than one page is filed whole', async (t) => {
+  const { store, index } = await scratch(t)
+  const replies: SlackMessage[] = Array.from({ length: 250 }, (_, index) => ({
+    ts: `1792500060.${String(index).padStart(6, '0')}`,
+    user: 'U0ANA',
+    text: `respuesta ${index}`,
+    thread_ts: parent.ts,
+  }))
+  const client = new ThreadClient({ ...parent, reply_count: 250 }, replies, 100)
+
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+
+  const archived = await store.read(account.team_id, channel.id)
+  assert.equal(
+    archived.filter((record) => record.thread_ts === parent.ts).length,
+    250,
+    'every page of the thread is filed, not only the first',
+  )
+  assert.equal(client.pages.length, 3, 'a page of 100 plus one of 100 plus the tail')
+  const entry = (await store.loadState()).teams[account.team_id]?.channels[channel.id]
+  assert.deepEqual(entry?.pending_threads ?? [], [], 'a thread read whole leaves the backlog')
+
+  const thread = await localThread({
+    store,
+    teamId: account.team_id,
+    channelId: channel.id,
+    threadTs: parent.ts,
+    limit: 300,
+  })
+  assert.equal(thread?.length, 251, 'the archive serves it without asking Slack again')
 })
 
 test('a channel fetch turns a search hit into real history', async (t) => {

@@ -157,6 +157,122 @@ test('the inbox shows what is addressed to me and counts the rest', async (t) =>
   assert.equal(narrow.entries.length, 2)
 })
 
+test('a broadcast another agent claimed stays listed with who has it', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'forum-inbox-taken-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  process.env.SLACK_BROWSER_MCP_CONFIG_DIR = join(root, 'config')
+  process.env.XDG_DATA_HOME = join(root, 'data')
+  process.env.SLACK_BROWSER_MCP_AGENT = 'pi'
+
+  const { archive } = await seed(root)
+  await archive.append('T0TEST', 'C0HUB', [
+    message('1793145600.000500', {
+      v: 1,
+      kind: 'register',
+      id: newId(),
+      from: 'planner@alice-pc',
+      sent: '2026-10-28T09:00:00Z',
+      name: 'planner',
+      host: 'alice-pc',
+      capabilities: [],
+    }),
+    message('1793146020.000600', {
+      v: 1,
+      kind: 'task',
+      id: '01J9Z7K3QX4MB8WN2R5T6Y7Z9F',
+      from: 'builder@desktop',
+      to: '*',
+      sent: '2026-10-28T09:07:00Z',
+      title: 'alguien mira el README',
+      body: 'una pasada',
+    }),
+    message('1793146080.000700', {
+      v: 1,
+      kind: 'accept',
+      id: newId(),
+      from: 'planner@alice-pc',
+      sent: '2026-10-28T09:08:00Z',
+      task: '01J9Z7K3QX4MB8WN2R5T6Y7Z9F',
+    }),
+  ])
+
+  const { openForum } = await import('../src/forum/context.ts')
+  const { inboxEntries, loadViews } = await import('../src/forum/inbox.ts')
+  const { renderInbox } = await import('../src/forum/render.ts')
+  const context = await openForum({ now: new Date('2026-10-28T09:30:00Z') })
+  const report = inboxEntries(context, await loadViews(context))
+
+  assert.equal(report.taken, 1, 'it is still counted as somebody else\'s')
+  assert.ok(
+    report.entries.some((entry) => entry.task.id === '01J9Z7K3QX4MB8WN2R5T6Y7Z9F'),
+    'and it stays visible: hiding it makes the next agent think nobody took it',
+  )
+  assert.match(renderInbox(context, report), /taken:planner@alice-pc/)
+})
+
+test('a wait does not wake for a broadcast somebody else already took', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'forum-wait-taken-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  process.env.SLACK_BROWSER_MCP_CONFIG_DIR = join(root, 'config')
+  process.env.XDG_DATA_HOME = join(root, 'data')
+  process.env.SLACK_BROWSER_MCP_AGENT = 'pi'
+
+  // Only the registers and one claimed broadcast: nothing here is work for me.
+  const { archive } = await seed(root)
+  const registers = [
+    ['1793145600.000500', 'builder@desktop', 'builder', 'desktop'],
+    ['1793145600.000510', 'reviewer@laptop', 'reviewer', 'laptop'],
+    ['1793145600.000520', 'planner@alice-pc', 'planner', 'alice-pc'],
+  ] as const
+  const record = (ts: string, envelope: Envelope) => `${JSON.stringify(message(ts, envelope))}\n`
+  const lines = registers.map(([ts, from, name, host]) =>
+    record(ts, {
+      v: 1,
+      kind: 'register',
+      id: newId(),
+      from,
+      sent: '2026-10-28T09:00:00Z',
+      name,
+      host,
+      capabilities: [],
+    }),
+  )
+  lines.push(
+    record('1793146020.000600', {
+      v: 1,
+      kind: 'task',
+      id: '01J9Z7K3QX4MB8WN2R5T6Y7Z9G',
+      from: 'builder@desktop',
+      to: '*',
+      sent: '2026-10-28T09:07:00Z',
+      title: 'alguien mira el README',
+      body: 'una pasada',
+    }),
+  )
+  lines.push(
+    record('1793146080.000700', {
+      v: 1,
+      kind: 'accept',
+      id: newId(),
+      from: 'planner@alice-pc',
+      sent: '2026-10-28T09:08:00Z',
+      task: '01J9Z7K3QX4MB8WN2R5T6Y7Z9G',
+    }),
+  )
+  await writeFile(archive.channelFile('T0TEST', 'C0HUB'), lines.join(''))
+
+  const { openForum } = await import('../src/forum/context.ts')
+  const { waitForWork } = await import('../src/forum/watch.ts')
+  const context = await openForum({ now: new Date('2026-10-28T09:30:00Z') })
+
+  const waited = await waitForWork(context, { waitSeconds: 1, intervalMs: 50, offline: true })
+  assert.equal(waited.report.taken, 1)
+  assert.ok(
+    waited.cycles > 1,
+    'it kept looking instead of reporting work that is already somebody else\'s',
+  )
+})
+
 test('a task from an unknown peer is hidden and counted, never shown as work', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'forum-inbox-unknown-'))
   t.after(() => rm(root, { recursive: true, force: true }))

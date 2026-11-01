@@ -422,16 +422,21 @@ would only add joins.
 Per channel, in least-recently-synced order:
 
 1. **Incremental.** `conversations.history` with `oldest=<newest_ts>` and cursors,
-   capped at 20 pages of 200. First run (or `--full`) uses `--since <days>`
-   instead, `DEFAULT_BACKFILL_DAYS` (90) by default so a newly added workspace
-   arrives as deep as Slack still serves.
+   paged until Slack runs out of pages or the run's budget does; the page guard is
+   only a loop breaker. A walk that stopped early is reported as truncated and
+   leaves the cursor where it was, so the next run covers the gap instead of
+   stepping over it. First run (or `--full`) uses `--since <days>` instead,
+   `DEFAULT_BACKFILL_DAYS` (90) by default so a newly added workspace arrives as
+   deep as Slack still serves.
 2. **Reconcile, once per 24 h.** Re-read a 7-day window and compare: messages in
-   the archive that are no longer returned are marked deleted. This is the only
-   way to see deletions, because Slack has no delta feed without an app.
+   the archive that are no longer returned are marked deleted, and only when that
+   window was read whole — a partial one proves nothing. This is the only way to
+   see deletions, because Slack has no delta feed without an app.
 3. **Threads.** A parent with `reply_count > 0` whose stored count differs is
-   queued; up to `maxThreadsPerChannel` (10) parents are fetched per run with
-   `conversations.replies`. The rest wait in `pending_threads`, persisted, so a
-   first backfill drains over several runs instead of one burst.
+   queued; up to `maxThreadsPerChannel` (10) parents are fetched per run, each
+   walked with `conversations.replies` cursors because a page holds 200 at most.
+   The rest wait in `pending_threads`, persisted, so a first backfill drains over
+   several runs instead of one burst.
 
 Reply records are excluded from reconcile deletion detection: they never appear in
 channel history, so their absence there means nothing.

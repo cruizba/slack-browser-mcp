@@ -12,7 +12,7 @@ import { syncAccount } from '../archive/sync.ts'
 import type { SlackAccount } from '../auth/store.ts'
 import type { SlackClient } from '../slack/client.ts'
 import type { Binding } from './binding.ts'
-import type { ForumContext } from './context.ts'
+import { meLabel, type ForumContext } from './context.ts'
 import { inboxEntries, loadViews, type InboxReport } from './inbox.ts'
 
 export interface CatchUpReport {
@@ -102,7 +102,9 @@ export interface WaitResult {
 /**
  * The wait loop behind `forum_inbox { wait_seconds }` and `agent-forum wait`. It
  * stops as soon as something arrives, so a loop costs one turn rather than one
- * turn per poll.
+ * turn per poll. A broadcast another agent already claimed is visible in the inbox
+ * but is not what this loop is waiting for: waking on it would report work that is
+ * already somebody else's.
  */
 export async function waitForWork(
   context: ForumContext,
@@ -110,6 +112,9 @@ export async function waitForWork(
 ): Promise<WaitResult> {
   const interval = options.intervalMs ?? 5000
   const until = Date.now() + Math.max(0, options.waitSeconds) * 1000
+  const me = meLabel(context)
+  const actionable = (report: InboxReport): boolean =>
+    report.entries.some((entry) => entry.task.takenBy === undefined || entry.task.takenBy === me)
   let cycles = 0
   let last: CatchUpReport | undefined
 
@@ -120,7 +125,7 @@ export async function waitForWork(
     }
     const views = await loadViews(context)
     const report = inboxEntries(context, views, options.all ? { all: true } : {})
-    if (report.entries.length > 0 || Date.now() >= until) {
+    if (actionable(report) || Date.now() >= until) {
       return { report, cycles, ...(last ? { catchUp: last } : {}) }
     }
     const pause = Math.min(interval, Math.max(0, until - Date.now()))

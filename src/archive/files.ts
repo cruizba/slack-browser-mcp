@@ -5,7 +5,7 @@
  * a backfill of 91 channels does not pull every screenshot ever posted.
  */
 
-import { chmod, mkdir, readdir, rename, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
 import { archiveDir } from '../config/paths.ts'
@@ -56,11 +56,22 @@ export class ArchiveFileStore {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
       throw error
     }
-    const match = entries.find((entry) => entry.startsWith(`${fileId}-`))
-    if (!match) return undefined
-    const path = join(dir, match)
-    const bytes = (await stat(path)).size
-    return { path, name: match.slice(fileId.length + 1), bytes }
+    const matches: Array<{ entry: string; mtime: number; bytes: number }> = []
+    for (const entry of entries) {
+      if (!entry.startsWith(`${fileId}-`) || entry.endsWith('.tmp')) continue
+      const info = await stat(join(dir, entry)).catch(() => undefined)
+      if (info?.isFile()) matches.push({ entry, mtime: info.mtimeMs, bytes: info.size })
+    }
+    // A copy left behind under an older name is still the same file id; the newest
+    // one is the one Slack last described.
+    matches.sort((left, right) => right.mtime - left.mtime)
+    const newest = matches[0]
+    if (!newest) return undefined
+    return {
+      path: join(dir, newest.entry),
+      name: newest.entry.slice(fileId.length + 1),
+      bytes: newest.bytes,
+    }
   }
 
   async save(teamId: string, file: SlackFile, bytes: Uint8Array): Promise<StoredFile> {
@@ -74,6 +85,13 @@ export class ArchiveFileStore {
     await writeFile(temporary, bytes, { mode: 0o600 })
     await rename(temporary, path)
     await chmod(path, 0o600)
+    // The name can change while the id stays (somebody renamed it in Slack), and the
+    // old file would sit next to the new one with nothing saying which one is current.
+    for (const entry of await readdir(dir)) {
+      if (entry === basename(name) || entry.endsWith('.tmp')) continue
+      if (!entry.startsWith(`${fileId}-`)) continue
+      await rm(join(dir, entry), { force: true })
+    }
     return { path, name, bytes: bytes.byteLength }
   }
 }
