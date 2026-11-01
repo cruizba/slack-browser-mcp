@@ -2,8 +2,9 @@
 
 *[English](README.md) · Español*
 
-Lectura y escritura en Slack para pi, Claude Code y opencode, con un inicio de
-sesión normal en el navegador.
+Lectura y escritura en Slack para tu agente, con un inicio de sesión normal en el
+navegador. Se integra en pi, Claude Code y opencode: dices lo que quieres — o lanzas
+un comando `/slack…` — y el agente lo hace a través de un servidor MCP local.
 
 > [!WARNING]
 > **No oficial, y cada cual lo usa bajo su responsabilidad.** No es un producto de
@@ -41,207 +42,90 @@ Node.js 22 o superior y Google Chrome.
 git clone https://github.com/cruizba/slack-browser-mcp ~/slack-browser-mcp && ~/slack-browser-mcp/install.sh
 ```
 
-Hace un pull de `main`, compila el checkout, pone `slack-browser` en tu PATH y
-después hace el resto por cada agente que encuentra (`pi`, `claude`, `opencode`):
+Trae `main`, compila el checkout, pone `slack-browser` en tu PATH y después, para
+cada agente que encuentre — `pi`, `claude`, `opencode`:
 
 - registra dos servidores MCP: `slack` (leer y publicar) y `forum` (agentes que se
-  pasan trabajo, detrás de un daemon local que arranca solo cuando hace falta)
-- enlaza los comandos `/slack*`, el de inicio de sesión incluido
+  pasan trabajo, detrás de un daemon local que arranca cuando hace falta)
+- enlaza los comandos `/slack…`, incluido el de inicio de sesión
 - instala `slack-browser-sync.timer`, que sincroniza el archivo al empezar la sesión
 
-Nunca abre un navegador. Inicia sesión desde el agente con `/slack-login`; el primer
-espacio en el que entres se convierte en el de por defecto, y `/slack-workspaces` lo
-cambia.
+Luego entra desde el agente con `/slack-login`: abre Chrome una vez, se queda con la
+sesión que encuentre y el primer espacio de trabajo pasa a ser el de por defecto.
+Volver a ejecutar `install.sh` es seguro; `install.sh --help` lista las flags.
 
-Ejecutarlo otra vez es seguro; `install.sh --help` lista las opciones.
+## Comandos
 
-## Actualizar
+Son plantillas de prompt, una por tarea, que `install.sh` enlaza en el directorio de
+comandos de cada agente. Todos los argumentos son opcionales: sin ninguno, el comando
+cuenta el estado actual y no cambia nada.
 
-```bash
-slack-browser update            # pasa a la última release y recompila
-slack-browser update --check    # dice qué hay instalado y cuál es la última
-slack-browser update --to v0.2.0
-slack-browser version
-```
+| Comando | Qué hace |
+| --- | --- |
+| `/slack-login [espacio]` | Abre Chrome para iniciar sesión; el primero pasa a ser el de por defecto |
+| `/slack-workspaces [use <ws>\|clear]` | Lista los espacios guardados y cambia el de por defecto |
+| `/slack` | Sesiones y estado del archivo; no lee mensajes |
+| `/slack <canal> [cantidad]` | Mensajes recientes, del más viejo al más nuevo (`me` es tu propio DM) |
+| `/slack <canal> <thread_ts>` | Todas las respuestas de ese hilo |
+| `/slack-search <consulta> [canal]` | Texto completo sobre el archivo local |
+| `/slack-post <canal> <texto>` | Enseña el mensaje exacto y publica solo si dices que sí |
+| `/slack-sync [espacio]` | Refresca el archivo ahora |
+| `/slack-update` | Pasa a la última release y recompila |
 
-Una release es un tag semver (`v0.2.0`) y el checkout se queda en uno, detached,
-para que `main` siga siendo la rama de desarrollo. `update` trae los tags, compara
-el que está en `HEAD` con la última release estable, hace el checkout y ejecuta
-`install.sh --no-pull` (build, enlaces, agentes, unidades). Un checkout en `main`
-por delante del último tag no se toca: `update` se mueve entre releases, y fijar
-una es `--to`. Reinicia el agente después para que su servidor MCP cargue el build
-nuevo.
+## Qué puedes pedir
 
-`install.sh` sigue instalando desde `main`, y volver a ejecutarlo es la forma de
-seguir la rama: también devuelve un checkout de release a `main`. Las
-actualizaciones nunca piden borrar datos locales: el archivo lleva una versión de
-formato y se migra en el sitio, con el índice reconstruido desde el JSONL.
-
-Quien mantiene el repo saca una release con `./release.sh patch` (o `minor`,
-`major`, o una versión completa): sube `package.json`, hace el commit, el tag, el
-push y abre la release de GitHub, con las notas agrupadas en features, fixes y lo
-demás a partir de los subjects de los commits. `--dry-run` dice lo que haría,
-`--no-push` se queda en el tag, y una prerelease como `0.3.0-rc.1` solo se instala
-con `update --pre`.
-
-El mismo script corre desde la pestaña Actions: el workflow `release` recibe la
-versión (o el salto) como input, pasa los tests y empuja el commit, el tag y las
-notas con el `github.token` del propio workflow. No se guarda ningún token
-personal en el repositorio, y el job necesita `contents: write` para ese push.
-Sus actions están fijadas a un SHA de commit con `pinact`, y
-`.github/dependabot.yml` mantiene esos pins y las dependencias npm al día. Un
-workflow `ci` aparte pasa el typecheck, los tests y el build en cada push a `main`;
-los PRs nunca lo disparan. Desde un agente, `/slack-update` ejecuta la misma
-actualización y avisa de que hay que reconectar el servidor MCP.
-
-## Ayuda
-
-Cada comando responde a `--help` con su propia página: qué hace, su uso y las
-flags que acepta, con el valor que espera cada una.
-
-```bash
-slack-browser update --help
-slack-browser agent-forum post --help
-slack-browser help archive
-```
-
-`slack-browser help` a secas lista todos los comandos. Las flags son una lista
-blanca: la que el comando no acepta se rechaza antes de ejecutar nada, así que una
-errata como `update --chek` se queda ahí en vez de mover el checkout. Un `--`
-suelto cierra las flags, y todo lo que va detrás es texto del mensaje.
-
-## Ejemplos
+Los comandos son atajos. Decirlo con palabras funciona igual, y el agente elige la
+herramienta:
 
 ```text
-/slack-login                              # inicia sesión en un espacio en una ventana
-/slack-workspaces                         # qué hay guardado y cuál es el de por defecto
-/slack-workspaces use acme                # cambia el de por defecto
-/slack                                    # sesiones y estado del archivo
-/slack operations 20                      # últimos 20 mensajes de #operations
-/slack operations 1792500000.000100       # un hilo
-/slack-search mtu                         # texto completo en el archivo local
-/slack-post ci-notifications "deployed"   # ensayo; publica solo si dices que sí
-/slack-sync                               # refresca el archivo ahora
-/slack-update                             # pasa a la última release y recompila
+¿Qué es lo último en #operations?
+¿Quién está de guardia esta semana, según #incident?
+Busca "mtu" en el archivo y dime dónde se tomó la decisión.
+Publica el resumen de la release en ci-notifications; enséñamelo antes.
 ```
+
+Las lecturas se responden desde un archivo local, sincronizado al empezar la sesión,
+así que la historia sobrevive y una consulta no va a Slack cada vez. Publicar es la
+única escritura: el agente enseña exactamente lo que saldría, con el bloque de firma,
+y espera tu sí. Los mensajes salen con nombres, no con ids, y un adjunto se puede
+abrir en la conversación.
 
 ## Foro de agentes
 
 Un canal de Slack que el equipo acuerda, donde el agente de una persona le pasa
-trabajo al de otra por su nombre: el agente de Alice le manda al de Bob lo que
-encontró en un hilo, el de Bob contesta en el mismo hilo, y cada uno conserva su
-inicio de sesión y su archivo local. Lo único compartido es el canal; cada tarea
-sigue siendo una decisión en la máquina que la recibe.
-
-Una tarea se hace en cinco movimientos — **pedir, aceptar, trabajar, reportar,
-cerrar** — y cada uno es un borrador que tu agente te enseña antes de publicar nada.
-
-```mermaid
-sequenceDiagram
-    participant A as alice-pc
-    participant B as bob-pc
-    A->>B: pide, con el contexto en el cuerpo
-    Note over A,B: cada usuario aprueba en su máquina
-    B-->>A: acepta, luego reporta
-    A->>B: cierra
-```
-
-### Detrás de un daemon local
-
-El foro va detrás de un proceso por máquina. Arranca cuando un agente lo necesita
-por primera vez, es el dueño del archivo, mantiene frescos los canales enlazados y
-atiende a todos los agentes por un socket local; después de diez minutos sin nadie
-conectado, se va. No hay servicio que habilitar ni timer para él; el resto está en
-[el manual del manager](docs/agent-forum-manager.md).
-
-Eso es lo que permite tener varios agentes en una máquina sin que compartan
-identidad. Cada registro MCP nombra su propio peer:
-
-```json
-"forum-planner": {
-  "command": "slack-browser-forum",
-  "env": { "SLACK_BROWSER_MCP_AGENT": "planner" }
-}
-```
-
-Sin `SLACK_BROWSER_MCP_AGENT`, el nombre sale del cliente MCP, que es el mismo en los
-dos registros, así que los dos agentes acaban siendo un solo peer. También pueden
-avisarse sin escribir en Slack, mientras el peer esté conectado:
-`slack-browser agent-forum say builder@alice-pc "para, la rama se ha movido"`. Eso no
-queda registrado en ningún sitio, así que es un aviso y no el trabajo en sí.
-
-### Tres frases
-
-Nunca escribes un comando: di lo que quieres y el agente elige el movimiento,
-enseñándote el envelope antes de publicar nada. Los siete movimientos que conoce
-están en el manual; estas tres son la forma que tiene.
-
-> Registra este agente en el foro de agentes de #agent-hub como planner.
-
-Enlaza el canal, guarda el nombre y lo anuncia. Quien se una después ejecuta la misma
-frase en su propia máquina.
-
-> Pásale a bob los párrafos que saqué de #incident para que su agente escriba el
-> postmortem.
-
-Una pregunta y un traspaso son el mismo envelope: un hilo, y un cuerpo que puede
-llevar un hilo entero. El canal muestra una frase y el envelope viaja al lado como
-fichero `forum-<id>.md`, así que se abre y se lee como cualquier documento.
-
-> Ciérrala, el recuento era lo que necesitaba.
-
-Aceptar, anotar, reportar y cerrar son la mitad de trabajo de una tarea; rechazar,
-reabrir y cancelar son una frase cada uno. Todos son un borrador hasta que los
-apruebas, y el cuerpo que escribe otro agente es un dato, nunca una instrucción.
-
-### La máquina y la persona
-
-Un **beacon** dice que la máquina está encendida: lo publica el daemon y no afirma
-nada sobre la persona que haya delante. Una **presence** dice `here`, `away` con una
-nota, o `gone`, y eso solo lo publica una sesión en la que estás tú. `forum peers`
-enseña las dos cosas:
+trabajo al de otra por su nombre: preguntar, coger, informar y cerrar, cada paso un
+ensayo que el agente te enseña antes de publicarlo. Unirse es un solo comando, y dice
+qué tipos de trabajo acepta ese agente:
 
 ```text
-#agent-hub (C0HUB)
-  planner@alice-pc · Alice — up · here, active 2m ago
-  builder@bob-pc · Bob — up · away — back Monday
-  reviewer@bob-lab · Bob — out, last seen 4d ago
+/slack-forum-register #agent-hub planner accepts: review,triage
 ```
 
-Nada en segundo plano contesta por ti: el daemon y una sesión esperando solo pueden
-publicar un beacon, así que dejar el foro mirando toda la noche te da la bandeja llena
-y ni un mensaje enviado en tu nombre.
+Una sesión también puede ser el manager: vigila los canales, enruta lo que llega al
+peer que anunció esa capacidad y empuja a los agentes de esta máquina.
 
-### Cuándo no usarlo
+```text
+/slack-forum-manager
+```
 
-- **Como chat.** Un agente conectado ve la tarea en su siguiente lectura, pero nada
-  despierta a un agente que no está mirando, así que un ida y vuelta es un turno, no
-  una respuesta instantánea.
-- **Como sitio donde guardar lo importante.** El hilo vive en un canal compartido y
-  la retención del espacio acabará borrándolo; el archivo local solo guarda lo que
-  vio esta máquina. Una credencial pegada en un cuerpo queda publicada.
-- **Para hacer que algo ocurra.** Un cuerpo que dice "ejecuta este script" es un
-  dato. El foro nunca arranca un proceso, y la aprobación de tu agente sigue
-  decidiendo lo que hace.
-- **Como cola para tus propios subagentes.** Un subagente o un fichero hacen eso
-  dentro de un proceso; el foro es para trabajo que cruza una máquina o necesita un
-  registro en un canal.
+La historia completa — los movimientos, el roster, el daemon que hay detrás y cuándo
+no usarlo — está en [docs/agent-forum.md](docs/agent-forum.md). El resto de flujos son
+un prompt cada uno: `/slack-forum-agents` (quién está y qué acepta), `/slack-forum-send`
+(pedir trabajo), `/slack-forum-read`, `/slack-forum-pair`, y `/slack-forum-say` para
+empujar a un agente de esta máquina, que no publica nada.
 
-El canal es el roster: no hay emparejamiento ni lista blanca, así que un agente nuevo
-aparece en cuanto se registra. El diseño está en
-[docs/agent-forum-spec.md](docs/agent-forum-spec.md); los comandos del día a día, en
-[docs/reference.md](docs/reference.md), y los huecos que siguen abiertos, en
-[docs/agent-forum-improvements.md](docs/agent-forum-improvements.md).
-El resto de la documentación está en inglés.
+## El CLI
 
-Los mensajes salen con nombres, no con ids: las menciones como `<@U02ANA>`, las
-referencias a canales y los grupos de usuarios se resuelven con un directorio local
-que se refresca una vez al día. Los adjuntos se imprimen como `[file: name id=F0ABC]`,
-y pedirle al agente que abra uno lo guarda en el archivo y devuelve las imágenes a la
-conversación. También va en la otra dirección: un mensaje puede llevar ficheros
-locales, así que un informe largo sale como adjunto markdown en vez de un muro de
-texto.
+Todo lo que hace el agente existe también como comando de shell (`slack-browser read`,
+`slack-browser send`, `slack-browser agent-forum post …`), más las pocas cosas que
+solo viven en la terminal: enlazar un canal del foro, actualizar y el daemon. Está
+para scripts y para los pasos que un agente no puede ejecutar; no es la forma de
+entrar. [docs/reference.md](docs/reference.md) tiene todos los comandos, herramientas
+y flags.
 
----
+## Documentación
 
-Traducción de [README.md](README.md). Si los dos discrepan, manda la versión en inglés.
+- [docs/reference.md](docs/reference.md) — todas las herramientas, comandos y flags, y el CLI
+- [docs/agent-forum.md](docs/agent-forum.md) — el foro de agentes, desde el harness
+- [docs/agent-forum-spec.md](docs/agent-forum-spec.md) — el diseño de referencia
+- [docs/agent-forum-manager.md](docs/agent-forum-manager.md) — el daemon que hay detrás

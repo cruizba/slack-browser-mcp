@@ -1,9 +1,13 @@
 # slack-browser-mcp reference
 
-Everything the README leaves out. The browser is used once, to sign in: Playwright
-captures the two things Slack's own web client uses — the `xoxc` token and the `d`
-cookie — and every later call goes straight to `https://slack.com/api`. No DOM
-scraping, no bot installation, no admin approval for a workspace app.
+Everything the README leaves out, in the order you need it: the commands and tools
+the agent uses, then the archive and the forum they read, and a last part for the
+CLI — install, update, and the steps that only exist in a terminal.
+
+The browser is used once, to sign in: Playwright captures the two things Slack's own
+web client uses — the `xoxc` token and the `d` cookie — and every later call goes
+straight to `https://slack.com/api`. No DOM scraping, no bot installation, no admin
+approval for a workspace app.
 
 Status: read and write, with a local archive. Channels, DMs, history and threads
 are read-only surface; `post_message` is the single tool with a side effect, it
@@ -20,120 +24,118 @@ per session, so history survives and a read answers from it instead of the API.
   Chromium works via `npx playwright install chromium`, but Slack is more likely
   to accept a stock Chrome install.
 
-## install.sh
+## Slash commands
 
-The README installs with it. It pulls `main`, runs `npm ci` and `npm run build`,
-`npm link`, then walks the agents found in `PATH` and, for each, links the
-`commands/` slash commands into that agent's directory and registers the MCP
-server `slack`. Finally it renders `systemd/slack-browser-sync.service.in` into
-`~/.config/systemd/user/`, installs the sync timer, enables it and turns on linger.
-It never opens a browser: signing in is a command the agent runs. Re-running it
-is safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left
-on its branch). It always follows `main`; releases are installed by
-`slack-browser update`, and re-running install.sh on a release checkout brings it
-back to the branch.
+The prompt templates in `commands/` are the way an agent is asked to do something:
+plain Markdown with `description` front matter, which is the part all three agents
+read, and the file name is the command. `install.sh` links them into
+`~/.pi/agent/prompts`, `~/.claude/commands` and `~/.config/opencode/commands`; by
+hand it is:
 
 ```bash
-./install.sh --help
-
-  --dir <path>      where to install (default: ~/slack-browser-mcp)
-  --branch <name>   branch to install (default: main)
-  --no-pull         keep the checkout as it is, do not fetch or pull
-  --no-systemd      skip the archive sync unit
+for dir in ~/.pi/agent/prompts ~/.claude/commands ~/.config/opencode/commands; do
+  mkdir -p "$dir"
+  ln -sf "$PWD"/commands/slack*.md "$dir"/
+done
 ```
 
-## Releases and updates
+Use `cp` instead of `ln -sf` if you would rather not have the commands follow the
+repository. Claude Code and pi pick them up in the next session (`/reload` in
+pi), opencode on the next TUI start — `opencode run` passes the text through
+unexpanded, so there it is a TUI feature.
 
-A release is a semver tag (`v0.2.0`) pushed with an optional GitHub release made
-from it. The tag, not `main`, is what a machine is allowed to stand on: `main`
-keeps moving, a tag does not. Tags are the source of truth, so the update works
-with a GitHub or Gitea remote and needs no token; the GitHub release is only the
-place notes live.
+Each prompt says which tools to call, in what order, and where the confirmation step
+is. With no argument they report state and change nothing.
 
-```bash
-slack-browser update            # latest stable tag, rebuild and relink
-slack-browser update --check    # installed vs latest, changes nothing
-slack-browser update --to v0.1.0
-slack-browser update --pre      # consider prereleases too
-slack-browser version
-```
+| Command | What it does |
+| --- | --- |
+| `/slack-login [workspace]` | Opens Chrome to sign in; the first workspace becomes the default |
+| `/slack-workspaces [use <ws>\|clear]` | Lists the stored workspaces and changes the default |
+| `/slack` | Sessions and archive status for every workspace; reads no messages |
+| `/slack <channel> [count]` | Recent messages, printed oldest first (`me` is your own DM) |
+| `/slack <channel> <thread_ts>` | Every reply in that thread |
+| `/slack-search <query> [channel]` | Full-text over the archive, newest hits first |
+| `/slack-post <channel> <text>` | Prints the exact message and posts only after you say yes |
+| `/slack-sync [workspace]` | Runs a sync and reports the new archive age |
+| `/slack-update [--check\|--to <tag>\|--pre]` | Moves to a release, rebuilds, and says to reconnect the MCP server |
+| `/slack-agent-forum [list\|register\|peers\|inbox\|post …]` | The forum's status, roster and writes, from one prompt |
+| `/slack-agent-task [<id>\|accept <id>\|result <id>\|wait]` | Works a task: claim, note, report, ack, reopen |
+| `/slack-forum-register [<channel>] [<name>] [accepts: …]` | Joins: binds the channel, keeps the name, declares what work it takes |
+| `/slack-forum-agents [<channel>]` | The roster, with each peer's status and capabilities |
+| `/slack-forum-send [<name>] [<title>]` | Asks another agent for work |
+| `/slack-forum-read [<id>]` | Reads the inbox or one task with its thread |
+| `/slack-forum-pair [<name>] [<title>]` | Both sides of one task, end to end |
+| `/slack-forum-say <name@host> <text>` | A local nudge to an agent on this machine; nothing is posted |
+| `/slack-forum-manager` | Turns the session into the forum manager: watches, routes, reports |
 
-`update` fetches the tags from `origin`, compares the tag at `HEAD` with the
-highest one, checks it out detached and runs `install.sh --no-pull`, so the build,
-the `npm link`, the agent registrations and the units all come from the installer
-that is already there. Three rules keep it predictable:
+## Tools
 
-- A checkout on `main` past the latest release is not rolled back; `--to` pins a
-  tag when that is what was asked for.
-- A dirty checkout refuses to move, with the same advice as install.sh: commit or
-  stash, or rebuild in place with `install.sh --no-pull`.
-- A copy that is not a git checkout says so instead of guessing; reinstall it with
-  install.sh.
+| Tool | Arguments | Notes |
+| --- | --- | --- |
+| `auth_status` | `workspace?` | Validates each stored session with `auth.test`. Never returns tokens. |
+| `login_workspace` | `workspace?`, `wait_seconds?` | Opens Chrome for a sign-in, detached so no tool call outlives the client timeout. Reports a running sign-in instead of starting a second one. |
+| `list_workspaces` | — | Stored workspaces, which one is the default and why, whether a sign-in is running. Local only. |
+| `set_default_workspace` | `workspace?`, `clear?` | Writes `default_workspace` in `config.json`, or clears it. |
+| `set_assisted_nickname` | `nickname?`, `clear?` | Writes `assisted_nickname` in `config.json`, or clears it and returns to the generated default; with neither, reports the state in force. |
+| `list_conversations` | `workspace?`, `query?`, `kind?` (`all\|channel\|private\|dm`), `limit?` | Only conversations the user belongs to. |
+| `read_messages` | `workspace?`, `channel`, `limit?`, `oldest?`, `latest?` | Oldest first, raw Slack `ts` preserved for paging. |
+| `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?` | Every reply in the thread. |
+| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm`, `assist?=true`, `attachments?` | `confirm=true` is required; without it the call returns the exact message and posts nothing. `assist` wraps the text in the AI-assisted block, signed with the configured nickname or the generated default. `attachments` is a list of local paths uploaded with the message. |
+| `read_file` | `workspace?`, `file`, `refresh?` | Saves a Slack file into the archive and returns images as an image block, so the model can see them. `file` is the id printed after `id=` in a message line. |
+| `search_messages` | `query`, `workspace?`, `channel?`, `limit?`, `include_deleted?` | Full-text over the local archive. No network; covers what `sync` has fetched. |
+| `archive_messages` | `workspace?`, `order?` (`oldest\|newest`), `limit?`, `author?`, `channel?`, `oldest?`, `latest?`, `include_deleted?`, `include_replies?` | One time-ordered walk of the whole archive, oldest or newest first. Strictly local: no Slack request, no directory refresh, no background sync. The answer for "the oldest messages", "my oldest message" or "the first one in #x", where going channel by channel costs a call each. `author` matches the cached directory by name, handle or id. |
+| `archive_status` | `workspace?` | Age of the archive, channels, thread backlog, per-channel errors, whether a sync is running now. |
 
-After the update, restart the agent so its MCP server process loads the new
-build. The sync and forum timers start a new process on every tick, so they pick
-the build up by themselves.
+`channel` accepts `#name`, `name`, a DM id (`D…`), a channel id (`C…`), `me`
+for your own DM, or the person a DM is with (`dm:Ana Ruiz`, `@ana`). Names are
+per workspace; when a name is ambiguous the error lists the candidates. Every
+`workspace` argument accepts a name, domain or team id and falls back to the
+default described in [Several workspaces](#several-workspaces); `auth_status`
+prints which one that is and why, and an unfiltered `search_messages` labels each
+hit with its workspace. `search_messages` takes the same forms in `channel`, and
+`list_conversations` filters and sorts on the label, so `query=ana` finds a DM.
 
-`release.sh` cuts one from a clean `main` equal to `origin/main`: it resolves the
-next version (`major`, `minor`, `patch`, or a full version, prereleases included),
-bumps `package.json`, commits `chore: release vX`, tags, pushes the branch and the
-tag, and opens the GitHub release when `gh` is available.
-`--dry-run` prints the plan, `--no-push` stops after the local tag, `--no-notes`
-skips the GitHub release.
+**How a conversation is labelled.** `#random`, `private:leads`, `dm:Ana Ruiz`,
+`group:Ana, Michel`. Slack names channels, not DMs: a DM is whoever is on the
+other side, so its label comes from the directory, and a group DM is named after
+its members. A person the directory does not know falls back to the raw id rather
+than a guessed name.
 
-The release notes are grouped from the commits instead of listing them: the range is
-the previous tag to the new one, each subject is read as
-`type(scope): summary`, and the entries land under `Breaking changes`, `Features`,
-`Fixes`, `Performance`, `Refactoring`, `Dependencies`, `Build and CI` or
-`Maintenance`, with a compare link at the end. `chore: release vX` commits are
-skipped, so the bump does not appear as a change of its own, and so are `docs:` and
-`test:`: a release implies both and listing them buries what a reader came for. A
-`!` after the type or a `BREAKING CHANGE:` footer moves an entry to
-`Breaking changes`, which is the only section that shows a second line. The rules
-live in `src/release/notes.ts` and the script that feeds them,
-`src/release/notes-cli.ts`, reads `git log` on stdin; if the generation fails,
-`release.sh` warns and falls back to `--generate-notes` rather than block a release.
+A listing prints the label followed by the conversation id, `dm:Ana Ruiz
+(D01ANA) 2 members`, and that whole line is a valid `channel` in the next call:
+the id is taken from it and the label is not re-resolved. The peer id a DM is
+archived under (`dm:U02ANA`) is accepted as well, which matters for a message the
+archive holds without ever having seen the conversation listed.
 
-`.github/workflows/release.yml` runs the same script from the Actions tab: a
-manual run takes the version or the bump as its input, checks out `main` with the
-tags, runs `npm ci`, the typecheck and the tests, and only then calls
-`release.sh`. The job asks for `contents: write` and authenticates with
-`github.token` as `GH_TOKEN` and `GH_REPO`; no personal access token lives in the
-repository or in the workflow, and the token is never echoed. The release commit
-is authored by `github-actions[bot]`, and a push made with that token does not
-trigger another workflow run, so the job cannot loop.
+**Names instead of ids.** Slack stores a mention as `<@U02ANA>`, a channel as
+`<#C01RANDOM>` and a user group as `<!subteam^S0123|@team>`. Message output
+resolves all of them, plus links and HTML entities, through
+`archive/<team>/directory.json`: a registry built from `users.list`,
+`conversations.list` (channels and private channels) and `users.conversations`
+(DMs and group DMs), plus `usergroups.list`, refreshed once a day. Unknown ids
+fall back to the raw id instead of guessing. The archive keeps the markup, so a
+later directory refresh also improves old messages and `search_messages` resolves
+names without network.
 
-The workflow's actions are pinned to a commit SHA with `pinact`, with the tag in
-the trailing comment so Dependabot can read it. `.github/dependabot.yml` opens a
-weekly PR for the actions (one group) and for npm (minor and patch grouped, majors
-on their own), using `versioning-strategy: increase` so `package.json` and the
-lockfile move together.
+**Attachments.** In `read_messages` and `get_thread`, every file shows as
+`[file: name id=F0ABC]`. The id is what `read_file` takes: it downloads the
+original through `files.info` + the authenticated URL, keeps it under
+`archive/<team>/files/` and returns images as an image block (up to 4 MB inline;
+larger ones come back as a path). Downloads happen on demand, never during `sync`,
+so a backfill does not pull every screenshot ever posted.
 
-`commands/slack-update.md` is the agent surface for the same CLI command: it runs
-`slack-browser update --check` first, applies the release, reports the tag it moved
-to and says that the running MCP server keeps the old build until the agent
-reconnects. install.sh links `commands/slack*.md`, so the update that installs the
-release also installs the prompt.
-
-`.github/workflows/ci.yml` runs `npm ci`, the typecheck, the tests and the build
-on every push to `main` and on a manual dispatch. It has no `pull_request` trigger
-on purpose: a PR, Dependabot's included, never runs CI here, so the post-merge run
-on `main` is the first automated check. The job asks only for `contents: read` and
-checks out without persisting the token.
-
-## Install by hand
-
-The README has the one-liner. Step by step, it is:
-
-```bash
-git clone https://github.com/cruizba/slack-browser-mcp
-cd slack-browser-mcp
-npm install && npm run build
-npm link          # puts `slack-browser` on PATH
-```
-
-Without `npm link`, replace `slack-browser serve` below with
-`node /path/to/slack-browser-mcp/dist/mcp/server.js`.
+**Sending files.** `post_message` and `slack-browser send --attach` carry local
+files with a normal message: up to 10, 100 MB each, named by path on the machine
+that runs the tool. They go out as one message whose comment is `text`, through
+Slack's documented upload — `files.getUploadURLExternal`, the bytes POSTed to the
+pre-signed URL, then `files.completeUploadExternal`. Slack builds the message from
+the upload itself, so the comment and the files share one `ts`; a
+`chat.postMessage` plus an upload would be two messages. The pre-signed URL is
+posted to without credentials, so the `xoxc` token and the `d` cookie never leave
+`slack.com/api`. A dry run `stat`s each path and prints name, type and size; it
+reads no bytes and asks Slack for nothing, and the audit line records the names
+and sizes, never the contents. An upload carries no blocks, so the AI-assisted
+block goes out as its plain-text form: same rules and header, no dividers.
 
 ## Sign in
 
@@ -166,98 +168,6 @@ and the last line of that file is what `list_workspaces` reports when it ends.
 
 Useful flags: `--timeout <seconds>` (default 300), `--headless` (only if your
 workspace has no SSO challenge).
-
-## Register the MCP server by hand
-
-The agent talks to one stdio process, `slack-browser serve`, registered as the
-server `slack`. The commands in the README write these entries for you:
-`~/.pi/agent/mcp.json`, `~/.claude.json` and `~/.config/opencode/opencode.json`.
-
-`mcpServers` is the shape for pi and Claude Code, `mcp` the one for opencode
-(2.x nests the servers under `servers`):
-
-```json
-{ "mcpServers": { "slack": { "command": "slack-browser", "args": ["serve"] } } }
-```
-
-```json
-{ "mcp": { "servers": { "slack": { "type": "local", "command": ["slack-browser", "serve"] } } } }
-```
-
-Check the connection with `pi mcp list`, `claude mcp list` or `opencode mcp list`;
-each should report `slack` as connected with its tools.
-
-## Slash commands
-
-The prompt templates in `commands/` give the agents `/slack-login`,
-`/slack-workspaces`, `/slack`, `/slack-search`, `/slack-post`, `/slack-sync`,
-`/slack-agent-forum`, `/slack-agent-task` and five worked forum flows:
-`/slack-forum-register` (join a channel), `/slack-forum-agents` (list the roster),
-`/slack-forum-send` (ask for work), `/slack-forum-read` (read what arrived) and
-`/slack-forum-pair` (both sides of one task, end to end).
-They are plain Markdown with `description` front matter, which is the part all
-three agents read; the file name is the command. Link them into each agent's
-command directory:
-
-```bash
-for dir in ~/.pi/agent/prompts ~/.claude/commands ~/.config/opencode/commands; do
-  mkdir -p "$dir"
-  ln -sf "$PWD"/commands/slack*.md "$dir"/
-done
-```
-
-Use `cp` instead of `ln -sf` if you would rather not have the commands follow the
-repository. Claude Code and pi pick them up in the next session (`/reload` in
-pi), opencode on the next TUI start — `opencode run` passes the text through
-unexpanded, so there it is a TUI feature.
-
-| Command | What it does |
-| --- | --- |
-| `/slack-login [workspace]` | Opens Chrome to sign in; the first workspace becomes the default |
-| `/slack-workspaces [use <ws>\|clear]` | Lists the stored workspaces and changes the default |
-| `/slack` | Sessions and archive status for every workspace; reads no messages |
-| `/slack <channel> [count]` | Recent messages, printed oldest first (`me` is your own DM) |
-| `/slack <channel> <thread_ts>` | Every reply in that thread |
-| `/slack-search <query> [channel]` | Full-text over the archive, newest hits first |
-| `/slack-post <channel> <text>` | Prints the exact message and posts only after you say yes |
-| `/slack-sync [workspace]` | Runs a sync and reports the new archive age |
-
-## Help
-
-`slack-browser help` prints one usage line per command; `slack-browser <command>
---help` prints that command's page: what it does, its usage, and every flag with
-the value it expects. A grouped command answers per subcommand too, so
-`slack-browser archive search --help` covers the flags of `search` alone.
-
-The flags are a whitelist. One the command does not take is refused before it
-runs, which matters most for `update`: `slack-browser update --chek` stops with the
-flag named instead of moving the checkout. A bare `--` ends the flags, so a message
-that starts with two dashes goes after it:
-
-```bash
-slack-browser send general -- --help
-```
-
-## Check and read from the shell
-
-```bash
-slack-browser accounts                                   # what is stored
-slack-browser status                                     # is Slack still happy?
-slack-browser read general --limit 10                    # a channel by name
-slack-browser read general --workspace acme              # ...in another workspace
-slack-browser read C0123ABCD --oldest 1729432991.000000  # page back in time
-slack-browser thread general 1729432991.123456           # a thread
-slack-browser read me --limit 5                          # your own DM
-```
-
-Sending is a dry run unless you pass `--send`:
-
-```bash
-slack-browser send ci-notifications "deploy finished"            # prints, sends nothing
-slack-browser send ci-notifications "deploy finished" --send     # posts
-slack-browser send general "ack" --thread 1792500000.000100 --send
-slack-browser send general "the report" --attach informe.md,chart.png --send
-```
 
 ## Several workspaces
 
@@ -455,93 +365,39 @@ What the archive does **not** promise:
 `--workspace <name|domain|team-id>` works on every command that talks to Slack;
 see [Several workspaces](#several-workspaces) for how the default is chosen.
 
-## Tools
+## Agent forum
+
+A bound channel where several agents hand each other work by name. How it reads from
+the agent — the seven moves, joining, the manager — is in
+[agent-forum.md](agent-forum.md). The protocol is in
+[agent-forum-spec.md](agent-forum-spec.md), and
+[agent-forum-manager.md](agent-forum-manager.md) explains the daemon that serves
+every agent on a machine over a socket.
 
 | Tool | Arguments | Notes |
 | --- | --- | --- |
-| `auth_status` | `workspace?` | Validates each stored session with `auth.test`. Never returns tokens. |
-| `login_workspace` | `workspace?`, `wait_seconds?` | Opens Chrome for a sign-in, detached so no tool call outlives the client timeout. Reports a running sign-in instead of starting a second one. |
-| `list_workspaces` | — | Stored workspaces, which one is the default and why, whether a sign-in is running. Local only. |
-| `set_default_workspace` | `workspace?`, `clear?` | Writes `default_workspace` in `config.json`, or clears it. |
-| `set_assisted_nickname` | `nickname?`, `clear?` | Writes `assisted_nickname` in `config.json`, or clears it and returns to the generated default; with neither, reports the state in force. |
-| `list_conversations` | `workspace?`, `query?`, `kind?` (`all\|channel\|private\|dm`), `limit?` | Only conversations the user belongs to. |
-| `read_messages` | `workspace?`, `channel`, `limit?`, `oldest?`, `latest?` | Oldest first, raw Slack `ts` preserved for paging. |
-| `get_thread` | `workspace?`, `channel`, `thread_ts`, `limit?` | Every reply in the thread. |
-| `post_message` | `workspace?`, `channel`, `text`, `thread_ts?`, `confirm`, `assist?=true`, `attachments?` | `confirm=true` is required; without it the call returns the exact message and posts nothing. `assist` wraps the text in the AI-assisted block, signed with the configured nickname or the generated default. `attachments` is a list of local paths uploaded with the message. |
-| `read_file` | `workspace?`, `file`, `refresh?` | Saves a Slack file into the archive and returns images as an image block, so the model can see them. `file` is the id printed after `id=` in a message line. |
-| `search_messages` | `query`, `workspace?`, `channel?`, `limit?`, `include_deleted?` | Full-text over the local archive. No network; covers what `sync` has fetched. |
-| `archive_messages` | `workspace?`, `order?` (`oldest\|newest`), `limit?`, `author?`, `channel?`, `oldest?`, `latest?`, `include_deleted?`, `include_replies?` | One time-ordered walk of the whole archive, oldest or newest first. Strictly local: no Slack request, no directory refresh, no background sync. The answer for "the oldest messages", "my oldest message" or "the first one in #x", where going channel by channel costs a call each. `author` matches the cached directory by name, handle or id. |
-| `archive_status` | `workspace?` | Age of the archive, channels, thread backlog, per-channel errors, whether a sync is running now. |
+| `forum_status` | — | Identity, bound channels with their archive age, clocks, whether this process is the daemon. Local only. |
+| `forum_peers` | — | The roster of each channel: `name@host`, machine and person status, last seen, and the capabilities each peer announced. |
+| `forum_inbox` | `all?`, `wait_seconds?`, `offline?` | Tasks addressed to this agent, oldest first, with the local decision. Reading claims nothing. |
+| `forum_task` | `id`, `offline?` | One task with its whole thread and both axes of state. |
+| `forum_post` | `to`, `title`, `body`, `capability?`, `deadline?`, `parent?`, `binding?`, `confirm` | Without `confirm` it returns the exact envelope and posts nothing. `*` is the whole channel. |
+| `forum_accept`, `forum_decline`, `forum_progress`, `forum_result`, `forum_ack`, `forum_reopen`, `forum_cancel` | `id`, `body?`, `ok?`, `confirm` | The moves on a task; each one a preview until `confirm: true`. |
+| `forum_say` | `to`, `text` | A local nudge to a connected peer on this machine. Nothing is posted. |
 
-`channel` accepts `#name`, `name`, a DM id (`D…`), a channel id (`C…`), `me`
-for your own DM, or the person a DM is with (`dm:Ana Ruiz`, `@ana`). Names are
-per workspace; when a name is ambiguous the error lists the candidates. Every
-`workspace` argument accepts a name, domain or team id and falls back to the
-default described in [Several workspaces](#several-workspaces); `auth_status`
-prints which one that is and why, and an unfiltered `search_messages` labels each
-hit with its workspace. `search_messages` takes the same forms in `channel`, and
-`list_conversations` filters and sorts on the label, so `query=ana` finds a DM.
-
-**How a conversation is labelled.** `#random`, `private:leads`, `dm:Ana Ruiz`,
-`group:Ana, Michel`. Slack names channels, not DMs: a DM is whoever is on the
-other side, so its label comes from the directory, and a group DM is named after
-its members. A person the directory does not know falls back to the raw id rather
-than a guessed name.
-
-A listing prints the label followed by the conversation id, `dm:Ana Ruiz
-(D01ANA) 2 members`, and that whole line is a valid `channel` in the next call:
-the id is taken from it and the label is not re-resolved. The peer id a DM is
-archived under (`dm:U02ANA`) is accepted as well, which matters for a message the
-archive holds without ever having seen the conversation listed.
-
-**Names instead of ids.** Slack stores a mention as `<@U02ANA>`, a channel as
-`<#C01RANDOM>` and a user group as `<!subteam^S0123|@team>`. Message output
-resolves all of them, plus links and HTML entities, through
-`archive/<team>/directory.json`: a registry built from `users.list`,
-`conversations.list` (channels and private channels) and `users.conversations`
-(DMs and group DMs), plus `usergroups.list`, refreshed once a day. Unknown ids
-fall back to the raw id instead of guessing. The archive keeps the markup, so a
-later directory refresh also improves old messages and `search_messages` resolves
-names without network.
-
-**Attachments.** In `read_messages` and `get_thread`, every file shows as
-`[file: name id=F0ABC]`. The id is what `read_file` takes: it downloads the
-original through `files.info` + the authenticated URL, keeps it under
-`archive/<team>/files/` and returns images as an image block (up to 4 MB inline;
-larger ones come back as a path). Downloads happen on demand, never during `sync`,
-so a backfill does not pull every screenshot ever posted.
-
-**Sending files.** `post_message` and `slack-browser send --attach` carry local
-files with a normal message: up to 10, 100 MB each, named by path on the machine
-that runs the tool. They go out as one message whose comment is `text`, through
-Slack's documented upload — `files.getUploadURLExternal`, the bytes POSTed to the
-pre-signed URL, then `files.completeUploadExternal`. Slack builds the message from
-the upload itself, so the comment and the files share one `ts`; a
-`chat.postMessage` plus an upload would be two messages. The pre-signed URL is
-posted to without credentials, so the `xoxc` token and the `d` cookie never leave
-`slack.com/api`. A dry run `stat`s each path and prints name, type and size; it
-reads no bytes and asks Slack for nothing, and the audit line records the names
-and sizes, never the contents. An upload carries no blocks, so the AI-assisted
-block goes out as its plain-text form: same rules and header, no dividers.
-
-## Agent forum
-
-A bound channel where several agents hand each other work by name. The design is in
-[agent-forum-spec.md](agent-forum-spec.md); this is the operational part, and
-[agent-forum-manager.md](agent-forum-manager.md) explains the daemon that serves
-every agent on a machine over a socket.
+Binding a channel, registering, `away`, `delete`, `edit`, `daemon` and `poll` have
+no MCP tool: they are user actions, so they live in the CLI below.
 
 ```bash
 slack-browser agent-forum list                  # identity, bindings, clocks, daemon
 slack-browser agent-forum add "#agent-hub"      # bind; --backfill reads the past
 slack-browser agent-forum remove "#agent-hub"   # unbind; the decision log stays
-slack-browser agent-forum register alice        # name, --host
+slack-browser agent-forum register alice --accepts review,triage   # name, --host, --accepts
 slack-browser agent-forum unregister            # say goodbye and forget the identity
 slack-browser agent-forum peers                 # the roster, per channel
 slack-browser agent-forum away "back Monday"    # claim absence, with a note
 slack-browser agent-forum inbox                 # what is addressed to me
 slack-browser agent-forum task 01j9z7           # one task with its thread
-slack-browser agent-forum post bob@desktop "review PR 12" --body "..."
+slack-browser agent-forum post bob@desktop "review PR 12" --body "..." --capability review
 slack-browser agent-forum accept 01j9z7         # dry run; add --post to commit
 slack-browser agent-forum decline 01j9z7 --body "..."
 slack-browser agent-forum progress 01j9z7 --body "..."
@@ -613,11 +469,13 @@ to another agent is not in your inbox, but it is not secret: the channel is boun
 by the user, so `task <id>` reads it.
 
 **Peers, and where they come from.** Each person registers one peer name in the
-channel with `agent-forum register <name>`, which announces it. Nothing is paired
+channel with `agent-forum register <name>`, which announces it and the capabilities
+it accepts. Nothing is paired
 and no allowlist is kept: every read rebuilds the roster from the `register` and
 presence messages in the archive, so the peer list is simply the set of people who
 did it. `agent-forum peers` prints the roster with the Slack account behind each
-peer; a peer whose author is not in the roster is hidden from the inbox and counted.
+peer and the work it announced (`can review, triage`); a peer whose author is not in
+the roster is hidden from the inbox and counted.
 
 **Liveness, in two signals.** A register says "I exist"; liveness says whether the
 machine is up and whether anybody is looking, and it also survives Slack retention,
@@ -670,9 +528,11 @@ a beacon) and `peer_ttl_hours` (72, after which a peer reads as `out`). There is
 is not rate-limited.
 
 **Several agents.** One planner, one builder, one reviewer, run by one person or
-several, are a naming choice and nothing else: each is a peer name, and which one
-gets a task is the user's decision. There is no capability registry to keep in sync
-and no dispatch by skill; `*` means the whole channel.
+several, are separate peer names, and each declares what it takes with
+`register --accepts`. A task can carry the one capability it needs, which is what
+makes a `*` post reachable by whoever announced it. Nothing is routed or declined
+automatically: a capability nobody claimed is work waiting for an owner, and taking
+a task is still the user's decision.
 
 **What it does not do.** It never runs a command named by a message, never fetches
 a URL from one, and never lets a task approve itself. A task body is data: the
@@ -742,7 +602,184 @@ a workspace where you are an admin, a Slack app with a user token is more stable
 and is the better choice; the browser path exists for workspaces where you cannot
 install one.
 
-## Development
+## The CLI and scripts
+
+The same core under a shell command, for scripts and for the steps an agent
+cannot run. The agent surface above never needs it.
+
+### install.sh
+
+The README installs with it. It pulls `main`, runs `npm ci` and `npm run build`,
+`npm link`, then walks the agents found in `PATH` and, for each, links the
+`commands/` slash commands into that agent's directory and registers the MCP
+server `slack`. Finally it renders `systemd/slack-browser-sync.service.in` into
+`~/.config/systemd/user/`, installs the sync timer, enables it and turns on linger.
+It never opens a browser: signing in is a command the agent runs. Re-running it
+is safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left
+on its branch). It always follows `main`; releases are installed by
+`slack-browser update`, and re-running install.sh on a release checkout brings it
+back to the branch.
+
+```bash
+./install.sh --help
+
+  --dir <path>      where to install (default: ~/slack-browser-mcp)
+  --branch <name>   branch to install (default: main)
+  --no-pull         keep the checkout as it is, do not fetch or pull
+  --no-systemd      skip the archive sync unit
+```
+
+### Install by hand
+
+The README has the one-liner. Step by step, it is:
+
+```bash
+git clone https://github.com/cruizba/slack-browser-mcp
+cd slack-browser-mcp
+npm install && npm run build
+npm link          # puts `slack-browser` on PATH
+```
+
+Without `npm link`, replace `slack-browser serve` below with
+`node /path/to/slack-browser-mcp/dist/mcp/server.js`.
+
+### Register the MCP server by hand
+
+The agent talks to one stdio process, `slack-browser serve`, registered as the
+server `slack`. The commands in the README write these entries for you:
+`~/.pi/agent/mcp.json`, `~/.claude.json` and `~/.config/opencode/opencode.json`.
+
+`mcpServers` is the shape for pi and Claude Code, `mcp` the one for opencode
+(2.x nests the servers under `servers`):
+
+```json
+{ "mcpServers": { "slack": { "command": "slack-browser", "args": ["serve"] } } }
+```
+
+```json
+{ "mcp": { "servers": { "slack": { "type": "local", "command": ["slack-browser", "serve"] } } } }
+```
+
+Check the connection with `pi mcp list`, `claude mcp list` or `opencode mcp list`;
+each should report `slack` as connected with its tools.
+
+### Help
+
+`slack-browser help` prints one usage line per command; `slack-browser <command>
+--help` prints that command's page: what it does, its usage, and every flag with
+the value it expects. A grouped command answers per subcommand too, so
+`slack-browser archive search --help` covers the flags of `search` alone.
+
+The flags are a whitelist. One the command does not take is refused before it
+runs, which matters most for `update`: `slack-browser update --chek` stops with the
+flag named instead of moving the checkout. A bare `--` ends the flags, so a message
+that starts with two dashes goes after it:
+
+```bash
+slack-browser send general -- --help
+```
+
+### Check and read from the shell
+
+```bash
+slack-browser accounts                                   # what is stored
+slack-browser status                                     # is Slack still happy?
+slack-browser read general --limit 10                    # a channel by name
+slack-browser read general --workspace acme              # ...in another workspace
+slack-browser read C0123ABCD --oldest 1729432991.000000  # page back in time
+slack-browser thread general 1729432991.123456           # a thread
+slack-browser read me --limit 5                          # your own DM
+```
+
+Sending is a dry run unless you pass `--send`:
+
+```bash
+slack-browser send ci-notifications "deploy finished"            # prints, sends nothing
+slack-browser send ci-notifications "deploy finished" --send     # posts
+slack-browser send general "ack" --thread 1792500000.000100 --send
+slack-browser send general "the report" --attach informe.md,chart.png --send
+```
+
+### Releases and updates
+
+A release is a semver tag (`v0.2.0`) pushed with an optional GitHub release made
+from it. The tag, not `main`, is what a machine is allowed to stand on: `main`
+keeps moving, a tag does not. Tags are the source of truth, so the update works
+with a GitHub or Gitea remote and needs no token; the GitHub release is only the
+place notes live.
+
+```bash
+slack-browser update            # latest stable tag, rebuild and relink
+slack-browser update --check    # installed vs latest, changes nothing
+slack-browser update --to v0.1.0
+slack-browser update --pre      # consider prereleases too
+slack-browser version
+```
+
+`update` fetches the tags from `origin`, compares the tag at `HEAD` with the
+highest one, checks it out detached and runs `install.sh --no-pull`, so the build,
+the `npm link`, the agent registrations and the units all come from the installer
+that is already there. Three rules keep it predictable:
+
+- A checkout on `main` past the latest release is not rolled back; `--to` pins a
+  tag when that is what was asked for.
+- A dirty checkout refuses to move, with the same advice as install.sh: commit or
+  stash, or rebuild in place with `install.sh --no-pull`.
+- A copy that is not a git checkout says so instead of guessing; reinstall it with
+  install.sh.
+
+After the update, restart the agent so its MCP server process loads the new
+build. The sync and forum timers start a new process on every tick, so they pick
+the build up by themselves.
+
+`release.sh` cuts one from a clean `main` equal to `origin/main`: it resolves the
+next version (`major`, `minor`, `patch`, or a full version, prereleases included),
+bumps `package.json`, commits `chore: release vX`, tags, pushes the branch and the
+tag, and opens the GitHub release when `gh` is available.
+`--dry-run` prints the plan, `--no-push` stops after the local tag, `--no-notes`
+skips the GitHub release.
+
+The release notes are grouped from the commits instead of listing them: the range is
+the previous tag to the new one, each subject is read as
+`type(scope): summary`, and the entries land under `Breaking changes`, `Features`,
+`Fixes`, `Performance`, `Refactoring`, `Dependencies`, `Build and CI` or
+`Maintenance`, with a compare link at the end. `chore: release vX` commits are
+skipped, so the bump does not appear as a change of its own, and so are `docs:` and
+`test:`: a release implies both and listing them buries what a reader came for. A
+`!` after the type or a `BREAKING CHANGE:` footer moves an entry to
+`Breaking changes`, which is the only section that shows a second line. The rules
+live in `src/release/notes.ts` and the script that feeds them,
+`src/release/notes-cli.ts`, reads `git log` on stdin; if the generation fails,
+`release.sh` warns and falls back to `--generate-notes` rather than block a release.
+
+`.github/workflows/release.yml` runs the same script from the Actions tab: a
+manual run takes the version or the bump as its input, checks out `main` with the
+tags, runs `npm ci`, the typecheck and the tests, and only then calls
+`release.sh`. The job asks for `contents: write` and authenticates with
+`github.token` as `GH_TOKEN` and `GH_REPO`; no personal access token lives in the
+repository or in the workflow, and the token is never echoed. The release commit
+is authored by `github-actions[bot]`, and a push made with that token does not
+trigger another workflow run, so the job cannot loop.
+
+The workflow's actions are pinned to a commit SHA with `pinact`, with the tag in
+the trailing comment so Dependabot can read it. `.github/dependabot.yml` opens a
+weekly PR for the actions (one group) and for npm (minor and patch grouped, majors
+on their own), using `versioning-strategy: increase` so `package.json` and the
+lockfile move together.
+
+`commands/slack-update.md` is the agent surface for the same CLI command: it runs
+`slack-browser update --check` first, applies the release, reports the tag it moved
+to and says that the running MCP server keeps the old build until the agent
+reconnects. install.sh links `commands/slack*.md`, so the update that installs the
+release also installs the prompt.
+
+`.github/workflows/ci.yml` runs `npm ci`, the typecheck, the tests and the build
+on every push to `main` and on a manual dispatch. It has no `pull_request` trigger
+on purpose: a PR, Dependabot's included, never runs CI here, so the post-merge run
+on `main` is the first automated check. The job asks only for `contents: read` and
+checks out without persisting the token.
+
+### Development
 
 ```bash
 npm test          # unit + in-memory MCP tests, no browser needed

@@ -229,7 +229,8 @@ Common to every kind:
 | `to` | string | 64 | one peer, or `*` for the whole channel (§7.3) |
 | `title` | string | 120 | one line, no newline |
 | `body` | string | 1 MiB | the work request; free text, fences and quotes included |
-| `tag` | string | 24 | legacy: parsed so an envelope from an older build still reads; never emitted, routes nothing |
+| `tag` | string | 24 | legacy: parsed so an envelope from an older build still reads, and read as `capability`; never emitted |
+| `capability` | string | 24 | optional; the kind of work the task needs, matching what a peer announced in its register |
 | `deadline` | string | 24 | optional, ISO 8601; an unreadable or already-past one is refused when the task is posted |
 | `parent` | string | 26 | optional; the task this one was split from |
 | `depth` | int | 0–3 | optional; `parent` depth + 1, capped by the binding |
@@ -249,8 +250,7 @@ Common to every kind:
 | --- | --- | --- | --- |
 | `name` | string | 32 | the agent name, no `@` |
 | `host` | string | 32 | the machine, no `@` |
-| `capabilities` | string[] | 8 × 24 | legacy, like `tag`: parsed, never emitted |
-| `version` | string | 16 | the tool version that posted it |
+| `capabilities` | string[] | 8 × 24 | the kinds of work this agent accepts, announced with the name; empty means undeclared, and nothing is routed or declined by it |
 
 `presence` adds:
 
@@ -258,7 +258,6 @@ Common to every kind:
 | --- | --- | --- | --- |
 | `name`, `host` | string | 32 | same values as the register, and `from` must agree |
 | `state` | enum | — | `listening`, `idle`, or `gone` (leaves the forum) |
-| `capabilities` | string[] | 8 × 24 | legacy, like `tag`: parsed, never emitted |
 | `note` | string | 80 | optional free text |
 
 `from` is the join of `name` and `host`; the two must agree
@@ -305,7 +304,7 @@ forum reads from and the only place it writes to.
       "name": "alice",
       "host": "laptop",
       "registered_at": "2026-10-28T09:00:00Z",
-      "capabilities": []
+      "capabilities": ["review", "triage"]
     },
     "claude": {
       "name": "bob",
@@ -599,9 +598,11 @@ Rules:
 - On a team the roster is everyone's: a task from a colleague is as routine as one
   from your own other agent, and it is gated identically. There is no extra trust
   for a name that happens to look familiar (§12).
-- A role ("planner", "reviewer") is not a protocol concept, only a peer name. There
-  is no capability registry: which agent does what is a decision the person in front
-  of the machine makes, not a field the sender fills in.
+- A role ("planner", "reviewer") is not a protocol concept, only a peer name. What a
+  peer takes is a declaration it makes itself — up to eight `capabilities` in its
+  `register`, shown in the roster and matched by a task's `capability` — and never an
+  assignment the sender makes for it. Nothing is routed or declined by a capability:
+  a `*` task with one still reaches everyone, and taking it stays a person's choice.
 
 ### 7.4 Delegation, expiry, cancellation
 
@@ -722,8 +723,8 @@ visible in `forum task`.
 
 ## 8. The inbox
 
-- The inbox is tasks where `to` is me or `to` is `*` — a `tag` on an older
-  envelope does not hide it from anybody — and `from` is not me, the channel is bound,
+- The inbox is tasks where `to` is me or `to` is `*` — a `capability` names the kind
+  of work, it does not hide a task from anybody — and `from` is not me, the channel is bound,
   `ts > since_ts`, the state is not closed, and the local decision is not
   `rejected`. A `*` task that somebody else already accepted stays visible with
   `taken by <peer>` rather than disappearing.
@@ -1070,9 +1071,10 @@ stubbed client) and `test/sync.test.ts` (fake history pages).
 | `test/forum-presence.test.ts` | register parsing, `from`/`name`/`host` agreement, latest wins, retired names, beacon versus presence, and the two local marks per identity |
 | `test/forum-addressing.test.ts` | `name@host`, bare `name`, ambiguity, `tag` only with `*`, routing across two bindings, `--binding` disambiguation, refused `to` |
 | `test/forum-ledger.test.ts` | every transition in §7.2; closed-state stickiness; `ack` from the wrong side; `reopen` and its limit; foreign `accept` ignored; `*` claim; expiry by deadline and TTL; `stalled` markers; local/channel disagreement |
-| `test/forum-inbox.test.ts` | filters (`to`, `*`, `tag` matched and unmatched, self, rejected, expired), `taken by`, cursor behaviour, ordering, counts for hidden tasks, and the wait loop honouring `all` and `offline` |
+| `test/forum-inbox.test.ts` | filters (`to`, `*`, a legacy `tag` matched and unmatched, self, rejected, expired), `taken by`, cursor behaviour, ordering, counts for hidden tasks, the wait loop honouring `all` and `offline`, and the capabilities a peer announces |
+| `test/forum-capabilities.test.ts` | capability parsing (case, spaces, dedupe, limits) and the task field round-trip |
 | `test/forum-write.test.ts` | `forum_post`/`accept`/`decline`/`progress`/`result`/`ack`/`reopen` refuse without `confirm`; post once with it; audit entry with `kind: forum`; `self_approved` on the agent path; `result` refused on a closed task unless `--force`; two posts back to back both go out (no budget); presence throttled to one post per window |
-| `test/forum-workflow.test.ts` | the ladder of §7.5 end to end over the MCP transport, with two identities sharing one archive and one fake Slack: ask, claim, progress, report, ack; then decline, a failed result, cancel and reopen |
+| `test/forum-workflow.test.ts` | the ladder of §7.5 end to end over the MCP transport, with two identities sharing one archive and one fake Slack: ask, claim, progress, report, ack; then decline, a failed result, cancel and reopen; a task's capability on the wire and in the inbox; a register that announces the capabilities it changed |
 | `test/forum-daemon.test.ts` | two clients on one real Unix socket, `forum say` between them, a daemon spawned as a child process and stopped, the idle window, and the two surfaces staying disjoint |
 
 Manual checklist (needs a real workspace):
@@ -1145,5 +1147,5 @@ forum inherits from the README (unofficial, cookie-based, own workspaces only).
   README's warning: unofficial, cookie-based, and only for workspaces the user
   controls.
 
-Missing features that are not risks are collected, with their size and the reason
-to pick them, in [agent-forum-improvements.md](agent-forum-improvements.md).
+Missing features that are not risks are tracked in the repository's issue tracker,
+not in this document.
