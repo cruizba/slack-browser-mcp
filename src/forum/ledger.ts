@@ -29,6 +29,8 @@ export type ChannelState =
   | 'acknowledged'
   | 'cancelled'
   | 'expired'
+  /** The envelope is gone from the channel; the task is kept so its thread still reads. */
+  | 'deleted'
 
 /** Closed means nobody is waiting for anything else; `done` and `failed` are not. */
 const CLOSED: ReadonlySet<ChannelState> = new Set<ChannelState>([
@@ -36,6 +38,7 @@ const CLOSED: ReadonlySet<ChannelState> = new Set<ChannelState>([
   'acknowledged',
   'cancelled',
   'expired',
+  'deleted',
 ])
 
 const REPORTED: ReadonlySet<ChannelState> = new Set<ChannelState>(['done', 'failed'])
@@ -75,6 +78,8 @@ export interface ForumTask {
   ignored: TaskEvent[]
   lastActivityTs: string
   stalled: boolean
+  /** Message ts of the replacement, when this task's envelope was edited. */
+  edited_at?: string
 }
 
 export interface Ledger {
@@ -179,16 +184,20 @@ export function buildLedger(args: LedgerArgs): Ledger {
   let unvouched = 0
 
   for (const message of messages) {
-    if (message.deleted_at) continue
     const envelope = envelopeOf(message)
     if (!envelope) {
-      if (carriesEnvelope(message)) unreadable += 1
+      // A message that no longer carries a readable envelope and is gone anyway says
+      // nothing; only a live one is the defect the counter is for.
+      if (!message.deleted_at && carriesEnvelope(message)) unreadable += 1
       continue
     }
     // The roster kinds carry no state of their own here; they only say who exists.
     if (envelope.kind === 'register' || envelope.kind === 'beacon' || envelope.kind === 'presence') {
       continue
     }
+    // A deleted task keeps its entry so `task <id>` still answers and its replies are
+    // not orphans; a deleted reply is just an event that stopped existing.
+    if (message.deleted_at && envelope.kind !== 'task') continue
     if (envelope.from !== me && !peerFor(roster, envelope.from)) {
       unvouched += 1
       continue
@@ -217,14 +226,27 @@ export function buildLedger(args: LedgerArgs): Ledger {
           depth: envelope.depth ?? 0,
           sent: envelope.sent,
           ...(message.user ? { owner: message.user } : {}),
-          state: 'open',
-          closed: false,
+          state: message.deleted_at ? 'deleted' : 'open',
+          closed: message.deleted_at !== undefined,
           reopens: 0,
           events: [],
           ignored: [],
           lastActivityTs: message.ts,
           stalled: false,
         })
+      } else if (!message.deleted_at && Number(message.ts) > Number(existing.ts)) {
+        // The replacement an edit posts: same task, newer header. Events are left
+        // alone on purpose, so an edit cannot reset a claim or a result.
+        existing.ts = message.ts
+        existing.title = envelope.title
+        existing.body = envelope.body
+        existing.sent = envelope.sent
+        if (file?.id !== undefined) existing.fileId = file.id
+        if (existing.state === 'deleted') {
+          existing.state = 'open'
+          existing.closed = false
+        }
+        existing.edited_at = message.ts
       }
       continue
     }
@@ -241,6 +263,13 @@ export function buildLedger(args: LedgerArgs): Ledger {
       sent: envelope.sent,
       ...(envelope.body !== undefined ? { body: envelope.body } : {}),
       ...('ok' in envelope && envelope.ok !== undefined ? { ok: envelope.ok } : {}),
+    }
+    if (task.state === 'deleted') {
+      // Nothing can move a task whose envelope is gone, but what was said in the
+      // thread still happened and `task <id>` shows it.
+      task.events.push(event)
+      task.lastActivityTs = message.ts
+      continue
     }
     if (applyEvent(task, event)) {
       task.events.push(event)

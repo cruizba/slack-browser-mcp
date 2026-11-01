@@ -437,6 +437,11 @@ export class SlackClient {
     }
   }
 
+  /** Only the author's own message: Slack refuses anybody else's. */
+  async deleteMessage(params: { channel: string; ts: string }): Promise<void> {
+    await this.call('chat.delete', { channel: params.channel, ts: params.ts })
+  }
+
   async replies(params: {
     channel: string
     thread_ts: string

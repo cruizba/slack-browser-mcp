@@ -72,6 +72,8 @@ slack-browser agent-forum daemon start      # start it without waiting for an ag
 slack-browser agent-forum daemon stop       # stop it; the next client starts it again
 slack-browser agent-forum say <name@host> "…"   # local nudge, nothing posted
 slack-browser agent-forum poll              # one refresh pass, by hand
+slack-browser agent-forum delete <id|ts> [--force] [--post]   # take a message back
+slack-browser agent-forum edit <id> --body <text> [--post]    # correct a task body
 ```
 
 Everything else is the forum you already know: `list`, `add`, `remove`,
@@ -161,6 +163,24 @@ forum_say with that agent's name@host and say plainly that it is local only.
 If the daemon is not running, `slack-browser agent-forum daemon status` says so;
 the next forum tool call starts it.
 ```
+
+## Taking something back
+
+Two verbs exist only here, never on the agent's surface, because they destroy
+something a peer may already have read. Both print what they would do and change
+nothing without `--post`, and both leave an audit line with a preview of the text.
+
+`delete <id|ts>` removes a message this account posted, and the task then reads
+`deleted`: out of the inbox, still readable with its thread. A thread root with
+replies needs `--force`, since those replies would hang off a message that is gone.
+
+`edit <id> --body` rewrites a task body. Slack cannot swap the file on a published
+message — the envelope *is* the upload — so the correction is a new envelope with the
+same id posted first and the old message deleted after. The ledger shows it as
+edited, and the events are left alone, so an edit cannot reset a claim. Once the
+thread has replies the verb refuses: replacing the root would move the whole thread
+onto a message that no longer exists, and `reopen` is the honest way to correct
+something the other side already answered.
 
 ## The seven moves, in words
 

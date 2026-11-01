@@ -24,6 +24,7 @@ import { describeLimits, refreshWindowDays } from './forum/limits.ts'
 import { locateTask, postTask, replyTo, transportFor, announce, announceLiveness, registerIdentity, unregisterIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
 import { channelLabel as forumChannelLabel, renderInbox, renderPeers, renderTask } from './forum/render.ts'
 import { stateLabel } from './forum/ledger.ts'
+import { deletePosting, editTaskBody } from './forum/remove.ts'
 import { catchUp, waitForWork, type CatchUpReport } from './forum/watch.ts'
 import { Lock } from './archive/lock.ts'
 import {
@@ -899,6 +900,33 @@ async function commandForum(args: ParsedArgs): Promise<number> {
       return printWrite(result)
     }
 
+    case 'delete': {
+      const ref = rest[0]
+      if (!ref) throw new Error('agent-forum delete needs a task id or a message ts')
+      await forumRefresh(context, 10_000)
+      const result = await deletePosting(await reload(context), resolveTransport, {
+        ref,
+        force: args.flags.get('force') === true,
+        confirm,
+      })
+      console.log(result.text)
+      return 0
+    }
+
+    case 'edit': {
+      const id = rest[0]
+      const body = stringFlag(args, 'body') ?? rest.slice(1).join(' ').trim()
+      if (!id || !body) throw new Error('agent-forum edit needs a task id and a body: --body "<text>"')
+      await forumRefresh(context, 10_000)
+      const result = await editTaskBody(await reload(context), resolveTransport, {
+        id,
+        body,
+        confirm,
+      })
+      console.log(result.text)
+      return 0
+    }
+
     case 'away': {
       const note = rest.join(' ').trim()
       const result = await announceLiveness(context, resolveTransport, {
@@ -1056,7 +1084,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
     default:
       throw new Error(
         `unknown agent-forum subcommand: ${subcommand}\n` +
-          'try list, add, remove, register, peers, inbox, task, post, accept, decline, progress, result, ack, reopen, cancel, wait, poll, say, daemon, forget',
+          'try list, add, remove, register, peers, inbox, task, post, accept, decline, progress, result, ack, reopen, cancel, delete, edit, wait, poll, say, daemon, forget',
       )
   }
 }

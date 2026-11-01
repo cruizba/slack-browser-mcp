@@ -25,6 +25,41 @@ export interface SendRecord {
   files?: string[]
 }
 
+/**
+ * A removal is the one thing the audit has to remember in full: after Slack deletes
+ * the message there is nothing left to read, so a redacted preview of what it said
+ * is the only record that it existed.
+ */
+export interface RemovalRecord {
+  action: 'delete' | 'edit'
+  workspace: string
+  channel: string
+  channel_id: string
+  message_ts: string
+  thread_ts?: string
+  /** The text that went away: the task body for an edit, the sentence for a delete. */
+  text: string
+}
+
+export async function recordRemoval(record: RemovalRecord, when: Date = new Date()): Promise<string> {
+  const file = auditLogPath()
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 })
+  const line = JSON.stringify({
+    at: when.toISOString(),
+    action: record.action,
+    workspace: record.workspace,
+    channel: record.channel,
+    channel_id: record.channel_id,
+    message_ts: record.message_ts,
+    ...(record.thread_ts ? { thread_ts: record.thread_ts } : {}),
+    chars: record.text.length,
+    preview: redact(record.text).slice(0, PREVIEW_CHARS),
+  })
+  await appendFile(file, `${line}\n`, { encoding: 'utf8', mode: 0o600 })
+  await chmod(file, 0o600)
+  return file
+}
+
 export async function recordSend(record: SendRecord, when: Date = new Date()): Promise<string> {
   const file = auditLogPath()
   await mkdir(dirname(file), { recursive: true, mode: 0o700 })

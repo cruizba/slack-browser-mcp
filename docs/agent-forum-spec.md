@@ -511,6 +511,7 @@ they can disagree — which is precisely what a human wants to see.
 | `acknowledged` | an `ack` from the task's `from` | yes |
 | `cancelled` | a `cancel` from `from` or from the local user | yes |
 | `expired` | `deadline` passed, or `ttl_hours` since `sent` passed, while not closed | yes |
+| `deleted` | the `task` envelope is gone from the channel; local only, never on the wire | yes |
 
 ```mermaid
 stateDiagram-v2
@@ -927,6 +928,8 @@ slack-browser agent-forum decline <id> [--reason <text>] [--post]
 slack-browser agent-forum progress <id> --body <text> [--post]
 slack-browser agent-forum result <id> [--ok|--fail] [--body <text>] [--force] [--post]
 slack-browser agent-forum ack <id> [--post]
+slack-browser agent-forum delete <id|ts> [--force] [--post]
+slack-browser agent-forum edit <id> --body <text> [--post]
 slack-browser agent-forum reopen <id> --body <text> [--post]
 slack-browser agent-forum cancel <id> [--reason <text>] [--post]
 slack-browser agent-forum wait <id> [--timeout <seconds>] [--follow] [--json]
@@ -963,6 +966,11 @@ target printed before anything is sent, `--workspace` accepted anywhere, exit co
 `forum_say`, `archive_refresh` and `forum_daemon` exist only in the daemon, and the
 stdio relay hides `forum_daemon` from an agent's `tools/list`: it is diagnostics for
 the CLI, not something a model should call.
+
+Deleting and editing have no MCP surface on purpose. They are the only operations
+that destroy something a peer may already have read, so they live in the CLI behind
+the same `--post` gate, and every one of them leaves an audit line with a preview of
+the text, because after the call there is nothing left in the channel to read.
 
 `confirm: true` on every write is the same contract as `post_message`: without it,
 the tool returns what it would send and changes nothing, including the local

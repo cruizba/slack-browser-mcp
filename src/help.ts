@@ -58,6 +58,7 @@ const FLAGS: Readonly<Record<string, FlagDoc>> = {
   oldest: { value: '<ts>', doc: 'Slack ts to bound the page on the older side' },
   parent: { value: '<id>', doc: 'the task this one continues' },
   post: { doc: 'post for real; without it, print the message and change nothing' },
+  force: { doc: 'go ahead even when the thread has reply(ies) that would lose their parent' },
   pre: { doc: 'consider prerelease tags when picking the latest' },
   quiet: { doc: 'one line per workspace instead of per channel' },
   'reconcile-days': { value: '<days>', doc: 'how far back to re-check edits and deletions (default 7)' },
@@ -270,6 +271,22 @@ const COMMANDS: Readonly<Record<string, Command>> = {
         usage: `${PROGRAM} agent-forum cancel <id> [--body <text>] [--post]`,
         flags: ['body', 'post'],
         notes: ['Withdraws a task that is still open or accepted. Only the requester can.'],
+      },
+      delete: {
+        usage: `${PROGRAM} agent-forum delete <id|ts> [--force] [--post]`,
+        flags: ['force', 'post'],
+        notes: [
+          'Deletes a message this account posted, and the task it carried reads `deleted` afterwards. A thread root with replies needs `--force`, because those replies would be left answering nothing.',
+          'A preview first: without `--post` it prints what would go and changes nothing. Every deletion leaves an audit line with a preview of the text, because after it there is nothing left to read.',
+        ],
+      },
+      edit: {
+        usage: `${PROGRAM} agent-forum edit <id> --body <text> [--post]`,
+        flags: ['body', 'post'],
+        notes: [
+          'Rewrites the body of a task you posted. Slack cannot swap the file on a message, so the body is re-posted as a new envelope with the same id and the previous message is deleted; the ledger shows it as edited.',
+          'Refused once the thread has replies: replacing the root would leave them hanging off a message that no longer exists. Use `reopen` or a `progress` note for that.',
+        ],
       },
       wait: {
         usage: `${PROGRAM} agent-forum wait [--timeout <s>] [--follow] [--json] [--offline]`,

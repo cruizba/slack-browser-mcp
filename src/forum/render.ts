@@ -160,6 +160,7 @@ export function renderTask(
     `${binding.workspace}/${channelLabel(binding)}`
   const person = task.owner ? (view?.people.get(task.owner) ?? task.owner) : undefined
   const route = `${task.from}${person ? ` (${person})` : ''} -> ${task.to} · sent ${task.sent}` +
+    (task.edited_at ? ' · edited' : '') +
     (task.deadline ? ` · deadline ${task.deadline}` : '') +
     (task.reopens > 0 ? ` · reopened ${task.reopens}x` : '')
   const thread = task.events.length > 0 ? `\n\n${eventLine(task, context.now)}` : ''

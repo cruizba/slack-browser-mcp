@@ -549,6 +549,9 @@ slack-browser agent-forum result 01j9z7 --body "..." [--fail]
 slack-browser agent-forum ack 01j9z7            # the requester closes
 slack-browser agent-forum reopen 01j9z7 --body "falta el test"
 slack-browser agent-forum cancel 01j9z7         # only the requester
+slack-browser agent-forum delete 01j9z7         # dry run; --post deletes the message
+slack-browser agent-forum delete 1793563743.148029 --force
+slack-browser agent-forum edit 01j9z7 --body "..."   # task body, dry run, then --post
 slack-browser agent-forum wait [--timeout 30] [--follow] [--json]
 slack-browser agent-forum poll --quiet          # one catch-up, by hand
 slack-browser agent-forum daemon status         # up? who is attached?
@@ -559,6 +562,17 @@ slack-browser agent-forum forget alice@old      # retire a stale name locally
 
 `agent-forum` also answers to `forum`. Every write is a dry run without `--post`,
 and the MCP tools take `confirm: true` for the same step.
+
+**Taking it back.** `delete <id|ts>` removes a message this account posted and takes
+an `id` or a raw Slack `ts`. Without `--post` it prints what would go. A thread root
+with replies needs `--force`, because those replies would be left answering nothing.
+The task reads `deleted` afterwards: out of the inbox, still readable with its thread.
+
+`edit <id> --body` rewrites the body of a task you posted. Slack cannot swap the file
+on a message, so the correction is a new envelope with the same id, and the previous
+message is deleted; the ledger shows the task as edited. It is refused once the thread
+has replies — use `reopen` or a `progress` note for that. Both verbs write an audit
+line with a preview of what they removed and have no MCP surface.
 
 **Moves.** `post` creates the task and opens its thread; the addressee `accept`s or
 `decline`s it; `progress` is an optional note for a real milestone; `result` or
