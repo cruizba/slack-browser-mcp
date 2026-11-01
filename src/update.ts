@@ -380,8 +380,8 @@ export async function update(options: UpdateOptions): Promise<number> {
   const after = await readInstalled(root, run)
   log(`updated to ${after ? describeInstalled(after) : plan.target}`)
   log(
-    'restart the agent so its MCP server loads the new build; the sync and forum timers ' +
-      'run the new code on their next tick.',
+    'restart the agent so its MCP server loads the new build; the sync timer runs the ' +
+      'new code on its next tick, and the forum daemon picks it up when it next starts.',
   )
   return 0
 }
