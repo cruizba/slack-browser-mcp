@@ -133,7 +133,7 @@ test('the inbox shows what is addressed to me and counts the rest', async (t) =>
     [TASK, '01J9Z7K3QX4MB8WN2R5T6Y7Z9C'],
   )
   assert.equal(report.entries[0]?.task.to, 'reviewer@laptop')
-  assert.equal(report.entries[1]?.task.tag, 'code')
+  assert.equal(report.entries[1]?.task.capability, 'code')
   assert.equal(report.hidden, 0)
 
   // Reading is idempotent, and a stored cursor from an earlier build must not hide
@@ -378,4 +378,26 @@ test('a wait that asks for all lists the work addressed to other agents', async 
     every.report.entries.map((entry) => entry.task.id),
     [TASK, '01J9Z7K3QX4MB8WN2R5T6Y7Z9C', '01J9Z7K3QX4MB8WN2R5T6Y7Z9E'],
   )
+})
+
+test('the roster and the inbox say what each agent can take', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'forum-inbox-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  process.env.SLACK_BROWSER_MCP_CONFIG_DIR = join(root, 'config')
+  process.env.XDG_DATA_HOME = join(root, 'data')
+  process.env.SLACK_BROWSER_MCP_AGENT = 'pi'
+
+  await seed(root)
+  const { openForum } = await import('../src/forum/context.ts')
+  const { inboxEntries, loadViews } = await import('../src/forum/inbox.ts')
+  const { renderInbox, renderPeers } = await import('../src/forum/render.ts')
+
+  const context = await openForum({ now: new Date('2026-10-28T09:30:00Z') })
+  const views = await loadViews(context)
+  const peers = renderPeers(views[0]!, context.now, context.limits).join('\n')
+  assert.match(peers, /builder@desktop.*can code/)
+  assert.match(peers, /reviewer@laptop.*can review/)
+
+  const inbox = renderInbox(context, inboxEntries(context, views))
+  assert.match(inbox, /\[code\] alguien revisa el CHANGELOG/)
 })

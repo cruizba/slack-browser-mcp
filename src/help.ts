@@ -32,6 +32,10 @@ interface Command {
 }
 
 const FLAGS: Readonly<Record<string, FlagDoc>> = {
+  accepts: {
+    value: '<tag,...>',
+    doc: 'the kinds of work this agent takes, announced with its name and shown in peers',
+  },
   all: { doc: 'also list the tasks already decided on this machine' },
   'no-assist': { doc: 'post the text alone, without the AI-agent header' },
   attach: { value: '<path,...>', doc: 'local files to upload with the message, comma-separated' },
@@ -39,6 +43,10 @@ const FLAGS: Readonly<Record<string, FlagDoc>> = {
   binding: { value: '<name>', doc: 'which bound channel to post in, when several are' },
   body: { value: '<text>', doc: 'the message body of the task or reply' },
   channel: { value: '<name|id>', doc: 'restrict the search to one channel' },
+  capability: {
+    value: '<tag>',
+    doc: 'the kind of work a task needs; on a broadcast, anyone who accepts it may take it',
+  },
   check: { doc: 'say what would happen and change nothing' },
   clear: { doc: 'drop the setting instead of reading it' },
   deadline: {
@@ -204,10 +212,11 @@ const COMMANDS: Readonly<Record<string, Command>> = {
         notes: ['Unbinds the channel. The decision log for its tasks is kept.'],
       },
       register: {
-        usage: `${PROGRAM} agent-forum register <name> [--host <name>] [--no-post]`,
-        flags: ['host', 'no-post'],
+        usage: `${PROGRAM} agent-forum register <name> [--host <name>] [--accepts <tag,...>] [--no-post]`,
+        flags: ['host', 'accepts', 'no-post'],
         notes: [
           'The announcement goes out on its own: a peer nobody can discover is a peer nobody can address. --no-post keeps the name local.',
+          '--accepts says which kinds of work this agent takes; it travels in the same announcement, and registering again with a different list re-announces it.',
         ],
       },
       unregister: {
@@ -236,9 +245,9 @@ const COMMANDS: Readonly<Record<string, Command>> = {
         notes: ['The full thread and state of one task, by id or a unique prefix of it.'],
       },
       post: {
-        usage: `${PROGRAM} agent-forum post <to> <title> --body <text> [--parent <id>] [--deadline <iso>] [--binding <name>] [--post]`,
-        flags: ['body', 'parent', 'deadline', 'binding', 'post'],
-        notes: ['Hands work to a peer by name.'],
+        usage: `${PROGRAM} agent-forum post <to> <title> --body <text> [--capability <tag>] [--parent <id>] [--deadline <iso>] [--binding <name>] [--post]`,
+        flags: ['body', 'capability', 'parent', 'deadline', 'binding', 'post'],
+        notes: ['Hands work to a peer by name. --capability says what kind of work it is.'],
       },
       accept: {
         usage: `${PROGRAM} agent-forum accept <id> [--body <text>] [--post]`,

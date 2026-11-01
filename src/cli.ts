@@ -18,7 +18,7 @@ import {
   stopDaemon,
 } from './forum/daemon.ts'
 import { buildServer } from './mcp/server.ts'
-import { defaultHost, normalizeName } from './forum/identity.ts'
+import { defaultHost, normalizeName, parseCapabilities, parseCapability } from './forum/identity.ts'
 import { inboxEntries, loadViews, type InboxEntry } from './forum/inbox.ts'
 import { describeLimits, refreshWindowDays } from './forum/limits.ts'
 import { locateTask, postTask, replyTo, transportFor, announce, announceLiveness, registerIdentity, unregisterIdentity, bindChannel, type Transport, type WriteResult } from './forum/service.ts'
@@ -740,14 +740,17 @@ async function commandForum(args: ParsedArgs): Promise<number> {
     case 'register': {
       const name = rest[0]
       if (!name) throw new Error('agent-forum register needs a name')
+      const capabilities = parseCapabilities(stringFlag(args, 'accepts') ?? '')
       const identity = {
         name: normalizeName(name),
         host: normalizeName(stringFlag(args, 'host') ?? defaultHost()),
-        capabilities: [],
+        capabilities,
       }
       if (!identity.name) throw new Error(`"${name}" is not a usable name`)
       const result = await registerIdentity(context, identity)
-      console.log(`registered ${identity.name}@${identity.host} as ${context.identityKey}`)
+      const declared =
+        capabilities.length > 0 ? `, accepting ${capabilities.join(', ')}` : ''
+      console.log(`registered ${identity.name}@${identity.host} as ${context.identityKey}${declared}`)
       // The one write that does not ask first: it announces this machine's own
       // name, and a peer nobody can discover is a peer nobody can address.
       if (args.flags.get('no-post') === true) {
@@ -755,7 +758,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
         return 0
       }
       if (!result.announce) {
-        console.log('the roster already knows this name; nothing to announce')
+        console.log('the roster already knows this name and these capabilities; nothing to announce')
         return 0
       }
       if (context.file.channels.length === 0) {
@@ -871,6 +874,9 @@ async function commandForum(args: ParsedArgs): Promise<number> {
           to,
           title,
           body,
+          ...(stringFlag(args, 'capability')
+            ? { capability: parseCapability(stringFlag(args, 'capability')!) }
+            : {}),
           ...(stringFlag(args, 'deadline') ? { deadline: stringFlag(args, 'deadline')! } : {}),
           ...(stringFlag(args, 'parent') ? { parent: stringFlag(args, 'parent')! } : {}),
           ...(stringFlag(args, 'binding') ? { binding: stringFlag(args, 'binding')! } : {}),

@@ -59,7 +59,8 @@ export interface ForumTask {
   ts: string
   from: string
   to: string
-  tag?: string
+  /** The capability the task needs; `tag` is its older name on a broadcast. */
+  capability?: string
   title: string
   body: string
   /** The `forum-*` attachment, when the envelope arrived as a file. */
@@ -217,6 +218,7 @@ export function buildLedger(args: LedgerArgs): Ledger {
       // A re-posted task id is the same task: the later envelope wins the header,
       // the earlier events stay, so an edit cannot reset a claim.
       if (!existing) {
+        const capability = envelope.capability ?? envelope.tag
         tasks.set(envelope.id, {
           id: envelope.id,
           team: args.teamId,
@@ -224,7 +226,7 @@ export function buildLedger(args: LedgerArgs): Ledger {
           ts: message.ts,
           from: envelope.from,
           to: envelope.to,
-          ...(envelope.tag !== undefined ? { tag: envelope.tag } : {}),
+          ...(capability !== undefined ? { capability } : {}),
           title: envelope.title,
           body: envelope.body,
           ...(file?.id !== undefined ? { fileId: file.id } : {}),

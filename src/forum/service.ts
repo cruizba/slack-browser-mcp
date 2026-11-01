@@ -23,7 +23,7 @@ import { SlackClient, type SlackChannel } from '../slack/client.ts'
 import { VERSION } from '../version.ts'
 import { candidates, parseTarget, resolvePeer, targetLabel, type Target } from './addressing.ts'
 import type { Binding } from './binding.ts'
-import { labelOf, type Identity } from './identity.ts'
+import { labelOf, sameCapabilities, type Identity } from './identity.ts'
 import { meLabel, reload, requireIdentity, type ForumContext } from './context.ts'
 import { loadViews, type BindingView } from './inbox.ts'
 import {
@@ -361,6 +361,7 @@ export interface PostTaskArgs {
   to: string
   title: string
   body: string
+  capability?: string
   deadline?: string
   parent?: string
   binding?: string
@@ -462,6 +463,7 @@ export async function postTask(
     sent: context.now.toISOString(),
     title: args.title,
     body: args.body,
+    ...(args.capability ? { capability: args.capability } : {}),
     ...(args.deadline ? { deadline: deadlineStamp(args.deadline, context.now) } : {}),
     ...(parentId ? { parent: parentId } : {}),
     ...(depth > 0 ? { depth } : {}),
@@ -703,7 +705,9 @@ export async function registerIdentity(
   const announced = await reload(context)
   const views = await loadViews(announced)
   const label = labelOf(identity)
-  const known = views.some((view) => view.roster.some((peer) => peer.from === label))
+  const known = views.some((view) =>
+    view.roster.some((peer) => peer.from === label && sameCapabilities(peer.capabilities, identity.capabilities)),
+  )
   return { identity, announce: !known }
 }
 
@@ -890,7 +894,11 @@ export async function announce(
       skipped += 1
       continue
     }
-    if (view.roster.some((peer) => peer.from === envelope.from)) {
+    if (
+      view.roster.some(
+        (peer) => peer.from === envelope.from && sameCapabilities(peer.capabilities, identity.capabilities),
+      )
+    ) {
       skipped += 1
       continue
     }

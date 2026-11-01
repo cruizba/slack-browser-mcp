@@ -1,9 +1,10 @@
 /**
- * Who an agent is on the forum: a name and a host.
+ * Who an agent is on the forum: a name, a host, and the kinds of work it takes.
  *
- * `capabilities` survives in the stored shape only so a file written by an older
- * build, or a register envelope from an older peer, still parses. Nothing routes
- * by it any more, and a new registration stores an empty list.
+ * `capabilities` is what the agent said it accepts, set at `register` and announced
+ * in the same envelope, so a peer — or the manager — can address work to the machine
+ * that declared it. A task carries one `capability`, and it is a declaration, not a
+ * filter: nothing is declined on its behalf.
  *
  * The identity is per process, not per machine. Two agents on one laptop share
  * `forum.json`, so a single name would make 1:1 addressing collapse into a queue:
@@ -14,8 +15,12 @@
 
 import { hostname } from 'node:os'
 
+import { MAX_TAG_CHARS } from './envelope.ts'
+
 export const AGENT_ENV = 'SLACK_BROWSER_MCP_AGENT'
 export const MAX_NAME_CHARS = 32
+/** The register envelope accepts this many; the parser refuses more, not silently fewer. */
+export const MAX_CAPABILITIES = 8
 
 export interface Identity {
   name: string
@@ -46,6 +51,11 @@ export function labelOf(identity: Pick<Identity, 'name' | 'host'>): string {
   return `${identity.name}@${identity.host}`
 }
 
+/** Set equality: a re-register that only reorders the tags is not a change. */
+export function sameCapabilities(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((tag) => b.includes(tag))
+}
+
 /**
  * An explicit `SLACK_BROWSER_MCP_AGENT` wins because it is scoped to one client
  * registration; the MCP client name is the zero-config default, and a plain shell
@@ -66,4 +76,31 @@ export function agentName(candidates: {
     if (name) return name
   }
   return normalizeName(candidates.fallback ?? '') || 'agent'
+}
+
+/**
+ * A capability is matched as a string, so the same word has to come out of every
+ * surface: `Review`, `review ` and `review` are one thing to a peer reading the
+ * roster. Spaces become dashes because a roster line is space-separated.
+ */
+export function parseCapability(raw: string): string {
+  const tag = raw.trim().toLowerCase().replace(/\s+/g, '-')
+  if (!tag) throw new Error('a capability cannot be empty')
+  if (tag.length > MAX_TAG_CHARS) {
+    throw new Error(`"${tag}" is longer than ${MAX_TAG_CHARS} characters; capabilities are short words`)
+  }
+  return tag
+}
+
+export function parseCapabilities(raw: string): string[] {
+  const tags = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map(parseCapability)
+  const unique = [...new Set(tags)]
+  if (unique.length > MAX_CAPABILITIES) {
+    throw new Error(`at most ${MAX_CAPABILITIES} capabilities; narrow the list`)
+  }
+  return unique
 }

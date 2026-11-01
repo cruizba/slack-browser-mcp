@@ -363,3 +363,61 @@ test('decline, cancel, a failed result and a reopen', async (t) => {
   })
   assert.equal(await stateOf(builder, twice), 'done')
 })
+
+test('a task says what kind of work it is', async (t) => {
+  const { builder, reviewer, uploads } = await setup(t)
+
+  await builder.callTool({
+    name: 'forum_post',
+    arguments: {
+      to: REVIEWER,
+      title: 'revisar el PR 12',
+      body: 'el diff está en el archivo',
+      capability: 'Review',
+      confirm: true,
+    },
+  })
+
+  const envelope = uploads.at(-1)
+  assert.equal(envelope?.kind === 'task' ? envelope.capability : undefined, 'review')
+  const inbox = textOf(await reviewer.callTool({ name: 'forum_inbox', arguments: { offline: true } }))
+  assert.match(inbox, /\[review\] revisar el PR 12/)
+
+  const task = textOf(
+    await reviewer.callTool({
+      name: 'forum_task',
+      arguments: { id: taskNamed(uploads, 'revisar el PR 12'), offline: true },
+    }),
+  )
+  assert.match(task, /needs review/)
+})
+
+test('registering with capabilities announces them', async (t) => {
+  const { uploads } = await setup(t)
+  const file = join(configDir, 'forum.json')
+  const forum = JSON.parse(readFileSync(file, 'utf8')) as { channels: Array<{ announce: boolean }> }
+  forum.channels[0]!.announce = true
+  await writeFile(file, JSON.stringify(forum))
+
+  const { openForum } = await import('../src/forum/context.ts')
+  const { announce, registerIdentity, transportFor } = await import('../src/forum/service.ts')
+  const { parseCapabilities } = await import('../src/forum/identity.ts')
+
+  const context = await openForum()
+  const identity = { name: 'builder', host: 'laptop', capabilities: parseCapabilities('review,triage') }
+
+  // The roster in the archive says builder accepts nothing, so this is a change.
+  assert.equal((await registerIdentity(context, identity)).announce, true)
+  const posted = await announce(
+    context,
+    async (teamId) => transportFor(await new FileCredentialStore(join(configDir, 'accounts')).get(teamId)),
+    identity,
+  )
+  assert.equal(posted.posted, 1)
+  const envelope = uploads.at(-1)
+  assert.deepEqual(envelope?.kind === 'register' ? envelope.capabilities : undefined, [
+    'review',
+    'triage',
+  ])
+  assert.equal(context.identity?.capabilities.length, 0, 'the old context is a snapshot')
+})

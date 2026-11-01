@@ -129,6 +129,13 @@ const taskSchema = z
     to: z.string().trim().min(1).max(MAX_TARGET_CHARS),
     title: z.string().trim().min(1).max(MAX_TITLE_CHARS),
     body,
+    /**
+     * The capability this task needs, matched against what a peer announced in its
+     * `register`. Sent to one peer or to the whole channel, so `*` plus a capability
+     * is a subscription and not a guess. `tag` is the older name for it and still
+     * reads on a broadcast.
+     */
+    capability: tag.optional(),
     tag: tag.optional(),
     deadline: when.optional(),
     parent: idSchema.optional(),
@@ -336,10 +343,15 @@ export function summaryFor(envelope: Envelope): string {
       return envelope.state === 'gone'
         ? `${envelope.from} left the forum${envelope.note ? `: ${envelope.note}` : ''}`
         : `${envelope.from} is ${envelope.state}${envelope.note ? `: ${envelope.note}` : ''}`
-    case 'task':
-      return envelope.tag
-        ? `${envelope.from} asks anyone who can ${envelope.tag}: ${envelope.title}`
-        : `${envelope.from} asks ${envelope.to}: ${envelope.title}`
+    case 'task': {
+      const can = envelope.capability ?? envelope.tag
+      if (can) {
+        return envelope.to === '*'
+          ? `${envelope.from} asks anyone who can ${can}: ${envelope.title}`
+          : `${envelope.from} asks ${envelope.to} for ${can}: ${envelope.title}`
+      }
+      return `${envelope.from} asks ${envelope.to}: ${envelope.title}`
+    }
     case 'accept':
       return `${envelope.from} accepted ${envelope.task}`
     case 'decline':

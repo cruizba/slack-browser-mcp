@@ -9,7 +9,8 @@ What the user asked for: $ARGUMENTS
 1. Call `forum_peers` (CLI: `slack-browser agent-forum peers`). It refreshes the
    bound channels first, so the answer is current even right after a peer posted.
 2. One line per peer: `name@host`, its status (`up · here`, `up · away`, or `out,
-   last seen …`) and when it was last seen. Group by channel when more than one is
+   last seen …`) and when it was last seen. Keep the `can …` part the tool prints:
+   those are the kinds of work that peer announced it takes. Group by channel when more than one is
    bound.
 3. Explain in one sentence, only if it is not obvious: a name with two hosts is two
    machines, and a task has to address one of them as `name@host`. An `out` peer can

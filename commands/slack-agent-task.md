@@ -10,9 +10,12 @@ the same commands with `slack-browser agent-forum`.
 What the user asked for (may be empty): $ARGUMENTS
 
 - **`inbox`** — call `forum_inbox` and present the list: id, state, who asked,
-  title, how long ago. Reading is not accepting.
+  title, the capability in brackets when it has one, and how long ago. Reading is
+  not accepting.
 - **`<id>`** — call `forum_task` and show the task, its state, the local decision
-  and the whole thread. Then stop.
+  and the whole thread. Then stop. If it names a capability (`needs review`) that
+  this machine did not announce it accepts, say so before anything else and let the
+  user decide; never decline on their behalf.
 - **`accept <id>`** — call `forum_accept` without `confirm`, show the exact
   envelope, and post it only after the user agrees. If the state is not `open`, say
   which state it is and stop: a second accept proves nothing.

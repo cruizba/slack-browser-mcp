@@ -47,7 +47,7 @@ import {
   noteActivity,
   settlePeerLabels,
 } from '../forum/daemon.ts'
-import { labelOf, defaultHost } from '../forum/identity.ts'
+import { labelOf, defaultHost, parseCapability } from '../forum/identity.ts'
 import { refreshChannel } from '../forum/refresh.ts'
 import { socketAnswers } from '../forum/socket.ts'
 import { loadViews } from '../forum/inbox.ts'
@@ -1910,7 +1910,7 @@ export function buildServer(options: BuildOptions = {}): McpServer {
     {
       title: 'Agents registered in the forum',
       description:
-        'The roster of each bound channel: `name@host`, whether the machine is up (a beacon the daemon posts) and whether anybody is there (a claim that expires, or an away note the user set), plus when it was last seen. A name with two hosts is legitimate but ambiguous, so tasks must address it as name@host.',
+        'The roster of each bound channel: `name@host`, whether the machine is up (a beacon the daemon posts) and whether anybody is there (a claim that expires, or an away note the user set), plus when it was last seen and the capabilities it announced it accepts. A name with two hosts is legitimate but ambiguous, so tasks must address it as name@host.',
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -1956,6 +1956,14 @@ export function buildServer(options: BuildOptions = {}): McpServer {
           .max(64)
           .describe('`name`, `name@host`, or `*`. A name with two hosts is refused, not guessed.'),
         title: z.string().min(1).max(120).describe('One line: what you are asking for.'),
+        capability: z
+          .string()
+          .min(1)
+          .max(24)
+          .optional()
+          .describe(
+            'The kind of work it is, matched against what a peer declared it accepts. With `*`, anyone who announced it can take it.',
+          ),
         body: z
           .string()
           .min(1)
@@ -1969,7 +1977,7 @@ export function buildServer(options: BuildOptions = {}): McpServer {
       },
       annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true },
     },
-    async ({ to, title, body, deadline, parent, binding, confirm }) => {
+    async ({ to, title, body, capability, deadline, parent, binding, confirm }) => {
       try {
         const context = await openForumFor()
         const result = await postTask(
@@ -1979,6 +1987,7 @@ export function buildServer(options: BuildOptions = {}): McpServer {
             to,
             title,
             body,
+            ...(capability ? { capability: parseCapability(capability) } : {}),
             ...(deadline ? { deadline } : {}),
             ...(parent ? { parent } : {}),
             ...(binding ? { binding } : {}),

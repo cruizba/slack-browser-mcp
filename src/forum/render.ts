@@ -79,7 +79,8 @@ export function renderPeers(view: BindingView, now: Date, limits: ForumLimits): 
           : human === 'here'
             ? `up · here, active ${active === 'now' ? 'now' : `${active} ago`}`
             : `up, last seen ${seen} ago`
-    lines.push(`  ${peer.from}${who} — ${text}`)
+    const can = peer.capabilities.length > 0 ? ` · can ${peer.capabilities.join(', ')}` : ''
+    lines.push(`  ${peer.from}${who} — ${text}${can}`)
   }
   return lines
 }
@@ -96,9 +97,10 @@ export function inboxLine(
 ): string {
   const channel = withChannel ? `${withChannel} · ` : ''
   const taken = task.takenBy ? ` taken:${task.takenBy}` : ''
+  const needs = task.capability ? `[${task.capability}] ` : ''
   return (
     `${channel}${task.id}  ${stateLabel(task, now).padEnd(9)} ${decisionLabel(decision).padEnd(16)} ` +
-    `<- ${task.from}${taken}  ${task.title}  ${ago(task.ts, now)}`
+    `<- ${task.from}${taken}  ${needs}${task.title}  ${ago(task.ts, now)}`
   )
 }
 
@@ -160,6 +162,7 @@ export function renderTask(
     `${binding.workspace}/${channelLabel(binding)}`
   const person = task.owner ? (view?.people.get(task.owner) ?? task.owner) : undefined
   const route = `${task.from}${person ? ` (${person})` : ''} -> ${task.to} · sent ${task.sent}` +
+    (task.capability ? ` · needs ${task.capability}` : '') +
     (task.edited_at ? ' · edited' : '') +
     (task.deadline ? ` · deadline ${task.deadline}` : '') +
     (task.reopens > 0 ? ` · reopened ${task.reopens}x` : '')
