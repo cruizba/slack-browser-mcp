@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { ArchivedMessage } from '../src/archive/store.ts'
-import { encode, render, summaryFor, type Envelope } from '../src/forum/envelope.ts'
+import { encode, encodeJson, render, summaryFor, type Envelope } from '../src/forum/envelope.ts'
+import { forumFileName } from '../src/forum/carrier.ts'
 import { newId } from '../src/forum/id.ts'
 import { buildLedger, findTask, stateLabel, type ForumTask } from '../src/forum/ledger.ts'
 import { DEFAULT_LIMITS } from '../src/forum/limits.ts'
@@ -23,7 +24,9 @@ function message(ts: string, envelope: Envelope): ArchivedMessage {
     ts,
     channel: 'C0HUB',
     channel_name: 'agent-hub',
-    text: render(summaryFor(envelope), envelope),
+    text: summaryFor(envelope),
+    files: [{ id: `F0${ts}`, name: forumFileName(envelope.id), mimetype: 'text/markdown' }],
+    forum: encode(envelope),
     synced_at: NOW.toISOString(),
   }
 }
@@ -271,14 +274,24 @@ test('a task id is found by a unique prefix and refused when ambiguous', () => {
 test('a task whose envelope arrived as a file reads like any other', () => {
   const task = taskAt(at(5))
   // The current wire: the text carries the sentence a person reads and the envelope
-  // is the attachment. The ledger has to reach into the record for it.
+  // is the markdown attachment. The ledger has to reach into the record for it.
   const carried: ArchivedMessage = {
     ...task,
     text: summaryFor(taskEnvelope()),
     forum: encode(taskEnvelope()),
-    files: [{ id: 'F0FORUM', name: 'forum-01J9Z7K3QX4MB8WN2R5T6Y7Z8A.json', mimetype: 'application/json' }],
+    files: [{ id: 'F0FORUM', name: forumFileName(taskEnvelope().id), mimetype: 'text/markdown' }],
   }
   assert.equal(only([...registers(), carried]).body, 'mira el diff')
+
+  // What v0.3.2 left in the channels, and what still has to read: same fields, JSON
+  // in a `forum-<id>.json` file.
+  const legacy: ArchivedMessage = {
+    ...task,
+    text: summaryFor(taskEnvelope()),
+    forum: encodeJson(taskEnvelope()),
+    files: [{ id: 'F0LEGACY', name: `forum-${taskEnvelope().id}.json`, mimetype: 'application/json' }],
+  }
+  assert.equal(only([...registers(), legacy]).body, 'mira el diff')
 })
 
 test('a message with an attachment that will not parse is counted, not ignored', () => {

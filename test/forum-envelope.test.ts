@@ -3,9 +3,11 @@ import { test } from 'node:test'
 
 import {
   assertFits,
-  decode,
-  decodeAttachment,
+  decodeFence,
+  decodeJson,
+  decodeMarkdown,
   encode,
+  encodeJson,
   MAX_BODY_BYTES,
   render,
   summaryFor,
@@ -37,8 +39,8 @@ function task(overrides: Partial<Envelope> = {}): Envelope {
   } as Envelope
 }
 
-test('every kind survives a round trip through the fence', () => {
-  const envelopes: Envelope[] = [
+function kinds(): Envelope[] {
+  return [
     task(),
     {
       v: 1,
@@ -48,7 +50,7 @@ test('every kind survives a round trip through the fence', () => {
       sent: '2026-10-28T09:00:00Z',
       name: 'builder',
       host: 'laptop',
-      capabilities: ['code'],
+      capabilities: ['code', 'review'],
     },
     {
       v: 1,
@@ -69,11 +71,29 @@ test('every kind survives a round trip through the fence', () => {
       ok: true,
     },
   ]
+}
 
-  for (const envelope of envelopes) {
+test('every kind survives a round trip through the file', () => {
+  for (const envelope of kinds()) {
+    const text = encode(envelope)
+    assert.equal(decodeMarkdown(text)?.kind, envelope.kind)
+    assert.deepEqual(decodeMarkdown(text), envelope, `${envelope.kind} did not survive`)
+  }
+})
+
+test('the file opens as frontmatter over the body', () => {
+  const text = encode(task())
+  assert.match(text, /^---\n/)
+  assert.match(text, /\nkind: "task"\n/)
+  assert.match(text, /\nfrom: "builder@laptop"\n/)
+  assert.ok(text.endsWith('\n\nmira el diff de sync.ts'), 'the body is the tail, verbatim')
+  assert.equal(text.includes('{'), false, 'no braces: this is not JSON any more')
+})
+
+test('every kind still survives the fenced form, which nothing writes any more', () => {
+  for (const envelope of kinds()) {
     const text = render(summaryFor(envelope), envelope)
-    const decoded = decode(text)
-    assert.deepEqual(decoded, envelope, `${envelope.kind} did not survive`)
+    assert.deepEqual(decodeFence(text), envelope, `${envelope.kind} did not survive`)
     assert.equal(carriesEnvelope({ text }), true)
   }
 })
@@ -99,13 +119,18 @@ test('the summary is readable and keeps the task outline', () => {
   )
 })
 
-test('prose, malformed JSON and unknown versions are not envelopes', () => {
-  assert.equal(decode('just a message'), undefined)
-  assert.equal(decode('```forum\nnot json\n```'), undefined)
-  assert.equal(decode('```forum\n{"v":2,"kind":"task"}\n```'), undefined)
-  assert.equal(decode('```forum\n{"v":1,"kind":"nope"}\n```'), undefined)
+test('prose, an unknown version and a schema miss are not envelopes', () => {
+  assert.equal(decodeMarkdown('just a message'), undefined)
+  assert.equal(decodeMarkdown('---\nkind: "task"\n---\n'), undefined)
+  assert.equal(decodeMarkdown('---\nv: 2\nkind: "task"\n---\n'), undefined)
+  assert.equal(decodeMarkdown('---\nv: 1\nkind: "nope"\n---\n'), undefined)
+  assert.equal(decodeMarkdown('---\nv: 1\nkind: "task"\nid: "x"\n---\n'), undefined)
+
+  assert.equal(decodeFence('just a message'), undefined)
+  assert.equal(decodeFence('```forum\nnot json\n```'), undefined)
+  assert.equal(decodeFence('```forum\n{"v":2,"kind":"task"}\n```'), undefined)
   assert.equal(
-    decode('```forum\n' + JSON.stringify({ v: 1, kind: 'task', id: 'x' }) + '\n```'),
+    decodeFence('```forum\n' + JSON.stringify({ v: 1, kind: 'task', id: 'x' }) + '\n```'),
     undefined,
   )
 
@@ -114,6 +139,13 @@ test('prose, malformed JSON and unknown versions are not envelopes', () => {
   assert.equal(carriesEnvelope({ text: '```forum\nnot json\n```' }), true)
   assert.equal(carriesEnvelope({ text: 'no fence here' }), false)
   assert.equal(carriesEnvelope({ text: 'prosa', forum: '{"v":1}' }), true)
+  assert.equal(carriesEnvelope({ text: 'prosa', files: [{ name: forumFileName(ID) }] }), true)
+})
+
+test('the body keeps what YAML would have eaten', () => {
+  const body = '# Plan\n\n---\n\nno es un delimitador\n\n```ts\nconst x = 1\n```\n\nfin:'
+  const envelope = task({ body } as Partial<Envelope>)
+  assert.deepEqual(decodeMarkdown(encode(envelope)), envelope)
 })
 
 test('a message Slack has flattened to one line still decodes', () => {
@@ -126,41 +158,40 @@ test('a message Slack has flattened to one line still decodes', () => {
     .filter(Boolean)
     .join(' ')
   assert.equal(flattened.includes('\n'), false)
-  assert.deepEqual(decode(flattened), envelope)
+  assert.deepEqual(decodeFence(flattened), envelope)
 })
 
 test('a body may hold the backticks a pasted thread carries', () => {
-  // The whole point of the file: this is what a summary pasted out of Slack looks
-  // like, and the fence it used to break is no longer on the wire.
   const body = 'mira\n\n```ts\nconst x = 1\n```\n\ny esto\n\n```bash\nnpm test\n```'
-  const json = encode(task({ body } as Partial<Envelope>))
-  assert.equal((JSON.parse(json) as { body: string }).body, body)
+  const envelope = task({ body } as Partial<Envelope>)
+  assert.deepEqual(decodeMarkdown(encode(envelope)), envelope)
+  assert.equal((JSON.parse(encodeJson(envelope)) as { body: string }).body, body)
 })
 
-test('the short fields still refuse a fence', () => {
-  assert.throws(() => encode(task({ title: 'a ```b' } as Partial<Envelope>)), /triple backticks/)
-  assert.throws(
-    () =>
-      encode({
-        v: 1,
-        kind: 'presence',
-        id: OTHER,
-        from: 'builder@laptop',
-        sent: '2026-10-28T09:00:00Z',
-        name: 'builder',
-        host: 'laptop',
-        state: 'away',
-        note: 'dejo esto ``` por aqui',
-      }),
-    /triple backticks/,
-  )
+test('a title may now carry a fence and a comment marker', () => {
+  // Only the fenced writer could be broken by a backtick, and nothing writes a fence
+  // any more, so the writer stopped refusing them.
+  const envelope = task({ title: 'fix the ``` parser #42' } as Partial<Envelope>)
+  assert.deepEqual(decodeMarkdown(encode(envelope)), envelope)
+  const presence: Envelope = {
+    v: 1,
+    kind: 'presence',
+    id: OTHER,
+    from: 'builder@laptop',
+    sent: '2026-10-28T09:00:00Z',
+    name: 'builder',
+    host: 'laptop',
+    state: 'away',
+    note: 'dejo esto ``` por aqui',
+  }
+  assert.deepEqual(decodeMarkdown(encode(presence)), presence)
 })
 
 test('a fence in the middle of prose is found, and the first one wins', () => {
   const first = task()
   const second = task({ title: 'second' } as Partial<Envelope>)
   const text = `antes\n${render('uno', first)}\n\ny después\n${render('dos', second)}`
-  assert.equal(decode(text)?.id, first.id)
+  assert.equal(decodeFence(text)?.id, first.id)
 })
 
 test('validation refused what Slack would mangle', () => {
@@ -194,7 +225,7 @@ test('a body Slack escaped reads back as the text that was sent', () => {
   const stored = escapeEntities(render(summaryFor(envelope), envelope))
   assert.match(stored, /--cloud &lt;c&gt; --edition/)
   assert.match(stored, /community` &amp; mira el RG/)
-  assert.deepEqual(decode(stored), envelope)
+  assert.deepEqual(decodeFence(stored), envelope)
 })
 
 test('a megabyte of body is accepted, and one byte more is not', () => {
@@ -222,50 +253,68 @@ test('an escaped body over the budget still decodes, so old envelopes come back'
   const body = `${'x'.repeat(1986)}<c> <c>`
   const json = JSON.stringify({ ...task({ body } as Partial<Envelope>) })
   const stored = escapeEntities(`resumen\n\n\`\`\`forum\n${json}\n\`\`\``)
-  assert.equal(decode(stored)?.kind, 'task')
-  assert.equal((decode(stored) as Extract<Envelope, { kind: 'task' }>).body, body)
+  assert.equal(decodeFence(stored)?.kind, 'task')
+  assert.equal((decodeFence(stored) as Extract<Envelope, { kind: 'task' }>).body, body)
 })
 
 test('a body that already quotes entities survives as written', () => {
   // Unescaping twice, or before the JSON parse, would turn entity text a body
   // deliberately carries into the character it names.
   const envelope = task({ body: 'ya escribí &lt;c&gt; a mano' } as Partial<Envelope>)
-  const first = decode(escapeEntities(render(summaryFor(envelope), envelope)))
+  const first = decodeFence(escapeEntities(render(summaryFor(envelope), envelope)))
   assert.deepEqual(first, envelope)
-  const again = decode(escapeEntities(render(summaryFor(first!), first!)))
+  const again = decodeFence(escapeEntities(render(summaryFor(first!), first!)))
   assert.deepEqual(again, envelope)
 })
 
-test('the attachment is the wire: no fence, and nothing escaped on the way', () => {
+test('the file is the wire: no fence, and nothing escaped on the way', () => {
   const body = 'deploy con `<c>` & sin sustos, y &lt; tal cual'
   const envelope = task({ body } as Partial<Envelope>)
-  const json = encode(envelope)
-  assert.deepEqual(decodeAttachment(json), envelope)
+  const text = encode(envelope)
+  assert.deepEqual(decodeMarkdown(text), envelope)
   // Slack only escapes `text`, so the bytes of a file come back exactly as sent: a
   // body that quotes an entity on purpose must not be rewritten.
-  const decoded = decodeAttachment(json)
+  const decoded = decodeMarkdown(text)
   assert.equal(decoded?.kind === 'task' ? decoded.body : undefined, body)
 })
 
 test('a message is read from its file first, and from the fence when there is none', () => {
   const envelope = task()
-  const file = encode(envelope)
+  const markdown = encode(envelope)
+  const json = encodeJson(envelope)
   const fenced = render(summaryFor(envelope), envelope)
+  const mdFile = [{ name: forumFileName(envelope.id), size: markdown.length }]
+  const jsonFile = [{ name: `forum-${envelope.id}.json`, size: json.length }]
 
-  assert.deepEqual(envelopeOf({ forum: file, text: 'a human line' }), envelope)
-  assert.deepEqual(envelopeOf({ text: fenced }), envelope)
+  assert.deepEqual(envelopeOf({ text: fenced, forum: markdown, files: mdFile }), envelope)
+  assert.deepEqual(envelopeOf({ text: 'a human line', forum: json, files: jsonFile }), envelope)
   // Both present: the file wins, because it is the one Slack cannot have rewritten.
-  assert.deepEqual(envelopeOf({ forum: file, text: fenced }), envelope)
+  assert.deepEqual(envelopeOf({ text: fenced, forum: markdown, files: mdFile }), envelope)
+  assert.deepEqual(envelopeOf({ text: fenced }), envelope)
   assert.equal(envelopeOf({ text: 'solo prosa' }), undefined)
-  assert.equal(envelopeOf({ forum: 'not json' }), undefined)
+  assert.equal(envelopeOf({ forum: 'not an envelope' }), undefined)
+})
+
+test('a record that lost its file name is read by the shape of its first line', () => {
+  const envelope = task()
+  assert.deepEqual(envelopeOf({ forum: encode(envelope) }), envelope)
+  assert.deepEqual(envelopeOf({ forum: encodeJson(envelope) }), envelope, 'a v0.3.2 record')
 })
 
 test('an envelope file is named after its id, and anything else is an attachment', () => {
   const id = newId()
-  assert.equal(forumFileName(id), `forum-${id}.json`)
-  assert.equal(isForumFileName(`forum-${id}.json`), true)
-  assert.equal(isForumFileName('forum-.json'), false)
-  assert.equal(isForumFileName('informe-forum-x.json'), false)
+  assert.equal(forumFileName(id), `forum-${id}.md`)
+  assert.equal(isForumFileName(`forum-${id}.md`), true)
+  assert.equal(isForumFileName(`forum-${id}.json`), true, 'what v0.3.2 wrote is still read')
+  assert.equal(isForumFileName('forum-x.md'), true)
+  assert.equal(isForumFileName('forum-.md'), false)
+  assert.equal(isForumFileName('informe-forum-x.md'), false)
   assert.equal(isForumFileName('forum-x.txt'), false)
   assert.equal(isForumFileName(undefined), false)
+})
+
+test('decodeJson reads a file Slack never touched, and the fence undoes escaping', () => {
+  const envelope = task({ body: 'a &lt; b' } as Partial<Envelope>)
+  assert.deepEqual(decodeJson(encodeJson(envelope)), envelope)
+  assert.equal(decodeJson('{"v":1'), undefined)
 })

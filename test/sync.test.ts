@@ -354,7 +354,7 @@ function envelope(overrides: Partial<Envelope> = {}): Envelope {
 
 test('an envelope that travels as a file is downloaded once and stays offline', async (t) => {
   const { store, index } = await scratch(t)
-  const json = encode(envelope())
+  const document = encode(envelope())
   const message: SlackMessage = {
     ts: '1792500300.000300',
     user: 'U0BUILDER',
@@ -363,8 +363,8 @@ test('an envelope that travels as a file is downloaded once and stays offline', 
       {
         id: 'F0FORUM',
         name: forumFileName(TASK_ID),
-        mimetype: 'application/json',
-        size: Buffer.byteLength(json),
+        mimetype: 'text/markdown',
+        size: Buffer.byteLength(document),
         url_private: 'https://files.slack.com/files/F0FORUM',
       },
     ],
@@ -373,14 +373,14 @@ test('an envelope that travels as a file is downloaded once and stays offline', 
   const client = new FakeClient([message])
   client.downloadFile = async (file: SlackFile) => {
     downloads.push(file.id ?? '')
-    return new TextEncoder().encode(json)
+    return new TextEncoder().encode(document)
   }
 
   await syncAccount({ account, client, store, index, options: { now: at(0) } })
   assert.deepEqual(downloads, ['F0FORUM'], 'the envelope is fetched once')
 
   const [record] = await store.read('T0TEST', channel.id)
-  assert.equal(record?.forum, json, 'the record carries the envelope, not a path to it')
+  assert.equal(record?.forum, document, 'the record carries the envelope, not a path to it')
   assert.deepEqual(envelopeOf(record!), envelope())
   const cached = await new ArchiveFileStore(store.root).find('T0TEST', 'F0FORUM')
   assert.ok(cached, 'the bytes are kept next to the archive, so read_file finds them')

@@ -8,7 +8,8 @@ import { test } from 'node:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
-import { render, summaryFor, type Envelope } from '../src/forum/envelope.ts'
+import { decodeMarkdown, encode, summaryFor, type Envelope } from '../src/forum/envelope.ts'
+import { forumFileName } from '../src/forum/carrier.ts'
 import { newId } from '../src/forum/id.ts'
 
 const TASK = '01J9Z7K3QX4MB8WN2R5T6Y7Z8A'
@@ -110,7 +111,9 @@ async function seedArchive(): Promise<void> {
     ts,
     channel: 'C0HUB',
     channel_name: 'agent-hub',
-    text: render(summaryFor(envelope), envelope),
+    text: summaryFor(envelope),
+    files: [{ name: forumFileName(envelope.id), mimetype: 'text/markdown' }],
+    forum: encode(envelope),
     synced_at: '2026-10-28T09:30:00Z',
   })
   await archive.append('T0TEST', 'C0HUB', [
@@ -149,8 +152,8 @@ async function seedArchive(): Promise<void> {
 
 interface Harness {
   calls: Array<{ method: string; body: URLSearchParams }>
-  /** Bytes of every `forum-*.json` that reached the pre-signed upload URL. */
-  uploads: Array<{ name: string; json: string }>
+  /** The bytes of every `forum-*` that reached the pre-signed upload URL. */
+  uploads: Array<{ name: string; text: string }>
   client: Client
 }
 
@@ -165,7 +168,7 @@ async function setup(
   await seedArchive()
 
   const calls: Array<{ method: string; body: URLSearchParams }> = []
-  const uploads: Array<{ name: string; json: string }> = []
+  const uploads: Array<{ name: string; text: string }> = []
   const originalFetch = globalThis.fetch
   ;(globalThis as { fetch: typeof fetch }).fetch = (async (
     input: string | URL | Request,
@@ -177,7 +180,7 @@ async function setup(
     if (target.startsWith('https://files.slack.com/')) {
       const form = init?.body as FormData
       const blob = form.get('file') as Blob
-      uploads.push({ name: String(form.get('filename')), json: await blob.text() })
+      uploads.push({ name: String(form.get('filename')), text: await blob.text() })
       return new Response('OK', { status: 200 })
     }
     const body = new URLSearchParams(String(init?.body ?? ''))
@@ -259,8 +262,12 @@ function posts(calls: Harness['calls']) {
   return calls.filter((call) => call.method === 'files.completeUploadExternal')
 }
 
-function uploaded(uploads: Harness['uploads']): Array<Record<string, unknown>> {
-  return uploads.map((upload) => JSON.parse(upload.json) as Record<string, unknown>)
+function uploaded(uploads: Harness['uploads']): Envelope[] {
+  return uploads.map((upload) => {
+    const envelope = decodeMarkdown(upload.text)
+    assert.ok(envelope, `${upload.name} is not an envelope`)
+    return envelope
+  })
 }
 
 test('forum_post is a dry run until confirm, then posts once and audits it', async (t) => {
@@ -272,7 +279,7 @@ test('forum_post is a dry run until confirm, then posts once and audits it', asy
   })
   const previewText = textOf(preview)
   assert.match(previewText, /Nothing sent/)
-  assert.match(previewText, /It travels as forum-\w+\.json/)
+  assert.match(previewText, /It travels as forum-\w+\.md/)
   assert.equal(posts(calls).length, 0, 'a preview must not send')
 
   const posted = await client.callTool({
@@ -296,7 +303,7 @@ test('forum_post is a dry run until confirm, then posts once and audits it', asy
   const [envelope] = uploaded(uploads)
   assert.equal(envelope?.kind, 'task')
   assert.equal(envelope?.to, 'reviewer@laptop')
-  assert.equal(uploads[0]?.name, `forum-${String(envelope?.id)}.json`)
+  assert.equal(uploads[0]?.name, `forum-${String(envelope?.id)}.md`)
   assert.equal(
     sends[0]?.body.get('blocks'),
     null,
@@ -316,7 +323,11 @@ test('a bare name is resolved to name@host in the envelope', async (t) => {
   })
   assert.match(textOf(posted), /Posted to/)
   const [envelope] = uploaded(uploads)
-  assert.equal(envelope?.to, 'builder@desktop', 'the reader only knows the full label')
+  assert.equal(
+    envelope?.kind === 'task' ? envelope.to : undefined,
+    'builder@desktop',
+    'the reader only knows the full label',
+  )
 })
 
 test('a peer that is not in the roster is refused instead of guessed', async (t) => {
@@ -449,7 +460,11 @@ test('the poll path posts a beacon and can never answer', async (t) => {
   assert.match(text, /reviewer@laptop is up/)
   const envelopes = uploaded(uploads)
   assert.equal(envelopes[0]?.kind, 'beacon')
-  assert.equal(envelopes[0]?.state, undefined, 'a beacon claims nothing about the person')
+  assert.equal(
+    'state' in (envelopes[0] ?? {}),
+    false,
+    'a beacon claims nothing about the person',
+  )
 
   const second = await announceLiveness(context, resolver, { path: 'poll' })
   assert.equal(second.posted, 0, 'the beacon window keeps the poller quiet')
@@ -532,7 +547,8 @@ test('unregistering says goodbye, forgets the identity and retires the label', a
   const result = await unregisterIdentity(await openForum(), resolver)
   assert.equal(result.label, 'reviewer@laptop')
   assert.equal(result.posted, 1)
-  assert.equal(uploaded(uploads)[0]?.state, 'gone')
+  const [gone] = uploaded(uploads)
+  assert.equal(gone?.kind === 'presence' ? gone.state : undefined, 'gone')
   assert.match(String(posts(calls)[0]?.body.get('initial_comment')), /left the forum/)
 
   const file = await new ForumStore(join(configDir, 'forum.json')).read()
