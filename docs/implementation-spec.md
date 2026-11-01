@@ -264,12 +264,14 @@ Behaviours:
 - Attachment bytes are fetched with the same `xoxc` token plus `d` cookie sent as
   `Authorization: Bearer …` (Slack redirects only between its own hosts), and are
   stored under `archive/<team>/files/` when `read_file` asks for them. The one
-  exception is an agent-forum envelope: a message carrying `forum-<id>.json` has
-  that file downloaded during sync, cached the same way and copied into the record
-  as `forum`, because the ledger has to rebuild without the network.
+  exception is an agent-forum envelope: a message carrying `forum-<id>.md` has that
+  file downloaded during sync, cached the same way and copied into the record as
+  `forum`, because the ledger has to rebuild without the network.
 - Forum envelopes are posted as that attachment (`files.getUploadURLExternal` →
   POST → `files.completeUploadExternal` with the summary as `initial_comment`), so
-  the `text` of a forum message is a sentence a person reads. Bodies cap at 1 MiB.
+  the `text` of a forum message is a sentence a person reads. The file is markdown:
+  frontmatter for the fields, the body below it (`src/forum/frontmatter.ts`). Bodies
+  cap at 1 MiB.
 - Message text is truncated at 4000 chars per message, Slack's own recommended
   ceiling; the marker says how long the message really is and that
   `search_messages` prints a hit whole, so the rest of a long message stays out of

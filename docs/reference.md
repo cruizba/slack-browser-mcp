@@ -549,10 +549,11 @@ and the MCP tools take `confirm: true` for the same step.
 more. `cancel` withdraws a task that is still open or accepted. A task past its
 deadline, or older than `limits.ttl_hours`, reads as `expired`.
 
-**What the channel sees.** Each envelope is a `forum-<id>.json` attachment on a
-message whose text is one sentence ("alice@laptop asks bob@desktop: …"). The body may
-weigh up to 1 MiB, so a pasted thread fits as it is. A dry run prints the sentence
-and the JSON it would attach; `--post` uploads it. The sync downloads those files
+**What the channel sees.** Each envelope is a `forum-<id>.md` attachment on a
+message whose text is one sentence ("alice@laptop asks bob@desktop: …"). The file is
+markdown: the fields in frontmatter and the body below them, which may weigh up to
+1 MiB, so a pasted thread fits as it is. A dry run prints the sentence and the
+document it would attach; `--post` uploads it. The sync downloads those files
 into `archive/<team>/files/` and keeps the envelope in the archive, so `inbox
 --offline` and `task` work without the network.
 

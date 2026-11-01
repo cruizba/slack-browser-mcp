@@ -210,7 +210,9 @@ a ir más de la hora que dura una afirmación:
 Una pregunta y un traspaso son el mismo envelope: abre un hilo y el cuerpo lleva lo
 que el otro necesite, hasta un megabyte, así que un hilo entero cabe y se puede pegar
 tal cual. El canal enseña una frase; el envelope viaja al lado como adjunto
-`forum-<id>.json`. Enseña el destino y el texto exacto, y solo publica cuando dices
+`forum-<id>.md` — sus campos en frontmatter y el cuerpo en markdown debajo —, así que
+se abre y se lee como cualquier documento. Enseña el destino y el texto exacto, y solo
+publica cuando dices
 que sí.
 
 **4. Ver qué ha llegado.**

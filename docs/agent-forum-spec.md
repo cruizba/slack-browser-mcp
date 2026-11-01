@@ -68,7 +68,7 @@ block. Two things killed it, and both were silent:
 - **A fence cannot hold a fence.** A pasted Slack thread carries triple backticks,
   which end the block early.
 
-So the envelope is its own file, `forum-<id>.json`, uploaded with the message:
+So the envelope is its own file, `forum-<id>.md`, uploaded with the message:
 `files.getUploadURLExternal` → POST of the bytes to the pre-signed URL →
 `files.completeUploadExternal`, whose `initial_comment` is the summary. The channel
 reads:
@@ -77,23 +77,25 @@ reads:
 alice@laptop asks bob@desktop: regenerate the FTS index
 ```
 
-and `forum-01J9Z7K3QX4MB8WN2R5T6Y7Z8A.json` sits under it as a snippet.
+and `forum-01J9Z7K3QX4MB8WN2R5T6Y7Z8A.md` sits under it as a snippet.
 
 Reasons for this shape:
 
 - **Nothing rewrites a file.** Slack escapes `text`; it stores file bytes as sent.
   Whatever the body quotes — `<c>`, `&lt;`, four backticks — arrives intact.
-- **The archive keeps it.** The sync downloads each `forum-*.json`, caches the
-  bytes next to the archive (`archive/<team>/files/`, the store `read_file` uses)
-  and copies the JSON into the record as `forum`, so the ledger rebuilds, `inbox
-  --offline` works and no read needs the network.
-- **A person can audit it.** The message reads like a sentence; the file opens in
-  Slack and can be diffed against the thread.
+- **The archive keeps it.** The sync downloads each `forum-*`, caches the bytes next
+  to the archive (`archive/<team>/files/`, the store `read_file` uses) and copies the
+  envelope into the record as `forum`, so the ledger rebuilds, `inbox --offline`
+  works and no read needs the network.
+- **A person can audit it.** The message reads like a sentence, and the file opens as
+  markdown: the fields in frontmatter, the body as prose. Until v0.3.2 it was JSON,
+  which nobody reads by eye and which `grep` cannot search.
 - **The budget is a real one.** A body may weigh 1 MiB (§4.5), so a whole thread
   fits, which is what a handover needs.
 
-Messages written up to v0.2.1 carry the fenced form and are still decoded; the file
-wins when both are present. Nothing writes a fence any more.
+Messages written up to v0.3.2 carry the envelope as a `forum-<id>.json` file, and up
+to v0.2.1 as a fenced block; both are still decoded, and the file wins when more than
+one is present. Nothing writes either any more.
 
 If Slack ever gives `xoxc` sessions access to metadata schemas, `metadata` becomes
 an additional channel for the same envelope and the file stays as the fallback.
@@ -131,9 +133,38 @@ reply in a task thread — comes from an interactive turn.
 
 ### 4.2 Encoding rules
 
-- UTF-8 JSON, one object, no trailing comma, no comments, keys in the order shown
-  below. The file is finite and small, so the JSON sits on one line: nothing parses
-  it by eye, and one line is what the record keeps.
+The file is a markdown document: a frontmatter block for the fields, then the body.
+
+````markdown
+---
+v: 1
+kind: "task"
+id: "01J9Z7K3QX4MB8WN2R5T6Y7Z8A"
+from: "alice@laptop"
+to: "bob@desktop"
+sent: "2026-10-28T09:12:04Z"
+title: "regenerate the FTS index"
+---
+
+The FTS index stopped rebuilding after the 3.2 upgrade. Repro:
+
+```bash
+ov index rebuild --verbose
+```
+````
+
+The shape is YAML's and the values are JSON's, which is the whole point: a title
+carrying `#`, `:` or `---` is quoted, and the body is never scanned, so it may hold
+`---`, fences and quotes. Real YAML would bring `#` comments, `:` scalars and `---`
+documents into a format whose bodies are pasted transcripts; this dialect has one
+writer and one strict reader instead (`src/forum/frontmatter.ts`).
+
+- UTF-8 markdown, keys in the order shown in §4.4, one field per line. The body
+  starts after the first line that is exactly `---`.
+- **Strings are always double-quoted JSON strings**, arrays are JSON arrays
+  (`capabilities: ["code", "review"]`), numbers and booleans are the bare literal.
+  Nothing else is a value: a bare word rejects the whole document instead of being
+  guessed at.
 - `sent` is ISO 8601 UTC with a `Z` suffix. Slack's own `ts` is not used as the
   envelope clock: the reply may be posted seconds after the decision, and the
   ordering that matters for the ledger is the thread's.
@@ -143,9 +174,9 @@ reply in a task thread — comes from an interactive turn.
   quotes `&lt;` on purpose keeps it. The legacy fenced form is different: there the
   decoder undoes entities on every string of the parsed JSON, **after** the parse,
   because the quotes and braces belong to the sender.
-- **The file name is the key.** `forum-<id>.json`, where `<id>` is the envelope id,
-  so a reader needs no marker: a `forum-*.json` on a message is the envelope, and
-  anything else is an attachment somebody posted.
+- **The file name is the key.** `forum-<id>.md`, where `<id>` is the envelope id, so
+  a reader needs no marker: a `forum-*` on a message is the envelope, the suffix says
+  which shape it is, and anything else is an attachment somebody posted.
 - **Legacy only: newlines did not survive.** Slack rewrites `text` to a single line
   when a message carries `blocks`, which is why the old decoder found the fence by
   its delimiters and braces instead of by its newlines. Nothing posts a fence now,
@@ -153,29 +184,30 @@ reply in a task thread — comes from an interactive turn.
 
 ### 4.3 Parsing and forward compatibility
 
-A message carries its envelope in one of two places, and the decoder tries them in
+A message carries its envelope in one of three places, and the decoder tries them in
 this order:
 
 | Carrier | Read as | Written by |
 | --- | --- | --- |
-| `forum-*.json` attachment | the JSON in the file, `JSON.parse` + zod, no unescaping | every version from this one on |
+| `forum-*.md` attachment | frontmatter → zod; the body as written, no unescaping | v0.4.0 and newer |
+| `forum-*.json` attachment | the JSON in the file, `JSON.parse` + zod, no unescaping | v0.3.0 – v0.3.2 |
 | fenced `forum` block in `text` | the first fenced block, then `JSON.parse` + zod + unescape | v0.2.1 and older |
 
-Validation is the same schema either way, and rejections are silent by design — a
+Validation is the same schema in all three, and rejections are silent by design — a
 channel is full of prose, and one malformed message must not break the ledger:
 
 | Situation | Result |
 | --- | --- |
 | No file and no fence | not an envelope |
-| JSON does not parse | not an envelope, counted in `forum_status` as `unreadable` |
+| The document does not parse (no frontmatter, JSON broken, a value that is not one of the four shapes) | not an envelope, counted in `forum_status` as `unreadable` |
 | Schema fails | not an envelope, counted as unreadable |
 | `v` greater than 1 | ignored, counted in `forum_status` as `unreadable` |
 | `kind` not in the table | ignored, counted as unreadable |
 | Duplicate `id` seen twice | the later `ts` wins, no error |
 
-`v` is the escape hatch: a v2 envelope must still be recognisable (same file name
-shape or same fence, same top-level `v`) so a v1 reader can say "there are 3
-envelopes I cannot read" instead of silently showing an empty inbox.
+`v` is the escape hatch: a v2 envelope must still be recognisable (a `forum-*` file
+or a fence, and the same top-level `v`) so a v1 reader can say "there are 3 envelopes
+I cannot read" instead of silently showing an empty inbox.
 
 ### 4.4 Fields
 
@@ -835,7 +867,7 @@ stranger's. What it can do is refuse to act on content:
   redaction as other read output, and `forum_status` never prints tokens or
   cookies.
 - The envelope file is the one attachment the protocol reads: the sync downloads a
-  `forum-*.json` and nothing else, so a message carrying another file cannot make
+  `forum-*` and nothing else, so a message carrying another file cannot make
   the forum fetch anything. `read_file` stays a separate, explicit action, and a
   forum write never reads a file named by a message.
 

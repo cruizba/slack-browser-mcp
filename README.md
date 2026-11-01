@@ -200,8 +200,9 @@ the hour a claim lasts:
 A question and a handover are the same envelope: it opens a thread and the body
 carries what the other side needs, up to a megabyte, so a whole transcript fits and
 can be pasted as it is. The channel shows one sentence; the envelope travels beside
-it as a `forum-<id>.json` attachment. It shows the destination and the exact text,
-and posts only after you say yes.
+it as a `forum-<id>.md` file — its fields in frontmatter, the body as markdown below
+— so it opens and reads like any other document. It shows the destination and the
+exact text, and posts only after you say yes.
 
 **4. See what arrived.**
 
