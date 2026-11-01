@@ -14,6 +14,7 @@ import { chmod, mkdir, open, readFile, rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 
+import { Lock } from '../archive/lock.ts'
 import { forumPath } from '../config/paths.ts'
 import { StoreError } from '../errors.ts'
 import { AGENT_ENV, agentName, normalizeName, type Identity } from './identity.ts'
@@ -176,66 +177,92 @@ export class ForumStore {
   }
 
   async register(key: string, identity: StoredIdentity): Promise<ForumFile> {
-    const file = await this.read()
-    file.identities[key] = identity
-    file.default_identity ??= key
-    await this.write(file)
-    return file
+    return this.mutate((file) => {
+      file.identities[key] = identity
+      file.default_identity ??= key
+      return { file, result: file, write: true }
+    })
   }
 
   /** Drops the identity and retires the label, so its own inbox stops filling up. */
   async unregister(key: string, label: string): Promise<boolean> {
-    const file = await this.read()
-    if (!file.identities[key]) return false
-    delete file.identities[key]
-    if (file.default_identity === key) {
-      const remaining = Object.keys(file.identities).sort()
-      if (remaining.length > 0) {
-        file.default_identity = remaining[0]!
-      } else {
-        delete file.default_identity
+    return this.mutate((file) => {
+      if (!file.identities[key]) return { file, result: false, write: false }
+      delete file.identities[key]
+      if (file.default_identity === key) {
+        const remaining = Object.keys(file.identities).sort()
+        if (remaining.length > 0) {
+          file.default_identity = remaining[0]!
+        } else {
+          delete file.default_identity
+        }
       }
-    }
-    if (!file.ignored.includes(label)) file.ignored.push(label)
-    await this.write(file)
-    return true
+      if (!file.ignored.includes(label)) file.ignored.push(label)
+      return { file, result: true, write: true }
+    })
   }
 
   async bind(binding: Binding): Promise<{ file: ForumFile; added: boolean }> {
-    const file = await this.read()
-    const key = bindingKey(binding)
-    const exists = file.channels.some((entry) => bindingKey(entry) === key)
-    if (!exists) {
-      file.channels.push(binding)
-      await this.write(file)
-    }
-    return { file, added: !exists }
+    return this.mutate((file) => {
+      const key = bindingKey(binding)
+      const exists = file.channels.some((entry) => bindingKey(entry) === key)
+      if (!exists) file.channels.push(binding)
+      return { file, result: { file, added: !exists }, write: !exists }
+    })
   }
 
   async unbind(binding: Pick<Binding, 'workspace' | 'channel'>): Promise<boolean> {
-    const file = await this.read()
-    const key = bindingKey(binding)
-    const kept = file.channels.filter((entry) => bindingKey(entry) !== key)
-    if (kept.length === file.channels.length) return false
-    file.channels = kept
-    await this.write(file)
-    return true
+    return this.mutate((file) => {
+      const key = bindingKey(binding)
+      const kept = file.channels.filter((entry) => bindingKey(entry) !== key)
+      if (kept.length === file.channels.length) return { file, result: false, write: false }
+      file.channels = kept
+      return { file, result: true, write: true }
+    })
   }
 
   async ignore(label: string): Promise<boolean> {
-    const file = await this.read()
-    if (file.ignored.includes(label)) return false
-    file.ignored.push(label)
-    await this.write(file)
-    return true
+    return this.mutate((file) => {
+      if (file.ignored.includes(label)) return { file, result: false, write: false }
+      file.ignored.push(label)
+      return { file, result: true, write: true }
+    })
   }
 
   async unignore(label: string): Promise<boolean> {
-    const file = await this.read()
-    const kept = file.ignored.filter((entry) => entry !== label)
-    if (kept.length === file.ignored.length) return false
-    file.ignored = kept
-    await this.write(file)
-    return true
+    return this.mutate((file) => {
+      const kept = file.ignored.filter((entry) => entry !== label)
+      if (kept.length === file.ignored.length) return { file, result: false, write: false }
+      file.ignored = kept
+      return { file, result: true, write: true }
+    })
+  }
+
+  /**
+   * Read-modify-write under a lock: a setup script that registers two agents at once
+   * would otherwise have both read the same snapshot, and the second write would
+   * silently drop the first one's identity. The temporary file is per process, so the
+   * lock is what keeps two overlapping writes in one process from sharing it too.
+   */
+  private async mutate<T>(
+    change: (file: ForumFile) => { file: ForumFile; result: T; write: boolean },
+  ): Promise<T> {
+    const lock = new Lock(`${this.file}.lock`)
+    const deadline = Date.now() + 2_000
+    while (!(await lock.acquire())) {
+      if (Date.now() > deadline) {
+        throw new StoreError(
+          `${this.file} is being edited by another process; try again in a moment.`,
+        )
+      }
+      await new Promise((done) => setTimeout(done, 25))
+    }
+    try {
+      const { file, result, write } = change(await this.read())
+      if (write) await this.write(file)
+      return result
+    } finally {
+      await lock.release()
+    }
   }
 }

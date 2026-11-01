@@ -197,6 +197,13 @@ export class ArchiveIndex {
     `)
     const dropFromFts = db.prepare('DELETE FROM messages_fts WHERE team = ? AND ts = ?')
     const addToFts = db.prepare('INSERT INTO messages_fts (text, ts, team, channel) VALUES (?, ?, ?, ?)')
+    const storedText = db.prepare('SELECT text FROM messages WHERE team = ? AND ts = ?')
+
+    /** A tombstone carries no text, so the row still needs the words it had. */
+    const surviving = (atTeam: string, atTs: string): string | undefined => {
+      const row = storedText.get(atTeam, atTs) as { text?: string } | undefined
+      return typeof row?.text === 'string' && row.text.length > 0 ? row.text : undefined
+    }
 
     db.exec('BEGIN')
     try {
@@ -217,7 +224,8 @@ export class ArchiveIndex {
           record.reply_count ?? null,
         )
         dropFromFts.run(team, record.ts)
-        if (record.text) addToFts.run(record.text, record.ts, team, record.channel)
+        const indexed = record.text ?? (record.deleted_at ? surviving(team, record.ts) : undefined)
+        if (indexed) addToFts.run(indexed, record.ts, team, record.channel)
       }
       db.exec('COMMIT')
     } catch (error) {

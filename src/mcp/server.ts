@@ -16,6 +16,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 
 import { isEntrypoint } from './entrypoint.ts'
+import { VERSION } from '../version.ts'
 
 import {
   FileCredentialStore,
@@ -35,7 +36,7 @@ import { describePolicy, freshnessPolicy, wantsRefresh } from '../config/freshne
 import { resolveNickname, signingFor } from '../config/assist.ts'
 import { loginLockPath, loginLogPath } from '../config/paths.ts'
 import { FileSettingsStore } from '../config/settings.ts'
-import { AuthError, SchemaError } from '../errors.ts'
+import { AuthError, ForumError, SchemaError } from '../errors.ts'
 import { openForum, reload, type ForumContext } from '../forum/context.ts'
 import {
   callDaemon,
@@ -84,8 +85,6 @@ import {
 } from '../slack/conversations.ts'
 import { channelLabel, formatTs, renderMessages } from '../slack/format.ts'
 import { resolveReferences } from '../slack/references.ts'
-
-const VERSION = '0.1.0'
 
 const INSTRUCTIONS = `Read Slack conversations on behalf of the user, and post as them.
 
@@ -338,10 +337,20 @@ async function refreshForum(context: ForumContext): Promise<CatchUpReport> {
   })
 }
 
+function hintOf(error: unknown): string | undefined {
+  if (error instanceof AuthError) return error.hint
+  if (error instanceof SchemaError) return error.hint
+  if (error instanceof ForumError) return error.hint
+  return undefined
+}
+
 function failure(error: unknown) {
   const message = error instanceof Error ? redact(error.message) : redact(String(error))
-  const hint = error instanceof AuthError || error instanceof SchemaError ? `\n${error.hint}` : ''
-  return { content: [{ type: 'text' as const, text: `${message}${hint}` }], isError: true }
+  const hint = hintOf(error)
+  return {
+    content: [{ type: 'text' as const, text: hint ? `${message}\n${hint}` : message }],
+    isError: true,
+  }
 }
 
 const workspace = z
@@ -388,6 +397,8 @@ export interface BuildOptions {
   onIdentity?: (label: string) => void
   /** Drains the `forum say` messages queued for this connection. */
   localMessages?: () => string[]
+  /** The label this connection speaks as, or undefined before it resolves one. */
+  self?: (() => string | undefined) | undefined
 }
 
 export function buildServer(options: BuildOptions = {}): McpServer {
@@ -1756,7 +1767,7 @@ export function buildServer(options: BuildOptions = {}): McpServer {
     {
       title: 'Agent forum status',
       description:
-        'What the agent forum looks like from this machine: the identity in force, the bound channels with their archive age, the clocks, and whether the background poll is enabled. Read-only.',
+        'What the agent forum looks like from this machine: the identity in force, the bound channels with their archive age, the clocks, and whether this process is the daemon. Read-only.',
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -1828,23 +1839,27 @@ export function buildServer(options: BuildOptions = {}): McpServer {
     async ({ all, wait_seconds, offline }) => {
       try {
         let context = await openForumFor()
-        let note = ''
-        if (!offline && wait_seconds === 0) {
-          const result = await refreshForum(context)
-          if (result.errors.length > 0) note = ` · ${result.errors[0]}`
-          else if (result.locked) note = ' · a sync holds the lock'
-          context = await reload(context)
-        }
         const refresh = async () => {
           const result = await refreshForum(context)
           context = await reload(context)
           return result
         }
+        // The wait loop refreshes on its own first cycle, so a read with no wait
+        // still catches up exactly once instead of paying for a second sync.
         const outcome = await waitForWork(context, {
           waitSeconds: wait_seconds,
+          all,
           offline,
           ...(offline ? {} : { refresh }),
         })
+        const note =
+          outcome.catchUp === undefined
+            ? ''
+            : outcome.catchUp.errors.length > 0
+              ? ` · ${outcome.catchUp.errors[0]}`
+              : outcome.catchUp.locked
+                ? ' · a sync holds the lock'
+                : ''
         const text = renderInbox(context, outcome.report, { offline, note })
         const queued = options.localMessages?.() ?? []
         const body = queued.length > 0 ? `${queued.join('\n')}\n\n${text}` : text
@@ -2125,14 +2140,14 @@ export function buildServer(options: BuildOptions = {}): McpServer {
   )
 
   if (options.daemon) {
-    registerDaemonTools(server)
+    registerDaemonTools(server, options.self)
   }
   }
 
   return server
 }
 
-function registerDaemonTools(server: McpServer): void {
+function registerDaemonTools(server: McpServer, self?: () => string | undefined): void {
   server.registerTool(
     'forum_say',
     {
@@ -2148,7 +2163,9 @@ function registerDaemonTools(server: McpServer): void {
     async ({ to, text }) => {
       try {
         await settlePeerLabels()
-        const from = `human@${defaultHost()}`
+        // An agent nudging another one is not the human: the reader has to be able to
+        // tell them apart, and `human@host` reaches no connection at all.
+        const from = self?.() ?? `human@${defaultHost()}`
         if (!deliverSay(to, from, text)) {
           return {
             content: [
@@ -2187,6 +2204,9 @@ function registerDaemonTools(server: McpServer): void {
     },
     async ({ team, channel }) => {
       try {
+        if (channel && !team) {
+          throw new Error('archive_refresh needs `team` with `channel`, or neither to refresh them all.')
+        }
         if (channel && team) {
           const outcome = await refreshChannel(team, channel)
           const notes = [

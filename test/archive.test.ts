@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -57,6 +57,24 @@ describe('ArchiveStore', () => {
     const edited = messages.find((message) => message.ts === '1792500000.000200')
     assert.equal(edited?.text, 'version editada')
     assert.equal(edited?.edited_ts, '1792500100.000000')
+  })
+
+  it('reads past a line a crash left half written', async () => {
+    const channel = 'C0TORN'
+    await store.append(TEAM, channel, [record({ channel, ts: '1792500100.000100', text: 'buena' })])
+    await appendFile(store.channelFile(TEAM, channel), '{"ts":"1792500100.000200","channel":"C0TORN"\n')
+
+    const messages = await store.read(TEAM, channel)
+    assert.deepEqual(
+      messages.map((message) => message.text),
+      ['buena'],
+      'one torn line must not take the channel with it',
+    )
+  })
+
+  it('treats a damaged state file as no state instead of failing every read', async () => {
+    await writeFile(join(root, 'state.json'), '{"version": 1, "teams": {')
+    assert.deepEqual(await store.loadState(), { version: 1, teams: {} })
   })
 
   it('keeps a deleted message as history instead of dropping it', async () => {
@@ -148,6 +166,24 @@ describe('ArchiveIndex', () => {
     const withDeleted = index.search({ query: 'efimero', includeDeleted: true })
     assert.equal(withDeleted.length, 1)
     assert.equal(withDeleted[0]?.deleted, true)
+  })
+
+  it('keeps the words of a message the sync tombstones without text', () => {
+    const live = record({ ts: '1792500000.000800', text: 'esto se borra despues' })
+    index.upsert(TEAM, [live])
+    index.upsert(TEAM, [
+      {
+        ts: live.ts,
+        channel: CHANNEL,
+        deleted_at: '2026-10-20T12:20:00.000Z',
+        synced_at: '2026-10-20T12:20:00.000Z',
+      },
+    ])
+
+    assert.equal(index.search({ query: 'borra' }).length, 0)
+    const withDeleted = index.search({ query: 'borra', includeDeleted: true })
+    assert.equal(withDeleted.length, 1, 'a tombstone carries no text, but the row keeps it')
+    assert.equal(withDeleted[0]?.text, 'esto se borra despues')
   })
 
   it('filters by channel name', () => {

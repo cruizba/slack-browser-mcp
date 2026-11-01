@@ -272,7 +272,15 @@ export class FileCredentialStore implements CredentialStore {
     }
 
     const raw = await readFile(file, 'utf8')
-    const result = AccountSchema.safeParse(JSON.parse(raw))
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      throw new StoreError(
+        `Stored session ${file} is not valid JSON. Run \`slack-browser login\` again.`,
+      )
+    }
+    const result = AccountSchema.safeParse(parsed)
     if (!result.success) {
       throw new StoreError(
         `Stored session ${file} is not readable as an account ` +

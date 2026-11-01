@@ -5,6 +5,7 @@ import { describe, it } from 'node:test'
 import {
   commandNames,
   commandPage,
+  defaultSubcommand,
   flagSpecs,
   helpPageFor,
   indexPage,
@@ -102,6 +103,23 @@ describe('usageProblem', () => {
 
   it('refuses a flag that belongs to another subcommand', () => {
     assert.match(usageProblem('archive', 'search', ['team']) ?? '', /unknown flag --team/)
+  })
+
+  it('checks the flags against the subcommand the CLI falls back to', () => {
+    assert.equal(defaultSubcommand('agent-forum'), 'list')
+    assert.equal(defaultSubcommand('archive'), 'stats')
+    assert.equal(defaultSubcommand('read'), undefined)
+    assert.match(usageProblem('agent-forum', 'list', ['json']) ?? '', /unknown flag --json/)
+    assert.match(usageProblem('archive', 'stats', ['channel']) ?? '', /unknown flag --channel/)
+  })
+
+  it('lets a forum post carry a deadline', () => {
+    assert.equal(usageProblem('agent-forum', 'post', ['body', 'parent', 'deadline', 'post']), null)
+  })
+
+  it('keeps --offline where a read can honour it', () => {
+    assert.equal(usageProblem('agent-forum', 'wait', ['offline']), null)
+    assert.match(usageProblem('agent-forum', 'poll', ['offline']) ?? '', /unknown flag --offline/)
   })
 
   it('refuses a subcommand that does not exist', () => {

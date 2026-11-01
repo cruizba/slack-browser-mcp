@@ -88,6 +88,8 @@ export interface WaitOptions {
   intervalMs?: number
   /** Skip the network entirely and answer from the archive. */
   offline?: boolean
+  /** Every task in the channel, not only what is addressed to me. */
+  all?: boolean
   refresh?: () => Promise<CatchUpReport>
 }
 
@@ -117,7 +119,7 @@ export async function waitForWork(
       last = await options.refresh()
     }
     const views = await loadViews(context)
-    const report = inboxEntries(context, views)
+    const report = inboxEntries(context, views, options.all ? { all: true } : {})
     if (report.entries.length > 0 || Date.now() >= until) {
       return { report, cycles, ...(last ? { catchUp: last } : {}) }
     }

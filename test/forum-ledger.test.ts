@@ -105,6 +105,37 @@ function only(messages: ArchivedMessage[], now = NOW): ForumTask {
   return built.tasks[0]!
 }
 
+test('a broadcast is finished by the agent that claimed it, not by any addressee', () => {
+  const broadcast = taskAt(at(5), { to: '*' })
+  const stolen = only([
+    ...registers(),
+    broadcast,
+    reply(at(10), 'accept', ME),
+    reply(at(20), 'result', PEER, { body: 'hecho', ok: true }),
+  ])
+  assert.equal(stolen.state, 'accepted', 'somebody else cannot report its outcome')
+  assert.equal(stolen.takenBy, ME)
+  assert.equal(stolen.ignored.at(-1)?.kind, 'result')
+
+  const claimed = only([
+    ...registers(),
+    broadcast,
+    reply(at(10), 'accept', ME),
+    reply(at(20), 'result', ME, { body: 'hecho', ok: true }),
+  ])
+  assert.equal(claimed.state, 'done')
+})
+
+test('a decline of a broadcast is ignored instead of closing it for the channel', () => {
+  const task = only([
+    ...registers(),
+    taskAt(at(5), { to: '*' }),
+    reply(at(10), 'decline', ME, { body: 'paso' }),
+  ])
+  assert.equal(task.state, 'open')
+  assert.equal(task.ignored.at(-1)?.kind, 'decline')
+})
+
 test('a task remembers whose agent posted it', () => {
   const task = only([...registers(), taskAt(at(5))])
   assert.equal(task.owner, 'U0BUILDER', 'the Slack account, not the asserted from')

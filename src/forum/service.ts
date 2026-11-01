@@ -20,6 +20,7 @@ import type { ArchivedFile } from '../archive/store.ts'
 import { recordSend } from '../slack/audit.ts'
 import { signedMessage } from '../slack/assist.ts'
 import { SlackClient, type SlackChannel } from '../slack/client.ts'
+import { VERSION } from '../version.ts'
 import { candidates, parseTarget, resolvePeer, targetLabel, type Target } from './addressing.ts'
 import type { Binding } from './binding.ts'
 import { labelOf, type Identity } from './identity.ts'
@@ -111,6 +112,25 @@ function fail(message: string, hint?: string): never {
   throw new ForumError(message, hint)
 }
 
+/**
+ * A deadline travels as a short ISO stamp and decides when a task expires, so an
+ * unreadable or already-past one would kill the task on its first read instead of
+ * after the work was done.
+ */
+function deadlineStamp(raw: string, now: Date): string {
+  const parsed = Date.parse(raw.trim())
+  if (!Number.isFinite(parsed)) {
+    fail(`"${raw}" is not a date.`, 'A deadline is ISO 8601, for example 2026-11-20T18:00:00Z.')
+  }
+  if (parsed <= now.getTime()) {
+    fail(
+      `The deadline ${raw} is already past.`,
+      'A task that expires on arrival is one nobody can claim.',
+    )
+  }
+  return new Date(parsed).toISOString()
+}
+
 export function locateTask(views: readonly BindingView[], prefix: string): Located {
   const all = views.flatMap((view) => view.ledger.tasks.map((task) => ({ view, task })))
   const matches = all.filter((entry) => matchesId(entry.task.id, prefix))
@@ -154,6 +174,12 @@ function requireAccepted(task: ForumTask, me: string): void {
   }
   if (!isAddressee(task, me)) {
     fail(`Task ${task.id} was sent to ${task.to}, not to you.`)
+  }
+  if (task.takenBy !== undefined && task.takenBy !== me) {
+    fail(
+      `Task ${task.id} was claimed by ${task.takenBy}.`,
+      'Only the agent that claimed it can report on it.',
+    )
   }
 }
 
@@ -420,8 +446,10 @@ export async function postTask(
   const warning = targetWarning(context, parseTarget(args.to), view.roster, peer)
 
   let depth = 0
+  let parentId: string | undefined
   if (args.parent) {
     const parent = locateTask([view], args.parent)
+    parentId = parent.task.id
     depth = parent.task.depth + 1
   }
 
@@ -434,8 +462,8 @@ export async function postTask(
     sent: context.now.toISOString(),
     title: args.title,
     body: args.body,
-    ...(args.deadline ? { deadline: args.deadline } : {}),
-    ...(args.parent ? { parent: args.parent } : {}),
+    ...(args.deadline ? { deadline: deadlineStamp(args.deadline, context.now) } : {}),
+    ...(parentId ? { parent: parentId } : {}),
     ...(depth > 0 ? { depth } : {}),
   }
 
@@ -492,8 +520,18 @@ export async function replyTo(
   const identity = requireIdentity(context)
   const me = labelOf(identity)
 
-  if ((args.kind === 'progress' || args.kind === 'result' || args.kind === 'error') && !args.body) {
-    fail(`A ${args.kind} needs a body: say what happened.`)
+  if (
+    (args.kind === 'progress' ||
+      args.kind === 'result' ||
+      args.kind === 'error' ||
+      args.kind === 'reopen') &&
+    !args.body
+  ) {
+    fail(
+      args.kind === 'reopen'
+        ? 'A reopen needs a body: say what is missing.'
+        : `A ${args.kind} needs a body: say what happened.`,
+    )
   }
 
   const resolve = async (current: ForumContext) => {
@@ -565,8 +603,16 @@ function validate(context: ForumContext, task: ForumTask, args: ReplyArgs): void
 
   switch (args.kind) {
     case 'accept':
+      requireOpen(task, me)
+      break
     case 'decline':
       requireOpen(task, me)
+      if (task.to === '*') {
+        fail(
+          `Task ${task.id} is a broadcast, and nobody has to answer it.`,
+          'Declining would refuse it on behalf of every other agent: ignore it instead.',
+        )
+      }
       break
     case 'progress':
       if (task.state !== 'accepted') {
@@ -710,8 +756,9 @@ export async function announcePresence(
   if (!identity) return { posted: 0, skipped: 0 }
 
   const state = options.state ?? 'here'
+  const label = labelOf(identity)
   if (!options.force) {
-    const claim = await lastClaim()
+    const claim = await lastClaim(label)
     const fresh =
       claim?.state === state &&
       context.now.getTime() - claim.at < context.limits.here_seconds * 1000
@@ -729,7 +776,7 @@ export async function announcePresence(
     await deliver(context, transport, view.binding, presenceEnvelope(context, identity, state, options.note))
     result.posted += 1
   }
-  if (result.posted > 0) await markClaim(state, context.now)
+  if (result.posted > 0) await markClaim(label, state, context.now)
 
   return result
 }
@@ -749,7 +796,7 @@ export async function announceBeacon(
   if (!identity) return { posted: 0, skipped: 0 }
 
   if (!options.force) {
-    const marked = await lastBeacon()
+    const marked = await lastBeacon(labelOf(identity))
     const fresh =
       marked !== undefined &&
       context.now.getTime() - marked < beaconThrottleMs(context.limits.presence_seconds)
@@ -767,7 +814,7 @@ export async function announceBeacon(
     await deliver(context, transport, view.binding, beaconEnvelope(context, identity))
     result.posted += 1
   }
-  if (result.posted > 0) await markBeacon(context.now)
+  if (result.posted > 0) await markBeacon(labelOf(identity), context.now)
 
   return result
 }
@@ -825,7 +872,7 @@ export function announceEnvelope(context: ForumContext, identity: Identity): Env
     name: identity.name,
     host: identity.host,
     capabilities: identity.capabilities,
-    version: '0.1.0',
+    version: VERSION,
   }
 }
 
@@ -839,6 +886,10 @@ export async function announce(
   let posted = 0
   let skipped = 0
   for (const view of views) {
+    if (!view.binding.announce) {
+      skipped += 1
+      continue
+    }
     if (view.roster.some((peer) => peer.from === envelope.from)) {
       skipped += 1
       continue

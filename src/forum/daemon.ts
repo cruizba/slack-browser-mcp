@@ -51,6 +51,8 @@ export interface ConnectionHooks {
   onIdentity(label: string): void
   /** Drains what `forum say` queued for this connection while it was busy. */
   localMessages(): string[]
+  /** Who this connection speaks as, so a local message names its sender. */
+  self?(): string | undefined
 }
 
 export interface DaemonStatus {
@@ -293,6 +295,7 @@ export async function serveDaemon(options: ServeOptions): Promise<void> {
         state.queue.length = 0
         return queued
       },
+      self: () => state.label,
     }
 
     const mcp = options.build(hooks)
@@ -390,7 +393,8 @@ export async function callDaemon(
   options: { socketPath?: string; timeoutMs?: number } = {},
 ): Promise<DaemonCallResult> {
   const socketPath = options.socketPath ?? daemonPaths().socket
-  const socket = await connectSocket(socketPath, options.timeoutMs ?? 2_000)
+  const budget = options.timeoutMs ?? 2_000
+  const socket = await connectSocket(socketPath, budget)
   const client = new Client({ name: INTERNAL_CLIENT, version: '1' })
   const close = async (): Promise<void> => {
     await client.close().catch(() => undefined)
@@ -398,7 +402,13 @@ export async function callDaemon(
   }
   try {
     await client.connect(new SocketTransport(socket))
-    const result = (await client.callTool({ name: tool, arguments: args })) as {
+    // The connect timeout alone leaves a daemon that accepts and then wedges holding
+    // the caller forever, which is worse than an error: nothing can time it out.
+    const result = (await withinBudget(
+      client.callTool({ name: tool, arguments: args }),
+      budget,
+      `${tool} on the forum daemon`,
+    )) as {
       content?: Array<{ type: string; text?: string }>
       isError?: boolean
     }
@@ -412,6 +422,23 @@ export async function callDaemon(
   }
 }
 
+function withinBudget<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${what} did not answer in ${ms}ms`)), ms)
+    timer.unref()
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
 export async function startDaemon(): Promise<{ spawned: boolean; pid?: number }> {
   const paths = daemonPaths()
   const { spawned } = await ensureDaemon()
@@ -421,19 +448,33 @@ export async function startDaemon(): Promise<{ spawned: boolean; pid?: number }>
 
 export async function stopDaemon(): Promise<{ stopped: boolean; pid?: number }> {
   const paths = daemonPaths()
-  const pid = await readPid(paths)
-  if (pid === undefined || !alive(pid)) {
+  // A pid file outlives a daemon killed with SIGKILL, and after a reboot that number
+  // can belong to anything. Only a socket that answers is the daemon.
+  if (!(await socketAnswers(paths.socket, 300))) {
+    const stale = await readPid(paths)
     await rm(paths.socket, { force: true })
     await rm(paths.pid, { force: true })
-    return { stopped: false }
+    return { stopped: false, ...(stale !== undefined ? { pid: stale } : {}) }
   }
-  process.kill(pid, 'SIGTERM')
+  const pid = await readPid(paths)
+  if (pid === undefined || !alive(pid)) {
+    return { stopped: false, ...(pid !== undefined ? { pid } : {}) }
+  }
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    return { stopped: false, pid }
+  }
   const deadline = Date.now() + 5_000
   while (Date.now() < deadline) {
     if (!(await socketAnswers(paths.socket, 200))) return { stopped: true, pid }
     await new Promise((done) => setTimeout(done, 50))
   }
-  process.kill(pid, 'SIGKILL')
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    // Already gone, which is the outcome the caller asked for.
+  }
   await rm(paths.socket, { force: true })
   await rm(paths.pid, { force: true })
   return { stopped: true, pid }

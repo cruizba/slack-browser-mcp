@@ -140,10 +140,17 @@ export class ArchiveStore {
       raw
         .split('\n')
         .filter((line) => line.trim().length > 0)
-        .map((line) => {
-          const parsed = JSON.parse(line) as ArchivedMessage & { files?: unknown }
-          const files = normalizeFiles(parsed.files)
-          return files ? { ...parsed, files } : (parsed as ArchivedMessage)
+        .flatMap((line) => {
+          try {
+            const parsed = JSON.parse(line) as ArchivedMessage & { files?: unknown }
+            const files = normalizeFiles(parsed.files)
+            return [files ? { ...parsed, files } : (parsed as ArchivedMessage)]
+          } catch {
+            // A line torn by a crash mid-append costs that line, not the channel: the
+            // next sync appends the message again, and the schema migration moves the
+            // unreadable text to `<file>.corrupt`.
+            return []
+          }
         }),
     )
   }
@@ -181,6 +188,9 @@ export class ArchiveStore {
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       if (code === 'ENOENT') return emptyState()
+      // Cursors are advisory: a damaged state file costs one wider backfill, while
+      // throwing here would take down every read that reports freshness.
+      if (error instanceof SyntaxError) return emptyState()
       throw error
     }
   }

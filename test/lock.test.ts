@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -76,6 +76,36 @@ describe('SyncLock', () => {
     )
     assert.equal(await new SyncLock(root).acquire(), true)
     await lock.release()
+  })
+
+  it('does not take over a lock whose owner file is still being written', async () => {
+    const dir = join(root, '.sync.lock')
+    await mkdir(dir, { recursive: true })
+
+    assert.equal(await new SyncLock(root).acquire(), false, 'the owner file is a moment away')
+
+    // A crash between mkdir and the write leaves the same shape, and that one is stale.
+    const old = new Date(Date.now() - 60_000)
+    await utimes(dir, old, old)
+    const late = new SyncLock(root)
+    assert.equal(await late.acquire(), true)
+    await late.release()
+  })
+
+  it('lets one challenger take over a stale lock and refuses the next', async () => {
+    const lock = new SyncLock(root)
+    await lock.acquire()
+    const ownerFile = join(root, '.sync.lock', 'owner.json')
+    await writeFile(
+      ownerFile,
+      JSON.stringify({ pid: 2 ** 22 + 12345, host: hostname(), started_at: new Date().toISOString() }),
+    )
+
+    const first = new SyncLock(root)
+    const second = new SyncLock(root)
+    assert.equal(await first.acquire(), true)
+    assert.equal(await second.acquire(), false, 'the winner holds it now')
+    await first.release()
   })
 })
 

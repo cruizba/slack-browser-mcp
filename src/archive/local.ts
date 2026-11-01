@@ -32,6 +32,11 @@ export async function localHistory(args: {
 
   const oldest = args.oldest ? Number(args.oldest) : undefined
   const latest = args.latest ? Number(args.latest) : undefined
+  // A window that ends before the oldest record is not an answer: the archive cannot
+  // tell a quiet channel from one it never read that far back, so Slack decides.
+  const floor = top.length > 0 ? Number(top[0]!.ts) : undefined
+  if (latest !== undefined && floor !== undefined && latest <= floor) return undefined
+
   const inWindow = top
     .filter((record) => oldest === undefined || Number(record.ts) > oldest)
     .filter((record) => latest === undefined || Number(record.ts) < latest)

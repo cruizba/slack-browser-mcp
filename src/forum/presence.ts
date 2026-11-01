@@ -10,6 +10,9 @@
  * They are separate files because they answer different questions. Reading the
  * archive instead is not an option: a message that was just posted is not in it
  * until the next sync, so an archive-only check would repost on every tool call.
+ *
+ * Each one is per identity, because two agents share a machine: a claim marked for
+ * `builder@laptop` must not silence `reviewer@laptop` on the same disk.
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -25,12 +28,16 @@ export function beaconThrottleMs(presenceSeconds: number): number {
   return presenceSeconds * 1000
 }
 
-export function beaconMarkPath(root: string = forumDir()): string {
-  return join(root, '.beacon')
+export function beaconMarkPath(label: string, root: string = forumDir()): string {
+  return join(root, `.beacon-${markKey(label)}`)
 }
 
-export function claimMarkPath(root: string = forumDir()): string {
-  return join(root, '.claim')
+export function claimMarkPath(label: string, root: string = forumDir()): string {
+  return join(root, `.claim-${markKey(label)}`)
+}
+
+function markKey(label: string): string {
+  return label.replace(/[^A-Za-z0-9._@-]+/g, '_')
 }
 
 export interface ClaimMark {
@@ -43,26 +50,26 @@ async function writeMark(file: string, contents: string): Promise<void> {
   await writeFile(file, contents, { encoding: 'utf8', mode: 0o600 })
 }
 
-export async function markBeacon(when: Date): Promise<void> {
-  await writeMark(beaconMarkPath(), when.toISOString())
+export async function markBeacon(label: string, when: Date): Promise<void> {
+  await writeMark(beaconMarkPath(label), when.toISOString())
 }
 
-export async function lastBeacon(): Promise<number | undefined> {
+export async function lastBeacon(label: string): Promise<number | undefined> {
   try {
-    const stamp = Date.parse((await readFile(beaconMarkPath(), 'utf8')).trim())
+    const stamp = Date.parse((await readFile(beaconMarkPath(label), 'utf8')).trim())
     return Number.isFinite(stamp) ? stamp : undefined
   } catch {
     return undefined
   }
 }
 
-export async function markClaim(state: PresenceClaim, when: Date): Promise<void> {
-  await writeMark(claimMarkPath(), JSON.stringify({ state, at: when.getTime() }))
+export async function markClaim(label: string, state: PresenceClaim, when: Date): Promise<void> {
+  await writeMark(claimMarkPath(label), JSON.stringify({ state, at: when.getTime() }))
 }
 
-export async function lastClaim(): Promise<ClaimMark | undefined> {
+export async function lastClaim(label: string): Promise<ClaimMark | undefined> {
   try {
-    const parsed: unknown = JSON.parse(await readFile(claimMarkPath(), 'utf8'))
+    const parsed: unknown = JSON.parse(await readFile(claimMarkPath(label), 'utf8'))
     if (typeof parsed !== 'object' || parsed === null) return undefined
     const { state, at } = parsed as { state?: unknown; at?: unknown }
     if (state !== 'here' && state !== 'away') return undefined

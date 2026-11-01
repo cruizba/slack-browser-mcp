@@ -185,24 +185,30 @@ test('a peer that leaves stops being a peer, and can come back', () => {
   assert.equal(back[0]?.state, undefined, 'a register after a departure brings the name back')
 })
 
-test('the beacon mark throttles the poller and the claim mark the session', async (t) => {
+test('the beacon mark throttles the poller and the claim mark the session, per identity', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'forum-liveness-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   process.env.SLACK_BROWSER_MCP_CONFIG_DIR = join(root, 'config')
   process.env.XDG_DATA_HOME = join(root, 'data')
 
-  assert.equal(await lastBeacon(), undefined)
-  await markBeacon(NOW)
-  assert.equal(await lastBeacon(), NOW.getTime())
+  assert.equal(await lastBeacon('builder@laptop'), undefined)
+  await markBeacon('builder@laptop', NOW)
+  assert.equal(await lastBeacon('builder@laptop'), NOW.getTime())
+  assert.equal(
+    await lastBeacon('reviewer@laptop'),
+    undefined,
+    'a second agent on the same disk is not throttled by the first',
+  )
   assert.equal(
     beaconThrottleMs(DEFAULT_LIMITS.presence_seconds),
     24 * 3_600_000,
     'a day between beacons by default',
   )
 
-  assert.equal(await lastClaim(), undefined)
-  await markClaim('away', NOW)
-  assert.deepEqual(await lastClaim(), { state: 'away', at: NOW.getTime() })
+  assert.equal(await lastClaim('builder@laptop'), undefined)
+  await markClaim('builder@laptop', 'away', NOW)
+  assert.deepEqual(await lastClaim('builder@laptop'), { state: 'away', at: NOW.getTime() })
+  assert.equal(await lastClaim('reviewer@laptop'), undefined, 'claims are per identity too')
 })
 
 test('the roster prints the machine and the person as two columns', async () => {

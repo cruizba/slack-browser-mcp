@@ -41,7 +41,13 @@ function rewriteInitialize(line: string): string {
   }
   if (typeof message !== 'object' || message === null) return line
   const envelope = message as { method?: unknown; params?: Record<string, unknown> }
-  if (envelope.method !== 'initialize' || typeof envelope.params !== 'object') return line
+  if (
+    envelope.method !== 'initialize' ||
+    envelope.params === null ||
+    typeof envelope.params !== 'object'
+  ) {
+    return line
+  }
   const name = process.env.SLACK_BROWSER_MCP_AGENT?.trim()
   if (!name) return line
   const clientInfo = envelope.params.clientInfo

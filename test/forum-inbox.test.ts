@@ -228,3 +228,38 @@ test('a body bigger than the context prints its head and the file id', async (t)
   const legacy = renderTask(context, { ...task, body: long }, view.binding, undefined, view)
   assert.match(legacy, /the whole envelope is in the local archive/)
 })
+
+test('a wait that asks for all lists the work addressed to other agents', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'forum-wait-all-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  process.env.SLACK_BROWSER_MCP_CONFIG_DIR = join(root, 'config')
+  process.env.XDG_DATA_HOME = join(root, 'data')
+  process.env.SLACK_BROWSER_MCP_AGENT = 'pi'
+
+  const { archive } = await seed(root)
+  await archive.append('T0TEST', 'C0HUB', [
+    message('1793145990.000600', {
+      v: 1,
+      kind: 'task',
+      id: '01J9Z7K3QX4MB8WN2R5T6Y7Z9E',
+      from: 'reviewer@laptop',
+      to: 'builder@desktop',
+      sent: '2026-10-28T09:10:00Z',
+      title: 'devuelve el favor',
+      body: 'revisa tú',
+    }),
+  ])
+
+  const { openForum } = await import('../src/forum/context.ts')
+  const { waitForWork } = await import('../src/forum/watch.ts')
+  const context = await openForum({ now: new Date('2026-10-28T09:30:00Z') })
+
+  const mine = await waitForWork(context, { waitSeconds: 0, offline: true })
+  assert.equal(mine.report.entries.length, 2, 'the default view is unchanged')
+
+  const every = await waitForWork(context, { waitSeconds: 0, offline: true, all: true })
+  assert.deepEqual(
+    every.report.entries.map((entry) => entry.task.id),
+    [TASK, '01J9Z7K3QX4MB8WN2R5T6Y7Z9C', '01J9Z7K3QX4MB8WN2R5T6Y7Z9E'],
+  )
+})

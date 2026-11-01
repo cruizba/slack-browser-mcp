@@ -55,6 +55,51 @@ class FakeClient implements SyncClient {
   }
 }
 
+/** A client that pages like Slack, so the tests can run out of budget mid-window. */
+class PagedClient implements SyncClient {
+  readonly historyCalls: Array<{ oldest?: string; cursor?: string }> = []
+  messages: SlackMessage[]
+  readonly pageSize: number
+  readonly delayMs: number
+
+  constructor(messages: SlackMessage[], pageSize: number, delayMs = 0) {
+    this.messages = messages
+    this.pageSize = pageSize
+    this.delayMs = delayMs
+  }
+
+  async listMyChannels(): Promise<SlackChannel[]> {
+    return [channel]
+  }
+
+  async history(params: {
+    channel: string
+    oldest?: string
+    cursor?: string
+  }): Promise<HistoryPage> {
+    this.historyCalls.push({
+      ...(params.oldest ? { oldest: params.oldest } : {}),
+      ...(params.cursor ? { cursor: params.cursor } : {}),
+    })
+    if (this.delayMs > 0) await new Promise((done) => setTimeout(done, this.delayMs))
+    const newer = this.messages
+      .filter((message) => Number(message.ts) > Number(params.oldest ?? 0))
+      .sort((left, right) => Number(right.ts) - Number(left.ts))
+    const start = Number(params.cursor ?? 0)
+    const page = newer.slice(start, start + this.pageSize)
+    const next = start + this.pageSize < newer.length ? String(start + this.pageSize) : undefined
+    return {
+      messages: page,
+      has_more: next !== undefined,
+      ...(next ? { next_cursor: next } : {}),
+    }
+  }
+
+  async replies(): Promise<SlackMessage[]> {
+    return []
+  }
+}
+
 async function scratch(t: { after: (fn: () => Promise<void>) => void }) {
   const root = await mkdtemp(join(tmpdir(), 'slack-sync-'))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -148,7 +193,7 @@ test('a reply_count change refetches the thread on the next reconcile', async (t
 
   const report = await syncAccount({ account, client, store, index, options: { now: at(5) } })
   assert.deepEqual(client.repliesCalls, [parent.ts])
-  assert.equal(report.replies_added, 2, 'thread reads are idempotent by ts')
+  assert.equal(report.replies_added, 1, 'only the new reply is written, not the one already archived')
 })
 
 test('a daily reconcile marks vanished messages as deleted', async (t) => {
@@ -253,7 +298,7 @@ test('a refresh window notices a reply on a parent older than the cursor', async
     'the window has to reach the parent, not only messages after the cursor',
   )
   assert.deepEqual(client.repliesCalls, [parent.ts], 'the changed reply_count re-reads the thread')
-  assert.equal(report.replies_added, 2, 'thread reads are idempotent by ts')
+  assert.equal(report.replies_added, 1, 'the re-read reply is not rewritten')
 })
 
 test('a thread that came back short stays queued until Slack shows the reply', async (t) => {
@@ -485,4 +530,68 @@ test('a record filed without its envelope is completed on the next run', async (
   // And once it has one, another run does not download it again.
   await syncAccount({ account, client, store, index, options: { now: at(5) } })
   assert.deepEqual(asked, ['F0OLD'])
+})
+
+test('a read cut short tombstones nothing and keeps the cursor where it was', async (t) => {
+  const { store, index } = await scratch(t)
+  const first: SlackMessage = { ts: '1792500000.000100', user: 'U0ANA', text: 'uno' }
+  const second: SlackMessage = { ts: '1792500060.000200', user: 'U0ANA', text: 'dos' }
+  const third: SlackMessage = { ts: '1792500120.000300', user: 'U0ANA', text: 'tres' }
+
+  await syncAccount({
+    account,
+    client: new PagedClient([first, second, third], 2),
+    store,
+    index,
+    options: { now: at(0) },
+  })
+  const before = (await store.loadState()).teams[account.team_id]?.channels[channel.id]
+  assert.equal(before?.newest_ts, third.ts)
+
+  // The reconcile is due, and the catch-up read only gets one page of the four
+  // messages it was asked for before the budget runs out: what it did not see is
+  // unknown, not deleted, and the cursor must not step over it.
+  const report = await syncAccount({
+    account,
+    client: new PagedClient(
+      [
+        first,
+        second,
+        third,
+        { ts: '1792500180.000400', user: 'U0ANA', text: 'cuatro' },
+        { ts: '1792500240.000500', user: 'U0ANA', text: 'cinco' },
+        { ts: '1792500300.000600', user: 'U0ANA', text: 'seis' },
+      ],
+      2,
+      400,
+    ),
+    store,
+    index,
+    options: { now: at(60 * 25), deadlineMs: 200 },
+  })
+
+  assert.equal(report.truncated, true)
+  assert.equal(report.deletions_marked, 0, 'a partial window cannot prove a message is gone')
+  const after = (await store.loadState()).teams[account.team_id]?.channels[channel.id]
+  assert.equal(after?.newest_ts, third.ts, 'the cursor must not step over what was never read')
+  assert.equal(after?.last_sync, at(0).toISOString(), 'a truncated channel is not fresh')
+  assert.equal(after?.last_reconcile, at(0).toISOString())
+  const live = (await store.read(account.team_id, channel.id)).filter((record) => !record.deleted_at)
+  assert.equal(live.length, 5, "the page it did read is kept; the rest waits for the next run")
+})
+
+test('a run that is not a reconcile keeps the reconcile stamp', async (t) => {
+  const { store, index } = await scratch(t)
+  const client = new FakeClient([parent], { [parent.ts]: [parent, reply] })
+  await syncAccount({ account, client, store, index, options: { now: at(0) } })
+  const first = (await store.loadState()).teams[account.team_id]?.channels[channel.id]
+  assert.equal(first?.last_reconcile, at(0).toISOString())
+
+  client.historyCalls.length = 0
+  await syncAccount({ account, client, store, index, options: { now: at(5) } })
+
+  assert.equal(client.historyCalls.length, 1, 'no second walk on the same day')
+  const second = (await store.loadState()).teams[account.team_id]?.channels[channel.id]
+  assert.equal(second?.last_reconcile, at(0).toISOString(), 'the stamp outlives a plain run')
+  assert.equal(second?.last_sync, at(5).toISOString())
 })

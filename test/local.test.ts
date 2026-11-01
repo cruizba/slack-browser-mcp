@@ -108,7 +108,7 @@ describe('localHistory', () => {
     assert.deepEqual(messages, [])
   })
 
-  it('answers empty when the window is inside what the archive holds', async () => {
+  it('asks Slack for a window older than what the archive holds', async () => {
     const channel = 'C0LOCAL4'
     await store.append(TEAM, channel, [record(channel, { ts: '1792500000.000100' })])
 
@@ -119,7 +119,25 @@ describe('localHistory', () => {
       limit: 20,
       latest: '1792000000.000000',
     })
-    assert.deepEqual(messages, [])
+    assert.equal(messages, undefined, 'the archive cannot say what came before its floor')
+  })
+
+  it('answers empty for a window inside the span the archive covers', async () => {
+    const channel = 'C0LOCAL5'
+    await store.append(TEAM, channel, [
+      record(channel, { ts: '1792500000.000100' }),
+      record(channel, { ts: '1792500120.000300' }),
+    ])
+
+    const messages = await localHistory({
+      store,
+      teamId: TEAM,
+      channelId: channel,
+      limit: 20,
+      oldest: '1792500000.000100',
+      latest: '1792500060.000200',
+    })
+    assert.deepEqual(messages, [], 'nothing was said in that gap, and the archive knows it')
   })
 })
 

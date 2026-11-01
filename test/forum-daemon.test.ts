@@ -94,6 +94,7 @@ async function runDaemon(idle = 30): Promise<{
         daemon: true,
         onIdentity: hooks.onIdentity,
         localMessages: hooks.localMessages,
+        self: hooks.self,
       }),
   })
   await waitFor(() => socketAnswers(socketPath, 200))
@@ -187,11 +188,12 @@ test('forum say reaches a connected peer and refuses an absent one', async (t) =
   )
   assert.match(sent, /Delivered to reviewer@testbox locally/)
 
-  // The message is local, so it arrives in the inbox rather than in a thread.
+  // The message is local, so it arrives in the inbox rather than in a thread, and it
+  // names the agent that sent it rather than the human.
   const inbox = textOf(
     await reviewer.callTool({ name: 'forum_inbox', arguments: { offline: true } }),
   )
-  assert.match(inbox, /local, not on Slack/)
+  assert.match(inbox, new RegExp(`builder@${HOST} \\(local, not on Slack\\)`))
   assert.match(inbox, /look at the retry loop/)
 
   // Draining is what acknowledges it: the next read does not repeat it.
@@ -233,6 +235,7 @@ test('a socket file left behind by a dead daemon is replaced, not trusted', asyn
         daemon: true,
         onIdentity: hooks.onIdentity,
         localMessages: hooks.localMessages,
+        self: hooks.self,
       }),
   })
   t.after(async () => {

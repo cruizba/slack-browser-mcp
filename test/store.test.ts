@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmod, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -73,6 +73,18 @@ describe('FileCredentialStore', () => {
       assert.equal(resolved.team_name, 'Acme Video')
     } finally {
       await store.remove('T02VIDEO')
+    }
+  })
+
+  it('names a broken account file instead of letting JSON.parse escape', async () => {
+    await store.save(account({ team_id: 'T03BROKEN' }))
+    const file = join(root, 'accounts', 'T03BROKEN.json')
+    await writeFile(file, '{"team_id": "T03BROKEN",')
+    await chmod(file, 0o600)
+    try {
+      await assert.rejects(() => store.get('T03BROKEN'), StoreError)
+    } finally {
+      await store.remove('T03BROKEN')
     }
   })
 

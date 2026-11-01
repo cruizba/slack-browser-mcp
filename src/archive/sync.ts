@@ -23,7 +23,12 @@ import { changed, channelName, toRecord } from './record.ts'
 import { ArchiveStore, type ArchivedMessage, type ChannelState } from './store.ts'
 
 const PAGE_SIZE = 200
-const MAX_PAGES = 20
+/**
+ * A loop guard, not a budget: the deadline is what bounds a run. Paging stops
+ * early only when Slack repeats a cursor, and that is reported as an incomplete
+ * window, because a walk that stopped halfway is not history.
+ */
+const MAX_PAGES = 1000
 const PENDING_THREAD_CAP = 500
 const RECONCILE_INTERVAL_MS = 86_400_000
 
@@ -183,6 +188,7 @@ export async function syncAccount(args: {
         report.replies_added += outcome.replies
         report.threads_fetched += outcome.threads
         report.deletions_marked += outcome.deletions
+        if (!outcome.complete) report.truncated = true
         if (outcome.added + outcome.replies > 0) {
           progress(
             `${channelName(channel) ?? channel.id}: +${outcome.added} messages, +${outcome.replies} replies`,
@@ -266,7 +272,15 @@ async function syncChannel(args: {
   entry: ChannelState
   options: ResolvedOptions
   deadline: number
-}): Promise<{ entry: ChannelState; added: number; replies: number; threads: number; deletions: number }> {
+}): Promise<{
+  entry: ChannelState
+  added: number
+  replies: number
+  threads: number
+  deletions: number
+  /** False when a read stopped before Slack ran out of pages. */
+  complete: boolean
+}> {
   const { channel, client, store, index, teamId, options } = args
   const name = channelName(channel)
   const cached = await store.read(teamId, channel.id)
@@ -275,10 +289,11 @@ async function syncChannel(args: {
   const records: ArchivedMessage[] = []
   const fetched = new Map<string, SlackMessage>()
 
-  const collect = async (params: { oldest?: string }): Promise<void> => {
+  /** True only when the whole window was read, so nothing downstream guesses from a partial one. */
+  const collect = async (params: { oldest?: string }): Promise<boolean> => {
     let cursor: string | undefined
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      if (Date.now() > args.deadline) return
+      if (Date.now() > args.deadline) return false
       const result = await client.history({
         channel: channel.id,
         limit: PAGE_SIZE,
@@ -286,9 +301,13 @@ async function syncChannel(args: {
         ...(cursor ? { cursor } : {}),
       })
       for (const message of result.messages) fetched.set(message.ts, message)
-      if (!result.has_more || !result.next_cursor) return
+      if (!result.has_more) return true
+      // Nothing to continue from, or the same page twice: stopping here is the only
+      // honest answer, and it must not pass for the end of the channel.
+      if (!result.next_cursor || result.next_cursor === cursor) return false
       cursor = result.next_cursor
     }
+    return false
   }
 
   const incrementalFrom = options.full ? undefined : args.entry.newest_ts
@@ -300,14 +319,18 @@ async function syncChannel(args: {
   // is the older of the cursor and the refresh start, so a poll stays one call. A
   // channel with no cursor still gets the full backfill, refresh window or not.
   const cursor = incrementalFrom ?? daysAgo(options.now, options.backfillDays)
-  await collect({ oldest: olderTs(cursor, refreshFrom) })
+  const incrementalComplete = await collect({ oldest: olderTs(cursor, refreshFrom) })
 
   const reconcileDue =
     options.reconcileDays > 0 &&
     (!args.entry.last_reconcile ||
       options.now.getTime() - Date.parse(args.entry.last_reconcile) > RECONCILE_INTERVAL_MS)
 
-  if (reconcileDue) await collect({ oldest: daysAgo(options.now, options.reconcileDays) })
+  // The deletion pass calls whatever the reconcile window did not show gone. A
+  // window that was cut short proves nothing, so it is skipped instead of trusted.
+  const reconcileComplete = reconcileDue
+    ? await collect({ oldest: daysAgo(options.now, options.reconcileDays) })
+    : true
 
   for (const message of fetched.values()) {
     if ((message.reply_count ?? 0) <= 0) continue
@@ -381,7 +404,7 @@ async function syncChannel(args: {
   }
 
   let deletions = 0
-  if (reconcileDue) {
+  if (reconcileDue && reconcileComplete) {
     const windowStart = daysAgo(options.now, options.reconcileDays)
     for (const record of cached) {
       if (record.deleted_at) continue
@@ -403,7 +426,9 @@ async function syncChannel(args: {
 
   let replies = 0
   for (const message of replyMessages) {
-    records.push(withEnvelope(toRecord(channel, message, options.now), message.ts))
+    const record = withEnvelope(toRecord(channel, message, options.now), message.ts)
+    if (!changed(cachedByTs.get(message.ts), record)) continue
+    records.push(record)
     replies += 1
   }
 
@@ -426,11 +451,26 @@ async function syncChannel(args: {
     .filter((ts) => Number(ts) > 0)
     .sort((left, right) => Number(left) - Number(right))
 
+  const newest = timestamps.length > 0 ? timestamps[timestamps.length - 1] : undefined
   const entry: ChannelState = {
-    last_sync: options.now.toISOString(),
+    // A read that stopped early leaves the cursor where it was. Stepping over the
+    // part it never fetched is how a gap becomes permanent, so the run keeps the
+    // previous numbers and the next one walks the same window again.
+    ...(incrementalComplete
+      ? {
+          last_sync: options.now.toISOString(),
+          ...(newest !== undefined ? { newest_ts: newest } : {}),
+        }
+      : {
+          ...(args.entry.last_sync ? { last_sync: args.entry.last_sync } : {}),
+          ...(args.entry.newest_ts ? { newest_ts: args.entry.newest_ts } : {}),
+        }),
     ...(timestamps.length > 0 ? { oldest_ts: timestamps[0] } : {}),
-    ...(timestamps.length > 0 ? { newest_ts: timestamps[timestamps.length - 1] } : {}),
-    ...(reconcileDue ? { last_reconcile: options.now.toISOString() } : {}),
+    ...(reconcileDue && reconcileComplete
+      ? { last_reconcile: options.now.toISOString() }
+      : args.entry.last_reconcile
+        ? { last_reconcile: args.entry.last_reconcile }
+        : {}),
     ...(pending.size > 0 ? { pending_threads: [...pending].slice(0, PENDING_THREAD_CAP) } : {}),
   }
 
@@ -440,5 +480,6 @@ async function syncChannel(args: {
     replies,
     threads: threadParents.length,
     deletions,
+    complete: incrementalComplete && reconcileComplete,
   }
 }

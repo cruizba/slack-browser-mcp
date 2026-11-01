@@ -63,7 +63,7 @@ import {
   type Directory,
 } from './slack/directory.ts'
 import { resolveReferences } from './slack/references.ts'
-import { commandPage, flagSpecs, helpPageFor, indexPage, resolveCommand, usageProblem } from './help.ts'
+import { commandPage, defaultSubcommand, flagSpecs, helpPageFor, indexPage, resolveCommand, usageProblem } from './help.ts'
 import { checkoutRoot, update, versionLine } from './update.ts'
 
 /** Where the checkout lives, so `update` can find install.sh and the tags. */
@@ -648,8 +648,15 @@ async function commandForum(args: ParsedArgs): Promise<number> {
   // once per change of state. `poll` posts a beacon instead, after the refresh it
   // was asked for, and the commands that announce a state of their own would post
   // two messages; nothing reachable from a timer gets to claim that somebody is
-  // looking.
-  const announcesItself = subcommand === 'poll' || subcommand === 'away' || subcommand === 'unregister'
+  // looking. `daemon` is that timer: it is spawned in the background with no agent
+  // in its environment, so its identity would be whichever one is the machine's
+  // default, and `register` already announces the peer it names.
+  const announcesItself =
+    subcommand === 'poll' ||
+    subcommand === 'away' ||
+    subcommand === 'unregister' ||
+    subcommand === 'register' ||
+    subcommand === 'daemon'
   if (!announcesItself) {
     void announceLiveness(context, resolveTransport, { path: 'session' }).catch(() => {})
   }
@@ -785,13 +792,15 @@ async function commandForum(args: ParsedArgs): Promise<number> {
 
     case 'peers': {
       let note = ''
+      const wanted = stringFlag(args, 'workspace')
+      const team = wanted
+        ? (await new FileCredentialStore().resolve(wanted)).team_id
+        : undefined
       const result = await forumRefresh(context, 10_000)
       if (result.errors.length > 0) note = `\nnote: ${result.errors[0]}`
       else if (result.locked) note = '\nnote: a sync holds the lock'
       const fresh = await reload(context)
-      const views = await loadViews(fresh, {
-        ...(stringFlag(args, 'workspace') ? { workspace: stringFlag(args, 'workspace')! } : {}),
-      })
+      const views = await loadViews(fresh, team ? { workspace: team } : {})
       if (views.length === 0) {
         console.log('no channel bound; add one with `slack-browser agent-forum add <channel>`')
         return 0
@@ -1011,6 +1020,7 @@ async function commandForum(args: ParsedArgs): Promise<number> {
               daemon: true,
               onIdentity: hooks.onIdentity,
               localMessages: hooks.localMessages,
+              self: hooks.self,
             }),
         })
         return 0
@@ -1134,7 +1144,7 @@ async function main(): Promise<number> {
   }
 
   const args = parseArgs(tokens, flagSpecs(name), name)
-  const problem = usageProblem(command, args.positional[0], args.flags.keys())
+  const problem = usageProblem(command, args.positional[0] ?? defaultSubcommand(name), args.flags.keys())
   if (problem !== null) {
     console.error(problem)
     return 1

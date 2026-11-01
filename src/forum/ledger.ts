@@ -119,6 +119,11 @@ function isAddressee(task: ForumTask, from: string): boolean {
   return task.to === '*' || task.to === from
 }
 
+/** A claimed broadcast belongs to its claimant: anyone else's note is not its outcome. */
+function isClaimant(task: ForumTask, from: string): boolean {
+  return task.takenBy === undefined || task.takenBy === from
+}
+
 function applyEvent(task: ForumTask, event: TaskEvent): boolean {
   const addressee = isAddressee(task, event.from)
   const requester = event.from === task.from
@@ -132,7 +137,9 @@ function applyEvent(task: ForumTask, event: TaskEvent): boolean {
       }
       return false
     case 'decline':
-      if (task.state === 'open' && addressee) {
+      // A broadcast is claimed or ignored, never declined: one agent's no would close
+      // the request for everybody else in the channel.
+      if (task.state === 'open' && addressee && task.to !== '*') {
         task.state = 'declined'
         return true
       }
@@ -142,13 +149,13 @@ function applyEvent(task: ForumTask, event: TaskEvent): boolean {
       // the worker answering, the requester clarifying, neither moving the state.
       return task.state === 'accepted' && (addressee || requester)
     case 'result':
-      if (task.state === 'accepted' && addressee) {
+      if (task.state === 'accepted' && addressee && isClaimant(task, event.from)) {
         task.state = event.ok === false ? 'failed' : 'done'
         return true
       }
       return false
     case 'error':
-      if (task.state === 'accepted' && addressee) {
+      if (task.state === 'accepted' && addressee && isClaimant(task, event.from)) {
         task.state = 'failed'
         return true
       }

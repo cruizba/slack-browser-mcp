@@ -337,6 +337,113 @@ test('a peer that is not in the roster is refused instead of guessed', async (t)
     arguments: { to: 'ghost@nowhere', title: 'hola', body: 'hay alguien', confirm: true },
   })
   assert.match(textOf(result), /No peer/)
+  assert.match(textOf(result), /agent-forum peers/, 'the MCP surface keeps the hint, not only the CLI')
+  assert.equal(posts(calls).length, 0)
+})
+
+test('a deadline that cannot be read, or is already past, is refused before anything is posted', async (t) => {
+  const { calls, uploads, client } = await setup(t)
+
+  const unreadable = await client.callTool({
+    name: 'forum_post',
+    arguments: { to: 'reviewer@laptop', title: 'con fecha rara', body: 'cuerpo', deadline: 'next friday' },
+  })
+  assert.match(textOf(unreadable), /is not a date/)
+
+  const past = await client.callTool({
+    name: 'forum_post',
+    arguments: {
+      to: 'reviewer@laptop',
+      title: 'con fecha vieja',
+      body: 'cuerpo',
+      deadline: new Date(Date.now() - 60_000).toISOString(),
+    },
+  })
+  assert.match(textOf(past), /already past/)
+  assert.equal(uploads.length, 0, 'a refused deadline must not send')
+  assert.equal(posts(calls).length, 0)
+
+  const soon = new Date(Date.now() + 7 * 86_400_000).toISOString()
+  const accepted = await client.callTool({
+    name: 'forum_post',
+    arguments: { to: 'reviewer@laptop', title: 'con fecha', body: 'cuerpo', deadline: soon, confirm: true },
+  })
+  assert.match(textOf(accepted), /Posted to/)
+  const [envelope] = uploaded(uploads)
+  assert.equal(envelope?.kind === 'task' ? envelope.deadline : undefined, soon)
+})
+
+test('a parent given as a prefix is stored as the whole task id', async (t) => {
+  const { uploads, client } = await setup(t)
+  const result = await client.callTool({
+    name: 'forum_post',
+    arguments: {
+      to: 'reviewer@laptop',
+      title: 'trozo',
+      body: 'parte del trabajo',
+      parent: TASK.slice(0, 8),
+      confirm: true,
+    },
+  })
+  assert.match(textOf(result), /Posted to/, 'a prefix must resolve, not reach the envelope')
+  const [envelope] = uploaded(uploads)
+  assert.equal(envelope?.kind === 'task' ? envelope.parent : undefined, TASK)
+  assert.equal(envelope?.kind === 'task' ? envelope.depth : undefined, 1)
+})
+
+test('a reopen without a body is refused with a sentence, not a schema dump', async (t) => {
+  const { calls, client } = await setup(t)
+  const { openForum } = await import('../src/forum/context.ts')
+  const { replyTo } = await import('../src/forum/service.ts')
+
+  // The MCP schema already requires the body; this is the CLI path, which does not.
+  const context = await openForum({ clientName: 'pi' })
+  await assert.rejects(
+    replyTo(context, async () => {
+      throw new Error('a refused reopen must not resolve a transport')
+    }, { id: TASK, kind: 'reopen', confirm: true, by: 'cli' }),
+    /A reopen needs a body/,
+  )
+  assert.equal(posts(calls).length, 0)
+  assert.equal(textOf(await client.callTool({ name: 'forum_reopen', arguments: { id: TASK } })).includes('body'), true)
+})
+
+test('declining a broadcast is refused instead of closing it for the channel', async (t) => {
+  const { calls, uploads, client } = await setup(t)
+  await client.callTool({
+    name: 'forum_post',
+    arguments: { to: '*', title: 'para quien pueda', body: 'revisad esto', confirm: true },
+  })
+  const [broadcast] = uploaded(uploads)
+  assert.ok(broadcast && broadcast.kind === 'task')
+
+  const refused = await client.callTool({
+    name: 'forum_decline',
+    arguments: { id: broadcast.id, confirm: true },
+  })
+  assert.match(textOf(refused), /broadcast/)
+  assert.equal(posts(calls).length, 1, 'only the task itself was posted')
+})
+
+test('a channel bound with no presence is never written to, not even to register', async (t) => {
+  const { calls } = await setup(t)
+  const file = join(configDir, 'forum.json')
+  const stored = JSON.parse(await readFile(file, 'utf8')) as {
+    channels: Array<{ announce?: boolean }>
+  }
+  stored.channels[0]!.announce = false
+  await writeFile(file, JSON.stringify(stored))
+
+  const { openForum } = await import('../src/forum/context.ts')
+  const { announce } = await import('../src/forum/service.ts')
+  const context = await openForum({ clientName: 'pi' })
+  assert.ok(context.identity)
+
+  const result = await announce(context, (async () => {
+    throw new Error('announce is off for that channel')
+  }) as never, context.identity)
+
+  assert.deepEqual(result, { posted: 0, skipped: 1 })
   assert.equal(posts(calls).length, 0)
 })
 

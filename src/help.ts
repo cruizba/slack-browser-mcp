@@ -41,7 +41,10 @@ const FLAGS: Readonly<Record<string, FlagDoc>> = {
   channel: { value: '<name|id>', doc: 'restrict the search to one channel' },
   check: { doc: 'say what would happen and change nothing' },
   clear: { doc: 'drop the setting instead of reading it' },
-  deadline: { value: '<seconds>', doc: 'budget for the whole run, split across workspaces' },
+  deadline: {
+    value: '<seconds|iso>',
+    doc: 'seconds the run may take (sync, wait, poll) or the ISO time a task expires (forum post)',
+  },
   deleted: { doc: 'include the messages Slack no longer serves' },
   fail: { doc: 'report the task as failed instead of done' },
   follow: { doc: 'keep waiting for the next task instead of printing what is there' },
@@ -233,8 +236,8 @@ const COMMANDS: Readonly<Record<string, Command>> = {
         notes: ['The full thread and state of one task, by id or a unique prefix of it.'],
       },
       post: {
-        usage: `${PROGRAM} agent-forum post <to> <title> --body <text> [--parent <id>] [--binding <name>] [--post]`,
-        flags: ['body', 'parent', 'binding', 'post'],
+        usage: `${PROGRAM} agent-forum post <to> <title> --body <text> [--parent <id>] [--deadline <iso>] [--binding <name>] [--post]`,
+        flags: ['body', 'parent', 'deadline', 'binding', 'post'],
         notes: ['Hands work to a peer by name.'],
       },
       accept: {
@@ -295,7 +298,7 @@ const COMMANDS: Readonly<Record<string, Command>> = {
       },
       poll: {
         usage: `${PROGRAM} agent-forum poll [--quiet] [--deadline <s>]`,
-        flags: ['quiet', 'deadline', 'offline'],
+        flags: ['quiet', 'deadline'],
         notes: ['One refresh pass, for checking by hand what the daemon does on its own.'],
       },
       daemon: {
@@ -345,6 +348,13 @@ const ALIASES: Readonly<Record<string, string>> = {
   workspaces: 'workspace',
   '-v': 'version',
   '--version': 'version',
+}
+
+/** What such a command runs with when no subcommand is named. */
+const DEFAULT_SUBCOMMAND: Readonly<Record<string, string>> = {
+  'agent-forum': 'list',
+  archive: 'stats',
+  workspace: 'list',
 }
 
 const INDEX_NOTES: readonly string[] = [
@@ -420,6 +430,10 @@ export function flagSpecs(name: string): Record<string, { value?: string }> {
     specs[flag] = value === undefined ? {} : { value }
   }
   return specs
+}
+
+export function defaultSubcommand(name: string): string | undefined {
+  return DEFAULT_SUBCOMMAND[name]
 }
 
 /** Where `--help` or `-h` sits in the arguments after the command, or -1. */
