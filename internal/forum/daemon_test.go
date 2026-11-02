@@ -2,6 +2,7 @@ package forum_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,11 +28,13 @@ func TestDaemonPathsHonourTheOverrides(t *testing.T) {
 
 	paths := forum.PathsFor("/home/ana/.local/share/slack-browser-mcp/forum", env)
 
-	if paths.Socket != "/short/custom.sock" {
+	// filepath.Join uses the host's separator, so the expectation is written as
+	// slashes and both flavours are normalised to compare.
+	if slash(paths.Socket) != "/short/custom.sock" {
 		t.Fatalf("socket = %q", paths.Socket)
 	}
 
-	if paths.Pid != "/short/forum.pid" {
+	if slash(paths.Pid) != "/short/forum.pid" {
 		t.Fatalf("pid = %q", paths.Pid)
 	}
 }
@@ -149,6 +152,11 @@ func TestLocalLinesAreSpooledPerPeer(t *testing.T) {
 	if len(forum.DrainSay(dir, "builder@laptop")) != 0 {
 		t.Fatal("a drain left the line behind")
 	}
+}
+
+// slash normalises both path flavours, because filepath only knows the host's.
+func slash(path string) string {
+	return strings.ReplaceAll(path, `\`, "/")
 }
 
 // shortSocket is a socket path the kernel can hold, which t.TempDir() cannot promise.
