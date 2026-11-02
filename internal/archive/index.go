@@ -19,7 +19,7 @@ import (
 const (
 	searchPrefix = `
       SELECT m.team, m.channel, m.channel_name, m.ts, m.user, m.username, m.text,
-             m.thread_ts, m.deleted
+             m.thread_ts, m.deleted, m.reply_count
       FROM messages_fts
       JOIN messages m ON m.team = messages_fts.team AND m.ts = messages_fts.ts
       WHERE `
@@ -360,7 +360,7 @@ func (i *Index) Search(params SearchParams) ([]SearchHit, error) {
 
 	defer func() { _ = rows.Close() }()
 
-	return scanHits(rows, false)
+	return scanHits(rows)
 }
 
 // List is a timeline across every conversation.
@@ -392,7 +392,7 @@ func (i *Index) List(params ListParams) ([]SearchHit, error) {
 
 	defer func() { _ = rows.Close() }()
 
-	return scanHits(rows, true)
+	return scanHits(rows)
 }
 
 func listConditions(params ListParams) ([]string, []any) {
@@ -555,7 +555,10 @@ func RebuildIndex(store *Store, index *Index) (int, error) {
 	return total, nil
 }
 
-func scanHits(rows *sql.Rows, withReplyCount bool) ([]SearchHit, error) {
+// scanHits reads both paths' columns, which are now the same list: a hit from a
+// search and a hit from a timeline are the same answer, so nothing downstream has to
+// ask where it came from before deciding whether a message has replies.
+func scanHits(rows *sql.Rows) ([]SearchHit, error) {
 	hits := make([]SearchHit, 0, 32)
 
 	for rows.Next() {
@@ -570,16 +573,8 @@ func scanHits(rows *sql.Rows, withReplyCount bool) ([]SearchHit, error) {
 			replyCount  sql.NullInt64
 		)
 
-		var err error
-
-		if withReplyCount {
-			err = rows.Scan(&hit.Team, &hit.Channel, &channelName, &hit.TS, &user, &username,
-				&text, &threadTS, &deleted, &replyCount)
-		} else {
-			err = rows.Scan(&hit.Team, &hit.Channel, &channelName, &hit.TS, &user, &username,
-				&text, &threadTS, &deleted)
-		}
-
+		err := rows.Scan(&hit.Team, &hit.Channel, &channelName, &hit.TS, &user, &username,
+			&text, &threadTS, &deleted, &replyCount)
 		if err != nil {
 			return nil, err
 		}
