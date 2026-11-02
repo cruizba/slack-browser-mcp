@@ -56,9 +56,13 @@ jobs:
       # -race needs cgo, and the Windows image has no C toolchain Go will pick up
       # on its own, so the detector runs only where it works. Windows runs the
       # same tests without it rather than being skipped.
+      # `-count=2` because one pass cannot see what only the second one does: tests
+      # that run in parallel in one process and share a package-level value look green
+      # the first time and race the second, which is how the forum's build version was
+      # caught. One runner pays for it; the other two prove the platforms.
       - name: Test with the race detector
         if: runner.os != 'Windows'
-        run: go test -race -shuffle=on ./...
+        run: go test -race -shuffle=on -count=2 ./...
 
       - name: Test
         if: runner.os == 'Windows'

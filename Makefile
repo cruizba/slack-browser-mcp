@@ -32,7 +32,14 @@ test:
 test-short:
 	$(GO) test -short ./...
 
-## test-integration: Build both binaries and diff them against the goldens
+## fuzz: Fuzz the parsers that read somebody else's text, 30s per target
+fuzz:
+	$(GO) test -run XXX -fuzz=FuzzDecodeJSON -fuzztime 30s ./internal/forum/
+	$(GO) test -run XXX -fuzz=FuzzDecodeMarkdown -fuzztime 30s ./internal/forum/
+	$(GO) test -run XXX -fuzz=FuzzDecodeFence -fuzztime 30s ./internal/forum/
+	$(GO) test -run XXX -fuzz=FuzzReadFrontmatter -fuzztime 30s ./internal/forum/
+
+test-integration: Build both binaries and diff them against the goldens
 test-integration:
 	$(GO) test -tags integration -count=1 ./internal/difftest/
 
