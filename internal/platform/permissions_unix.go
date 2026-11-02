@@ -18,6 +18,16 @@ func Harden(path string) error {
 	return nil
 }
 
+// HardenDir is [Harden] for a directory, which needs the execute bit to be
+// entered at all: 0600 on a directory locks its owner out of its own files.
+func HardenDir(path string) error {
+	if err := os.Chmod(path, 0o700); err != nil { //nolint:gosec // a directory needs the execute bit to be entered; 0700 is the tightest that works
+		return fmt.Errorf("setting permissions on %s: %w", path, err)
+	}
+
+	return nil
+}
+
 // Private reports whether only the owner can reach the file, and the mode it
 // found, so the caller can put the number in its own message.
 func Private(path string) (bool, os.FileMode, error) {

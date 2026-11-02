@@ -16,8 +16,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cruizba/slack-browser-mcp/internal/config"
+	"github.com/cruizba/slack-browser-mcp/internal/failure"
 	"github.com/cruizba/slack-browser-mcp/internal/platform"
 )
 
@@ -412,4 +414,91 @@ func formatAccounts(accounts []Summary) string {
 
 func octal(mode os.FileMode) string {
 	return fmt.Sprintf("%03o", mode.Perm()&0o777)
+}
+
+// Save stores a session, replacing whatever was filed for that workspace. The
+// file is private before it holds anything: it is created 0600 and only then
+// renamed into place, so a reader never sees a half-written token.
+func (s *Store) Save(account Account) error {
+	if problems := account.problems(); len(problems) > 0 {
+		return &failure.StoreError{Message: "Refusing to store an account (" + strings.Join(problems, "; ") + ")."}
+	}
+
+	path, err := s.pathFor(account.TeamID)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return fmt.Errorf("creating %s: %w", s.dir, err)
+	}
+
+	if err := platform.HardenDir(s.dir); err != nil {
+		return err
+	}
+
+	encoded, err := json.MarshalIndent(account, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding %s: %w", path, err)
+	}
+
+	temporary := filepath.Join(s.dir, fmt.Sprintf(".%s.%d.tmp", account.TeamID, os.Getpid()))
+
+	handle, err := os.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // the path is built from a validated team id
+	if err != nil {
+		return fmt.Errorf("opening %s: %w", temporary, err)
+	}
+
+	if _, err := handle.Write(append(encoded, '\n')); err != nil {
+		_ = handle.Close()
+
+		return fmt.Errorf("writing %s: %w", temporary, err)
+	}
+
+	if err := handle.Sync(); err != nil {
+		_ = handle.Close()
+
+		return fmt.Errorf("syncing %s: %w", temporary, err)
+	}
+
+	if err := handle.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", temporary, err)
+	}
+
+	if err := platform.Harden(temporary); err != nil {
+		return err
+	}
+
+	if err := os.Rename(temporary, path); err != nil {
+		return fmt.Errorf("replacing %s: %w", path, err)
+	}
+
+	return nil
+}
+
+// MarkValidated records that Slack accepted the session, which is what the
+// `last ok` column of `accounts` reports.
+func (s *Store) MarkValidated(teamID string, when time.Time) error {
+	account, err := s.Get(teamID)
+	if err != nil {
+		return err
+	}
+
+	account.LastOKAt = when.UTC().Format("2006-01-02T15:04:05.000Z")
+
+	return s.Save(account)
+}
+
+// Remove forgets a workspace.
+func (s *Store) Remove(teamID string) error {
+	path, err := s.pathFor(teamID)
+	if err != nil {
+		return err
+	}
+
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	return nil
 }

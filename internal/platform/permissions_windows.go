@@ -14,6 +14,11 @@ func Harden(string) error {
 	return nil
 }
 
+// HardenDir cannot do anything here either; see [Harden].
+func HardenDir(string) error {
+	return nil
+}
+
 // Private reports yes for the same reason: the DACL inherited from the profile
 // cannot be read with os.Stat, and refusing every file because the mode bits are
 // meaningless would make the store unusable on the one system this exists to
