@@ -1,13 +1,16 @@
 package mcp_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -414,5 +417,185 @@ func TestForumStatusOnAMachineWithNothingBound(t *testing.T) {
 
 	if !strings.Contains(text, "timings: ttl ") {
 		t.Fatalf("forum_status does not print the clocks: %q", text)
+	}
+}
+
+func TestListConversations(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	all := h.call("list_conversations", map[string]any{})
+
+	if !strings.Contains(all, "conversations") {
+		t.Fatalf("list_conversations = %q", all)
+	}
+
+	// A query is a case-insensitive substring: asking for a channel that is not there
+	// answers "none", not the whole list with a note attached.
+	missing := h.call("list_conversations", map[string]any{"query": "zzz-not-a-channel"})
+
+	if strings.Contains(missing, "C01") || !strings.Contains(missing, "No conversation") {
+		t.Fatalf("a query with no match = %q", missing)
+	}
+
+	// The kind filter narrows to one sort of conversation, which is what makes the
+	// tool usable in a workspace with a hundred channels.
+	dms := h.call("list_conversations", map[string]any{"kind": "dm"})
+
+	if strings.Contains(dms, "ERROR:") {
+		t.Fatalf("kind=dm failed: %q", dms)
+	}
+
+	if strings.Contains(dms, "\nchannel ") {
+		t.Fatalf("kind=dm listed a channel: %q", dms)
+	}
+}
+
+func TestSetDefaultWorkspaceRefusesAnUnknownName(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	text := h.call("set_default_workspace", map[string]any{"workspace": "nope.example.com"})
+
+	if !strings.HasPrefix(text, "ERROR:") {
+		t.Fatalf("an unknown workspace was accepted: %q", text)
+	}
+
+	// The error has to say how to find a real one, or the next call is a guess.
+	if !strings.Contains(text, "slack-browser accounts") || !strings.Contains(text, "Stored: T000000001") {
+		t.Fatalf("the error does not list what is stored: %q", text)
+	}
+}
+
+func TestToolsReportAFailureWithoutLosingTheReason(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	// A name nobody has is the most common bad call, and the answer has to be an error
+	// a model can read and act on: it names what was asked for and what to do next.
+	text := h.call("read_messages", map[string]any{"channel": "no-such-channel-anywhere"})
+
+	if !strings.HasPrefix(text, "ERROR:") {
+		t.Fatalf("an unknown channel = %q", text)
+	}
+
+	if !strings.Contains(text, "no-such-channel-anywhere") || !strings.Contains(text, "list_conversations") {
+		t.Fatalf("the error does not help: %q", text)
+	}
+}
+
+// The protocol layer is where a call is judged complete: the schema each tool
+// advertises names its required arguments, and a call that omits one gets a sentence it
+// can act on instead of whatever the handler does with an empty string.
+func TestServerRefusesACallThatIsMissingARequiredArgument(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	// One call per rule, because the message names the argument and a tool with two
+	// required ones has to be told which is missing.
+	calls := []struct {
+		name      string
+		arguments string
+		want      string
+	}{
+		{name: "read_messages", arguments: `{}`, want: "read_messages needs `channel`."},
+		{name: "read_messages", arguments: `{"channel":""}`, want: "read_messages needs `channel`."},
+		{name: "read_messages", arguments: `{"channel":null}`, want: "read_messages needs `channel`."},
+		{name: "get_thread", arguments: `{"channel":"general"}`, want: "get_thread needs `thread_ts`."},
+		{name: "read_file", arguments: `{}`, want: "read_file needs `file`."},
+		{name: "search_messages", arguments: `{}`, want: "search_messages needs `query`."},
+		{name: "post_message", arguments: `{"channel":"general"}`, want: "post_message needs `text`."},
+	}
+
+	instructions, tools, err := mcp.Catalog()
+	if err != nil {
+		t.Fatalf("Catalog: %v", err)
+	}
+
+	server := &mcp.Server{
+		Version: "test", Instructions: instructions, Tools: tools,
+		Handlers: mcp.Handlers(h.deps),
+		In:       strings.NewReader(""),
+		Out:      io.Discard,
+	}
+
+	// Two pipes: one carries requests to the server, the other carries answers back.
+	toServer, fromClient := io.Pipe()
+
+	toClient, fromServer := io.Pipe()
+
+	server.In = toServer
+	server.Out = fromServer
+
+	reader := bufio.NewReader(toClient)
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		_ = server.Serve(context.Background())
+	}()
+
+	t.Cleanup(func() {
+		_ = fromClient.Close()
+		_ = toClient.Close()
+
+		<-done
+	})
+
+	assertRequiredArguments(t, fromClient, reader, calls)
+}
+
+// assertRequiredArguments walks the calls in order, which is the order the ids answer
+// in: the protocol answers one line per request.
+func assertRequiredArguments(
+	t *testing.T,
+	client *io.PipeWriter,
+	reader *bufio.Reader,
+	calls []struct {
+		name      string
+		arguments string
+		want      string
+	},
+) {
+	t.Helper()
+
+	for index, call := range calls {
+		request := `{"jsonrpc":"2.0","id":` + strconv.Itoa(index+1) + `,"method":"tools/call","params":{"name":"` +
+			call.name + `","arguments":` + call.arguments + `}}` + "\n"
+
+		if _, err := client.Write([]byte(request)); err != nil {
+			t.Fatalf("writing the call: %v", err)
+		}
+
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("reading the answer: %v", err)
+		}
+
+		if !strings.Contains(line, call.want) {
+			t.Fatalf("%s %s answered %s", call.name, call.arguments, line)
+		}
+
+		if !strings.Contains(line, `"isError":true`) {
+			t.Fatalf("%s %s is not marked as an error: %s", call.name, call.arguments, line)
+		}
+
+		var answer struct {
+			ID json.RawMessage `json:"id"`
+		}
+
+		if err := json.Unmarshal([]byte(line), &answer); err != nil {
+			t.Fatalf("the answer is not JSON: %v", err)
+		}
+
+		if string(answer.ID) != strconv.Itoa(index+1) {
+			t.Fatalf("id = %s, want %d", answer.ID, index+1)
+		}
 	}
 }

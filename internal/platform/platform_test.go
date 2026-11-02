@@ -1,6 +1,7 @@
 package platform_test
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -143,4 +144,74 @@ func TestLookup(t *testing.T) {
 // Linux keeps its backslashes.
 func slash(path string) string {
 	return strings.ReplaceAll(path, `\`, "/")
+}
+
+// An Env built by hand has no obligations: a caller that only needs Home should not
+// have to supply a lookup function. `Lookup` is the door that tolerates that, which is
+// why production code reads the environment through it and not through the field.
+func TestEnvWithNoLookup(t *testing.T) {
+	t.Parallel()
+
+	bare := platform.Env{Home: t.TempDir()}
+
+	if value, ok := platform.Lookup(bare, "SLACK_BROWSER_API_BASE"); ok || value != "" {
+		t.Fatalf("Lookup on a bare Env = %q, %v", value, ok)
+	}
+
+	if got := platform.ConfigHome(bare); got == "" {
+		t.Fatal("ConfigHome on a bare Env = empty")
+	}
+}
+
+func TestWindowsHomes(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+
+	dirs := map[string]string{
+		"APPDATA":      `C:\Users\ana\AppData\Roaming`,
+		"LOCALAPPDATA": `C:\Users\ana\AppData\Local`,
+	}
+
+	configured := platform.Env{Home: home, OS: "windows", Getenv: func(name string) string {
+		return dirs[name]
+	}}
+
+	// The two roots are different directories on purpose: the configuration is small
+	// and precious, the data is large and rebuildable, and Windows separates them.
+	if got := platform.ConfigHome(configured); got != `C:\Users\ana\AppData\Roaming` {
+		t.Fatalf("ConfigHome = %q", got)
+	}
+
+	if got := platform.DataHome(configured); got != `C:\Users\ana\AppData\Local` {
+		t.Fatalf("DataHome = %q", got)
+	}
+
+	// Without either variable the paths are built from the profile rather than
+	// collapsing to something relative that would land in the working tree.
+	bare := platform.Env{Home: home, OS: "windows"}
+
+	if got := platform.ConfigHome(bare); got != filepath.Join(home, "AppData", "Roaming") {
+		t.Fatalf("ConfigHome without APPDATA = %q", got)
+	}
+
+	if got := platform.DataHome(bare); got != filepath.Join(home, "AppData", "Local") {
+		t.Fatalf("DataHome without LOCALAPPDATA = %q", got)
+	}
+
+	// XDG wins on every platform, including this one: it is how a user moves both
+	// roots somewhere else without asking the system.
+	xdgDirs := map[string]string{"XDG_CONFIG_HOME": "/xdg/config", "XDG_DATA_HOME": "/xdg/data"}
+
+	xdg := platform.Env{Home: home, OS: "windows", Getenv: func(name string) string {
+		return xdgDirs[name]
+	}}
+
+	if got := platform.ConfigHome(xdg); got != "/xdg/config" {
+		t.Fatalf("ConfigHome with XDG = %q", got)
+	}
+
+	if got := platform.DataHome(xdg); got != "/xdg/data" {
+		t.Fatalf("DataHome with XDG = %q", got)
+	}
 }

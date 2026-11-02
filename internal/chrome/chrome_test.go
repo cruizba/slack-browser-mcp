@@ -34,6 +34,8 @@ func TestFindChromeTakesCHROME_PATHFirst(t *testing.T) {
 }
 
 func TestFindChromeRefusesWhatCannotRun(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	plain := filepath.Join(dir, "not-executable")
 
@@ -44,27 +46,56 @@ func TestFindChromeRefusesWhatCannotRun(t *testing.T) {
 	// A file that exists but cannot run is not a browser, and saying so beats starting
 	// it and reading the error from exec. Windows has no execute bit: what decides there
 	// is the extension, so this clause is a Unix one.
-	t.Setenv("CHROME_PATH", plain)
-
 	if runtime.GOOS != "windows" && isExecutable(plain) {
 		t.Fatal("a 0600 file was treated as executable")
 	}
 
-	if _, err := FindChrome(); err == nil {
-		t.Skip("another candidate on this machine answered, which is correct")
+	// No candidate list at all, so the answer cannot depend on what this machine has
+	// installed: the only path tried is the one that cannot run.
+	if _, err := findChrome(nil, plain); err == nil {
+		t.Fatal("a file that cannot run was chosen as the browser")
 	}
 }
 
 func TestFindChromeSaysWhatToDoWhenNothingIsInstalled(t *testing.T) {
-	if testing.Short() {
-		t.Skip("discovery looks at the machine")
+	t.Parallel()
+
+	// The message is the whole error: it has to name the variable that fixes it, because
+	// a user reading "no browser" with no next step is stuck.
+	_, err := findChrome([]string{"/nonexistent/chromium", "/also/nonexistent"}, "/nonexistent/chrome")
+	if err == nil {
+		t.Fatal("discovery found a browser among paths that do not exist")
 	}
 
-	// The message is the whole error: it has to name the variable that fixes it.
-	t.Setenv("CHROME_PATH", "/nonexistent/chrome")
+	if !strings.Contains(err.Error(), "CHROME_PATH") {
+		t.Fatalf("error = %q, want it to name CHROME_PATH", err)
+	}
+}
 
-	if _, err := FindChrome(); err == nil {
-		t.Skip("a browser is installed here, so discovery cannot fail")
+func TestFindChromePrefersWhatTheUserConfigured(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	first := filepath.Join(dir, "first")
+
+	if err := os.WriteFile(first, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // the point is an executable candidate
+		t.Fatalf("writing the candidate: %v", err)
+	}
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows decides by extension, not by an execute bit, so both files are candidates")
+	}
+
+	found, err := findChrome([]string{first}, "")
+	if err != nil || found != first {
+		t.Fatalf("findChrome = %q, %v", found, err)
+	}
+
+	// The configured path is tried before the discovered ones, and an empty configured
+	// value means "nothing was asked for" rather than "the first candidate is empty".
+	if found, err := findChrome([]string{}, ""); err == nil {
+		t.Fatalf("findChrome with no candidates = %q", found)
 	}
 }
 

@@ -284,6 +284,15 @@ func (s *Server) call(ctx context.Context, params json.RawMessage) response {
 		return response{Error: &rpcError{Code: -32602, Message: "unknown tool: " + call.Name}}
 	}
 
+	// The schema the tool advertises says which arguments it cannot work without, and
+	// a handler that is asked anyway answers something surprising instead of useful:
+	// read_messages with no channel reported that "" matched every conversation. The
+	// check lives here so every tool gets it at once, and it is the same list an agent
+	// reads in tools/list.
+	if missing := s.missingArguments(call.Name, call.Arguments); missing != "" {
+		return response{Result: renderCall(Text(call.Name+" needs "+missing+"."), true)}
+	}
+
 	content, err := handler(ctx, call.Arguments)
 	if err != nil {
 		// A tool that failed says so in its result rather than as a protocol
@@ -292,6 +301,88 @@ func (s *Server) call(ctx context.Context, params json.RawMessage) response {
 	}
 
 	return response{Result: renderCall(content, false)}
+}
+
+// missingArguments names the first required argument the call did not supply, in the
+// order the schema lists them so the message is the same on every run. An empty
+// string means the call is complete enough to hand over.
+func (s *Server) missingArguments(name string, raw json.RawMessage) string {
+	required := s.requiredOf(name)
+	if len(required) == 0 {
+		return ""
+	}
+
+	received := make(map[string]json.RawMessage)
+
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &received); err != nil {
+			return "its arguments as an object"
+		}
+	}
+
+	supplied := func(name string) bool {
+		_, present := received[name]
+
+		return present
+	}
+
+	for _, argument := range required {
+		if !supplied(argument) {
+			return "`" + argument + "`"
+		}
+
+		if emptyValue(received[argument]) {
+			return "`" + argument + "`"
+		}
+	}
+
+	return ""
+}
+
+// emptyValue answers whether an argument arrived but says nothing: null, and the empty
+// string, which is what an agent sends when it means "I left this out".
+func emptyValue(raw json.RawMessage) bool {
+	var value any
+
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return true
+	}
+
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(typed) == ""
+	default:
+		return false
+	}
+}
+
+// requiredOf reads the required list out of the schema the server advertises, which is
+// the only copy of it: a tool that gains an argument does not need to remember to
+// update a second list.
+func (s *Server) requiredOf(name string) []string {
+	for _, tool := range s.Tools {
+		if tool.Name != name {
+			continue
+		}
+
+		// The tool object carries its schema under inputSchema, which is where the
+		// required list lives.
+		var tool0 struct {
+			InputSchema struct {
+				Required []string `json:"required"`
+			} `json:"inputSchema"`
+		}
+
+		if err := json.Unmarshal(tool.Schema, &tool0); err != nil {
+			return nil
+		}
+
+		return tool0.InputSchema.Required
+	}
+
+	return nil
 }
 
 func renderCall(content []Content, failed bool) json.RawMessage {

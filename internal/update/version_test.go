@@ -1,6 +1,7 @@
 package update_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cruizba/slack-browser-mcp/internal/update"
@@ -173,5 +174,66 @@ func TestPlanFromVersions(t *testing.T) {
 	// An explicitly named target is honoured, which is how a downgrade is asked for.
 	if plan := update.PlanFromVersions(newer, older, "v0.7.0"); plan.Kind != update.KindUpdate || plan.Target != "v0.7.0" {
 		t.Fatalf("a named target plans %+v", plan)
+	}
+}
+
+// A prerelease list of different lengths is the case semver gets wrong most often:
+// 2.0.0-alpha comes *before* 2.0.0-alpha.1, in both directions. A boundary flipped
+// here would tell a user their stable build is newer than a release candidate.
+func TestCompareVersionsWithPrereleaseLengths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct{ shorter, longer string }{
+		{"2.0.0-alpha", "2.0.0-alpha.1"},
+		{"2.0.0-rc", "2.0.0-rc.1.2"},
+	}
+
+	for _, test := range tests {
+		shorter, ok := update.ParseVersion(test.shorter)
+		if !ok {
+			t.Fatalf("ParseVersion(%q) refused a valid version", test.shorter)
+		}
+
+		longer, ok := update.ParseVersion(test.longer)
+		if !ok {
+			t.Fatalf("ParseVersion(%q) refused a valid version", test.longer)
+		}
+
+		if got := update.CompareVersions(shorter, longer); got != -1 {
+			t.Fatalf("%s vs %s = %d, want -1", test.shorter, test.longer, got)
+		}
+
+		if got := update.CompareVersions(longer, shorter); got != 1 {
+			t.Fatalf("%s vs %s = %d, want 1", test.longer, test.shorter, got)
+		}
+	}
+}
+
+// The tag a plan prints is what a user types into `update --to`, so a stable version
+// must render as `v1.2.0` and not as `v1.2.0-`.
+func TestPlanTargetRendersAsATag(t *testing.T) {
+	t.Parallel()
+
+	current, _ := update.ParseVersion("v1.1.0")
+	stable, _ := update.ParseVersion("v1.2.0")
+	prerelease, _ := update.ParseVersion("v1.2.0-rc.1")
+
+	if plan := update.PlanFromVersions(current, stable, ""); plan.Target != "v1.2.0" {
+		t.Fatalf("stable target = %q", plan.Target)
+	}
+
+	if plan := update.PlanFromVersions(current, prerelease, ""); plan.Target != "v1.2.0-rc.1" {
+		t.Fatalf("prerelease target = %q", plan.Target)
+	}
+}
+
+// With no tags at all the error has to say so in words, because it is the message a
+// user reads when a repository has never been released.
+func TestResolveTargetWithNoTags(t *testing.T) {
+	t.Parallel()
+
+	_, err := update.ResolveTarget("", nil)
+	if err == nil || !strings.Contains(err.Error(), "none") {
+		t.Fatalf("ResolveTarget(nil) = %v, want it to say there is nothing to choose from", err)
 	}
 }

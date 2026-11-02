@@ -461,3 +461,105 @@ func TestForumForgetRefusesANameThatIsTwoMachines(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestThreadReadsSlackAndKeepsIt(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+
+	// The ts comes from the recorded fixtures: a thread the fake knows, asked for by
+	// name the way a person would.
+	got := m.run("thread", "general", "1792500000.000100")
+
+	if got.code != 0 {
+		t.Fatalf("thread failed: %+v", got)
+	}
+
+	if !strings.Contains(got.stdout, "thread") {
+		t.Fatalf("stdout = %q", got.stdout)
+	}
+
+	missing := m.run("thread", "general")
+	if missing.code != 1 || !strings.Contains(missing.stderr, "needs a channel and a thread_ts") {
+		t.Fatalf("a thread with no ts = %+v", missing)
+	}
+}
+
+func TestArchiveSearchNeedsAQuery(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+	m.run("sync", "--quiet")
+
+	got := m.run("archive", "search")
+
+	if got.code != 1 || !strings.Contains(got.stderr, "needs a query") {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestArchiveSearchSaysWhenNothingMatches(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+	m.run("sync", "--quiet")
+
+	got := m.run("archive", "search", "zzz-nothing-matches-this")
+
+	if got.code != 0 {
+		t.Fatalf("search failed: %+v", got)
+	}
+
+	// An empty result is an answer, not an error: the archive is local and complete as
+	// far as it goes, so a miss is information.
+	if !strings.Contains(got.stdout, "no hits") {
+		t.Fatalf("stdout = %q, want it to say there were no hits", got.stdout)
+	}
+}
+
+func TestArchiveSearchFindsWhatTheSyncFiled(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+	m.run("sync", "--quiet")
+
+	// Every archived message contains this word in the fixtures; the search has to come
+	// back with at least one line, which is what makes the index worth building.
+	got := m.run("archive", "search", "--limit", "3", "the")
+
+	if got.code != 0 {
+		t.Fatalf("search failed: %+v", got)
+	}
+
+	if strings.TrimSpace(got.stdout) == "" {
+		t.Fatal("the search found nothing in an archive the sync just filled")
+	}
+}
+
+func TestSendDryRunWithAttachments(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+
+	report := filepath.Join(t.TempDir(), "report.md")
+	if err := os.WriteFile(report, []byte("# a report"), 0o600); err != nil {
+		t.Fatalf("writing the attachment: %v", err)
+	}
+
+	got := m.run("send", "general", "see the report", "--attach", report)
+
+	if got.code != 0 {
+		t.Fatalf("dry run failed: %+v", got)
+	}
+
+	// The preview names the file and its type without sending a byte of it, which is
+	// the whole point of a dry run that takes attachments.
+	if !strings.Contains(got.stdout, "report.md") || !strings.Contains(got.stdout, "text/markdown") {
+		t.Fatalf("stdout = %q", got.stdout)
+	}
+
+	missing := m.run("send", "general", "see the report", "--attach", filepath.Join(t.TempDir(), "gone.md"))
+	if missing.code != 1 || !strings.Contains(missing.stderr, "No file at") {
+		t.Fatalf("a missing attachment = %+v", missing)
+	}
+}

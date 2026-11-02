@@ -184,3 +184,49 @@ func TestCheckedNickname(t *testing.T) {
 		})
 	}
 }
+
+// The nickname is cut to a length and the cut is off by one at the boundary: a name
+// of exactly the limit that loses its last character reads as a typo, and nothing
+// else in the tree would notice.
+func TestDefaultNicknameCutsAtTheBoundary(t *testing.T) {
+	t.Parallel()
+
+	// 7 runes of prefix, 5 of " of ", 30 of agent and 18 of account: 60 exactly.
+	agent := strings.Repeat("a", 30)
+	user := strings.Repeat("b", 18)
+	exact := "Agent '" + agent + "' of " + user
+
+	if got := config.DefaultNickname(agent, user); got != exact {
+		t.Fatalf("DefaultNickname at the limit = %q, want %q", got, exact)
+	}
+
+	// One rune over the agent limit, and the cut lands on the account rather than
+	// swallowing it: the sentence still says who posted.
+	if got := config.DefaultNickname(strings.Repeat("a", 31), user); got != exact {
+		t.Fatalf("DefaultNickname one rune over = %q, want %q", got, exact)
+	}
+
+	// A huge agent name is capped on its own first, so the signature never eats the
+	// account that would have fitted: 90 runes of agent become 30, and with no
+	// account the sentence is still whole.
+	if got := config.DefaultNickname(strings.Repeat("c", 90), ""); got != "Agent '"+strings.Repeat("c", 30)+"'" {
+		t.Fatalf("DefaultNickname with a huge agent = %q", got)
+	}
+}
+
+func TestCheckedNicknameBoundary(t *testing.T) {
+	t.Parallel()
+
+	// Sixty runes is usable; sixty-one is refused with the count. A boundary off by
+	// one turns a working nickname into an error nobody can explain.
+	sixty := strings.Repeat("x", 60)
+
+	if got, err := config.CheckedNickname(sixty); err != nil || got != sixty {
+		t.Fatalf("CheckedNickname(60 runes) = %q, %v", got, err)
+	}
+
+	if _, err := config.CheckedNickname(strings.Repeat("x", 61)); err == nil ||
+		!strings.Contains(err.Error(), "at most 60 characters, got 61") {
+		t.Fatalf("CheckedNickname(61 runes) = %v, want the count in the message", err)
+	}
+}

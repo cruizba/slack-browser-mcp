@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -117,7 +118,11 @@ func humanize(window time.Duration) string {
 		return formatNumber(hours) + " h"
 	}
 
-	return formatNumber(total/60/24) + " d"
+	// Whole days, because a day is 1440 minutes and anything that does not divide
+	// evenly would otherwise print its float noise: 2881 minutes is "2 d", not
+	// "2.0006944444444446 d". The TypeScript had the longer form; prose that a person
+	// reads is worth diverging over.
+	return formatNumber(math.Floor(total/60/24)) + " d"
 }
 
 func formatNumber(value float64) string {

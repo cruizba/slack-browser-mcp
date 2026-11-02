@@ -105,6 +105,15 @@ func TestFreshness_RejectsUnusableValues(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), testFile) || !strings.Contains(err.Error(), "positive number of minutes") {
 			t.Fatalf("error = %v, want it to blame %s", err, testFile)
 		}
+
+		// The value is quoted back the way the file wrote it, so a fractional one has
+		// to come out fractional: the shortest-round-trip formatting is what a reader
+		// uses to find the line, and "-1.5" that reads "got -1.500000" or "got -2" is
+		// a worse error message than none at all.
+		_, err = config.Freshness(config.Settings{RecentAfterMinutes: new(-1.5)}, env(nil))
+		if err == nil || !strings.Contains(err.Error(), "got -1.5.") {
+			t.Fatalf("error = %v, want it to quote the value as -1.5", err)
+		}
 	})
 }
 
@@ -161,5 +170,45 @@ func TestDescribePolicy(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("DescribePolicy() = %q, want it to contain %q", text, want)
 		}
+	}
+}
+
+// The boundaries are where a duration reads wrong to a person: "60 min" instead of
+// "1 h", or "48 h" instead of "2 d". They are tested at the exact value because a
+// mutant that flips `<` to `<=` changes nothing anywhere else.
+func TestDescribePolicyAtTheBoundaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		older string
+		want  []string
+	}{
+		{name: "a minute under an hour", older: "59", want: []string{"59 min"}},
+		{name: "exactly an hour", older: "60", want: []string{"1 h"}},
+		{name: "an hour under two days", older: "2820", want: []string{"47 h"}},
+		{name: "exactly two days", older: "2880", want: []string{"2 d"}},
+		{name: "two days and a bit", older: "2881", want: []string{"2 d"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			policy, err := config.Freshness(config.Settings{}, env(map[string]string{
+				config.StaleAfterEnv: test.older, config.RecentAfterEnv: "15",
+			}))
+			if err != nil {
+				t.Fatalf("Freshness(%q): %v", test.older, err)
+			}
+
+			sentence := config.DescribePolicy(policy)
+
+			for _, wanted := range test.want {
+				if !strings.Contains(sentence, wanted) {
+					t.Fatalf("DescribePolicy = %q, want it to say %q", sentence, wanted)
+				}
+			}
+		})
 	}
 }

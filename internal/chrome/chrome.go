@@ -21,9 +21,15 @@ import (
 // FindChrome answers the browser binary to launch: CHROME_PATH first, then the
 // places a package installs it.
 func FindChrome() (string, error) {
-	candidates := platformCandidates()
-	if custom := os.Getenv("CHROME_PATH"); custom != "" {
-		candidates = append([]string{custom}, candidates...)
+	return findChrome(platformCandidates(), os.Getenv("CHROME_PATH"))
+}
+
+// findChrome is the rule without the machine: the paths to try, in order, and what the
+// user pointed at. It exists so the order and the error can be tested without a browser
+// installed, which is what a test on a build runner has.
+func findChrome(candidates []string, configured string) (string, error) {
+	if configured != "" {
+		candidates = append([]string{configured}, candidates...)
 	}
 
 	for _, candidate := range candidates {

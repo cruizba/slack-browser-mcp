@@ -388,3 +388,42 @@ func mustFail(t *testing.T, read func() (config.Settings, error)) error {
 
 	return err
 }
+
+// The reference a person types is stored and quoted back, so the two things worth
+// pinning are that the value returned is the value written (a caller that trusts the
+// return must not get zeroes back) and that the length limit lands on 128 rather than
+// on 127 or 129.
+func TestSetDefaultWorkspaceReturnsWhatItStored(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store := config.NewStore(filepath.Join(dir, "config.json"))
+	reference := strings.Repeat("w", 128)
+
+	settings, err := store.SetDefaultWorkspace(&reference)
+	if err != nil {
+		t.Fatalf("SetDefaultWorkspace: %v", err)
+	}
+
+	if settings.DefaultWorkspace == nil || *settings.DefaultWorkspace != reference {
+		t.Fatalf("returned = %+v, want the reference it stored", settings.DefaultWorkspace)
+	}
+
+	// A reference one over the limit is refused and nothing is written, because a
+	// half-validated file is worse than no change at all.
+	tooLong := strings.Repeat("w", 129)
+
+	if _, err := store.SetDefaultWorkspace(&tooLong); err == nil ||
+		!strings.Contains(err.Error(), "must be between 1 and 128 characters") {
+		t.Fatalf("SetDefaultWorkspace(129) = %v, want the length rule", err)
+	}
+
+	read, err := store.Read()
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+
+	if read.DefaultWorkspace == nil || *read.DefaultWorkspace != reference {
+		t.Fatalf("the refused write changed the file: %+v", read.DefaultWorkspace)
+	}
+}
