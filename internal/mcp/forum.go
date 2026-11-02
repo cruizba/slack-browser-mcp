@@ -12,7 +12,6 @@ import (
 	"github.com/cruizba/slack-browser-mcp/internal/archive"
 	"github.com/cruizba/slack-browser-mcp/internal/config"
 	"github.com/cruizba/slack-browser-mcp/internal/forum"
-	"github.com/cruizba/slack-browser-mcp/internal/slack"
 )
 
 // forumCatchUp is the budget a forum read spends refreshing the bound channels: a read
@@ -121,7 +120,7 @@ func forumTransports(deps Deps) forum.TransportResolver {
 			return forum.Transport{}, err
 		}
 
-		return forum.Transport{Account: account, Client: slack.NewClient(account, slack.Options{}), Signing: signing}, nil
+		return forum.Transport{Account: account, Client: newClient(deps, account), Signing: signing}, nil
 	}
 }
 
@@ -138,7 +137,7 @@ func refresh(deps Deps, forumContext forum.Context, deadline time.Duration) foru
 				return archive.SyncReport{}, errors.New("no stored Slack session for team " + teamID)
 			}
 
-			return archive.SyncAccount(teamID, slack.NewClient(account, slack.Options{}),
+			return archive.SyncAccount(teamID, newClient(deps, account),
 				archive.NewStore(deps.Paths.ArchiveDir), archive.NewIndex(deps.Paths.ArchiveIndex), options)
 		},
 	})
@@ -501,7 +500,7 @@ func archiveRefreshTool(deps Deps) Handler {
 					return archive.SyncReport{}, errors.New("no stored Slack session for team " + teamID)
 				}
 
-				return archive.SyncAccount(teamID, slack.NewClient(account, slack.Options{}),
+				return archive.SyncAccount(teamID, newClient(deps, account),
 					archive.NewStore(deps.Paths.ArchiveDir), archive.NewIndex(deps.Paths.ArchiveIndex), options)
 			},
 		})

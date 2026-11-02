@@ -32,6 +32,9 @@ type Deps struct {
 	// Self is the executable, used by `login_workspace` to start the CLI in the
 	// background instead of driving a browser from inside the server.
 	Self string
+	// BaseURL points the client at another Slack, which is what the harness and the
+	// tests need; empty means the real one.
+	BaseURL string
 }
 
 const (
@@ -100,7 +103,13 @@ func openSession(deps Deps, reference string) (session, error) {
 		return session{}, err
 	}
 
-	return session{account: account, client: slack.NewClient(account, slack.Options{})}, nil
+	return session{account: account, client: newClient(deps, account)}, nil
+}
+
+// newClient talks for one workspace, against the base the caller resolved rather than
+// whatever the process environment happens to hold.
+func newClient(deps Deps, account auth.Account) *slack.Client {
+	return slack.NewClient(account, slack.Options{BaseURL: deps.BaseURL})
 }
 
 func newAuthStore(deps Deps) *auth.Store {
@@ -162,7 +171,7 @@ func authStatus(deps Deps) Handler {
 				return nil, failureText(err)
 			}
 
-			info, err := slack.NewClient(account, slack.Options{}).AuthTest()
+			info, err := newClient(deps, account).AuthTest()
 			if err != nil {
 				lines = append(lines, "FAIL "+account.TeamName+" ("+account.TeamID+"): "+
 					redact.Text(err.Error())+" — call login_workspace to sign in again")
