@@ -23,6 +23,9 @@ type Context struct {
 	Limits      Limits
 	Now         time.Time
 	Env         platform.Env
+	// AuditLog is where every posted envelope is recorded, which the caller knows
+	// because it resolves the paths.
+	AuditLog string
 }
 
 // OpenOptions is what opening the forum can be pointed at, which is how a test
@@ -34,6 +37,7 @@ type OpenOptions struct {
 	Archive    *archive.Store
 	Decisions  *DecisionLog
 	Env        platform.Env
+	AuditLog   string
 }
 
 // OpenForum assembles the context. Reading the identity is part of it because "am I
@@ -71,6 +75,7 @@ func OpenForum(options OpenOptions) (Context, error) {
 		Limits:      LimitsOf(file),
 		Now:         now,
 		Env:         options.Env,
+		AuditLog:    options.AuditLog,
 	}, nil
 }
 
@@ -104,5 +109,6 @@ func (c Context) Reload() (Context, error) {
 		Archive:    c.Archive,
 		Decisions:  c.Decision,
 		Env:        c.Env,
+		AuditLog:   c.AuditLog,
 	})
 }
