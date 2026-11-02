@@ -107,6 +107,9 @@ var forumMoves = map[string]func(Context, forum.Context, ParsedArgs, []string, b
 	subForumPoll: func(ctx Context, fc forum.Context, parsed ParsedArgs, _ []string, _ bool, _ string) int {
 		return forumPoll(ctx, fc, parsed)
 	},
+	subForumDaemon: func(ctx Context, fc forum.Context, _ ParsedArgs, rest []string, _ bool, _ string) int {
+		return commandDaemon(ctx, fc, rest)
+	},
 }
 
 // runForumMove is the second half of the switch: the moves that act on a task are

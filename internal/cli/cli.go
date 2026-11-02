@@ -33,6 +33,7 @@ const (
 	cmdSend    = "send"
 	cmdForum   = "agent-forum"
 	cmdUpdate  = "update"
+	cmdServe   = "serve"
 	cmdAssist  = "assist"
 	cmdArchive = "archive"
 
@@ -113,7 +114,7 @@ var dispatchTable = map[string]func(Context, ParsedArgs) int{
 	"sync":       commandSync,
 	"login":      commandLogin,
 	cmdUpdate:    commandUpdate,
-	"serve":      func(ctx Context, _ ParsedArgs) int { return commandServe(ctx) },
+	cmdServe:     func(ctx Context, _ ParsedArgs) int { return commandServe(ctx) },
 }
 
 func dispatch(ctx Context, name string, parsed ParsedArgs) int {
