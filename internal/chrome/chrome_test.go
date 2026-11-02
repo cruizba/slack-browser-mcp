@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -41,10 +42,11 @@ func TestFindChromeRefusesWhatCannotRun(t *testing.T) {
 	}
 
 	// A file that exists but cannot run is not a browser, and saying so beats starting
-	// it and reading the error from exec.
+	// it and reading the error from exec. Windows has no execute bit: what decides there
+	// is the extension, so this clause is a Unix one.
 	t.Setenv("CHROME_PATH", plain)
 
-	if isExecutable(plain) {
+	if runtime.GOOS != "windows" && isExecutable(plain) {
 		t.Fatal("a 0600 file was treated as executable")
 	}
 

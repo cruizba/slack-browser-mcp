@@ -310,7 +310,9 @@ func TestSaveWritesAPrivateFile(t *testing.T) {
 		t.Fatalf("stat: %v", err)
 	}
 
-	if info.Mode().Perm() != 0o600 {
+	// Windows has no mode bits, so the contract there is that the store can read what
+	// it wrote; internal/platform says why.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %#o, want 0600", info.Mode().Perm())
 	}
 
