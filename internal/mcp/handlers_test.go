@@ -293,3 +293,126 @@ func TestUnknownArgumentsAreRefused(t *testing.T) {
 		t.Fatalf("bad arguments answered %q", text)
 	}
 }
+
+func TestGetThread(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	text := h.call("get_thread", map[string]any{"channel": "me", "thread_ts": "1792500000.000100"})
+
+	if !strings.Contains(text, "thread in") {
+		t.Fatalf("get_thread = %q", text)
+	}
+
+	// The header says where the thread came from, which is what a reader needs to know
+	// before trusting it.
+	if !strings.Contains(text, "messages · ") {
+		t.Fatalf("the thread does not say where it came from: %q", text)
+	}
+}
+
+func TestArchiveMessagesBeforeAnySync(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	text := h.call("archive_messages", map[string]any{"order": "oldest"})
+
+	if !strings.Contains(text, "No archive yet") {
+		t.Fatalf("archive_messages = %q", text)
+	}
+}
+
+func TestArchiveMessagesAfterARead(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	// A read files what it fetched, so the timeline has something to walk.
+	h.call("read_messages", map[string]any{"channel": "me", "limit": 5})
+
+	text := h.call("archive_messages", map[string]any{"order": "oldest", "limit": 3})
+
+	if !strings.Contains(text, "oldest first") {
+		t.Fatalf("archive_messages = %q", text)
+	}
+
+	if !strings.Contains(text, "archived messages") {
+		t.Fatalf("the header does not say how much is filed: %q", text)
+	}
+
+	newest := h.call("archive_messages", map[string]any{"order": "newest", "limit": 3})
+	if !strings.Contains(newest, "newest first") {
+		t.Fatalf("the order was not honoured: %q", newest)
+	}
+}
+
+func TestSearchMessagesFallsBackToSlack(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	// Nothing is archived yet, so the tool asks Slack and keeps what it finds.
+	text := h.call("search_messages", map[string]any{"query": "deploy"})
+
+	if !strings.Contains(text, "archive:") {
+		t.Fatalf("the answer does not say how old the archive is: %q", text)
+	}
+
+	if strings.HasPrefix(text, "ERROR:") {
+		t.Fatalf("search_messages failed: %q", text)
+	}
+}
+
+func TestForumSurfaceIsItsOwnCatalogue(t *testing.T) {
+	t.Parallel()
+
+	instructions, tools, err := mcp.ForumCatalog()
+	if err != nil {
+		t.Fatalf("ForumCatalog: %v", err)
+	}
+
+	if len(tools) != 14 {
+		t.Fatalf("tools = %d, want the 14 the forum serves", len(tools))
+	}
+
+	if !strings.Contains(instructions, "Every write is a dry run until `confirm: true`") {
+		t.Fatalf("the forum instructions lost the rule about writing:\n%.200s", instructions)
+	}
+
+	handlers := mcp.ForumHandlers(mcp.Deps{})
+
+	for _, tool := range tools {
+		if _, known := handlers[tool.Name]; !known {
+			t.Fatalf("%s has no handler", tool.Name)
+		}
+	}
+}
+
+func TestForumStatusOnAMachineWithNothingBound(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+
+	handler := mcp.ForumHandlers(h.deps)["forum_status"]
+
+	content, err := handler(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("forum_status: %v", err)
+	}
+
+	text := content[0].Text
+
+	if !strings.Contains(text, "identity: unregistered") {
+		t.Fatalf("forum_status = %q", text)
+	}
+
+	if !strings.Contains(text, "no channel bound") {
+		t.Fatalf("forum_status does not say what is missing: %q", text)
+	}
+
+	if !strings.Contains(text, "timings: ttl ") {
+		t.Fatalf("forum_status does not print the clocks: %q", text)
+	}
+}
