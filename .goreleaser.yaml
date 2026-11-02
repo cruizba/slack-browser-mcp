@@ -42,6 +42,9 @@ archives:
     files:
       - README.md
       - docs/reference.md
+      # The slash commands are markdown the installer links into every agent it finds,
+      # so they travel with the archive instead of being fetched from a checkout.
+      - commands/*.md
 
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
