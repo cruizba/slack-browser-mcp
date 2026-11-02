@@ -1,5 +1,3 @@
-node_modules/
-dist/
 *.log
 
 # Credentials never belong in the repository. The store lives in
@@ -21,3 +19,7 @@ bin/
 coverage.out
 coverage.html
 *.test
+
+# The release archives and the coverage report a local run leaves behind.
+/coverage.out
+/coverage.html

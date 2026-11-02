@@ -36,12 +36,11 @@ test-short:
 test-integration:
 	$(GO) test -tags integration -count=1 ./internal/difftest/
 
-## golden: Re-record the goldens from the TypeScript build, the oracle
+## golden: Re-record the goldens from this build; review the diff before committing
 golden:
-	npm run build
 	$(GO) test -tags integration -count=1 -run TestDifferential ./internal/difftest/ -update
 
-## diff: Compare the Go build against the recorded TypeScript behaviour
+## diff: Check this build against the behaviour recorded from the TypeScript one
 diff:
 	$(GO) test -tags integration -count=1 -run TestDifferential ./internal/difftest/
 

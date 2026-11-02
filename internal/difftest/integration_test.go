@@ -5,7 +5,6 @@ package difftest_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -23,8 +22,9 @@ import (
 )
 
 var (
-	updateGoldens = flag.Bool("update", false, "record goldens from the TypeScript build, the oracle")
-	goBinary      string
+	updateGoldens = flag.Bool("update", false,
+		"re-record the goldens from this build; review the diff before committing")
+	goBinary string
 )
 
 func TestMain(m *testing.M) {
@@ -54,31 +54,22 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// buildInfoFlags stamps the build with the facts the TypeScript one learns at run
-// time: package.json holds the version until the two builds part company, and git
-// says where this commit stands. Without them `version` would differ for a reason
-// that has nothing to do with the port.
+// buildInfoFlags stamps the build the way the Makefile and goreleaser do: the version
+// from the tag this checkout stands on, and where git says the commit sits. The
+// goldens normalize the number, so what matters is that it is stamped at all.
 func buildInfoFlags() string {
 	const pkg = "github.com/cruizba/slack-browser-mcp/internal/buildinfo"
 
-	var version struct {
-		Version string `json:"version"`
+	describe := gitAt("..", "describe", "--tags", "--always")
+	version := strings.TrimPrefix(describe, "v")
+
+	if version == "" {
+		version = "0.0.0"
 	}
 
-	raw, err := os.ReadFile(filepath.Join("..", "..", "package.json"))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "reading package.json: %v\n", err)
-		os.Exit(1)
-	}
+	flags := []string{"-X", pkg + ".Version=" + version}
 
-	if err := json.Unmarshal(raw, &version); err != nil {
-		fmt.Fprintf(os.Stderr, "parsing package.json: %v\n", err)
-		os.Exit(1)
-	}
-
-	flags := []string{"-X", pkg + ".Version=" + version.Version}
-
-	if describe := gitAt("..", "describe", "--tags", "--always"); describe != "" {
+	if describe != "" {
 		flags = append(flags, "-X", pkg+".Describe="+describe)
 
 		if gitAt("..", "status", "--porcelain") != "" {
@@ -89,8 +80,7 @@ func buildInfoFlags() string {
 	return strings.Join(flags, " ")
 }
 
-// gitAt answers the way the TypeScript build reads the same facts, including
-// treating a failing command as no answer at all.
+// gitAt answers a git question, treating a failing command as no answer at all.
 func gitAt(dir string, args ...string) string {
 	command := exec.CommandContext(context.Background(), "git", args...) //nolint:gosec // fixed subcommands, no input
 	command.Dir = dir
@@ -162,21 +152,6 @@ type run struct {
 
 func goBuild() build {
 	return build{label: "go", cmd: goBinary}
-}
-
-func typescriptBuild(t *testing.T) build {
-	t.Helper()
-
-	path, err := filepath.Abs(filepath.Join("..", "..", "dist", "cli.js"))
-	if err != nil {
-		t.Fatalf("resolving the TypeScript build: %v", err)
-	}
-
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("the TypeScript build is missing at %s; run npm run build: %v", path, err)
-	}
-
-	return build{label: "ts", cmd: "node", args: []string{path}}
 }
 
 func startFake(t *testing.T) *httptest.Server {
@@ -284,14 +259,14 @@ func TestDifferential(t *testing.T) {
 		t.Run(sc.name, func(t *testing.T) {
 			t.Parallel()
 
-			recorded := prepare(t, fake.URL).execute(t, typescriptBuild(t), sc)
+			attempt := prepare(t, fake.URL).execute(t, goBuild(), sc)
 
 			if *updateGoldens {
 				if err := os.MkdirAll(filepath.Dir(goldenPath(sc.name)), 0o750); err != nil {
 					t.Fatalf("creating the golden directory: %v", err)
 				}
 
-				if err := os.WriteFile(goldenPath(sc.name), []byte(recorded.Render()), 0o600); err != nil {
+				if err := os.WriteFile(goldenPath(sc.name), []byte(attempt.Render()), 0o600); err != nil {
 					t.Fatalf("writing the golden: %v", err)
 				}
 
@@ -308,16 +283,8 @@ func TestDifferential(t *testing.T) {
 				t.Fatalf("parsing the golden: %v", err)
 			}
 
-			// The oracle is re-run every time: a golden that the TypeScript no
-			// longer produces is a stale recording, not a Go failure.
-			if diff := difftest.Diff(want.Render(), recorded.Render()); diff != "" {
-				t.Errorf("the oracle no longer matches its own golden; re-record with -update:\n%s", diff)
-			}
-
-			attempt := prepare(t, fake.URL).execute(t, goBuild(), sc)
-
 			if diff := difftest.Diff(want.Render(), attempt.Render()); diff != "" {
-				t.Errorf("the Go build differs from the oracle:\n%s", diff)
+				t.Errorf("the Go build no longer matches the recorded behaviour:\n%s", diff)
 			}
 		})
 	}

@@ -1,47 +1,47 @@
 name: release
 
+# A tag is the release: `git tag v1.0.0 && git push origin v1.0.0` publishes the six
+# binaries and their checksums, which is what install.sh and `slack-browser update`
+# read. Nothing is drafted and nothing is edited by hand afterwards.
+
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to cut: 0.2.0, or major / minor / patch"
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  goreleaser:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out main with its tags
+      - name: Check out the tag, with its history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          node-version: 22
-          cache: npm
+          go-version-file: go.mod
+          cache: true
 
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
+      # The tests gate the release: a tag that does not pass them should not produce
+      # artifacts anybody can install.
+      - name: Test
+        run: go test ./...
 
-      - name: Cut the release
+      - name: Publish the release
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.3.0
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B main origin/main
-          ./release.sh "$VERSION"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
