@@ -13,13 +13,31 @@ import (
 	"testing"
 )
 
-func TestFindChromeTakesCHROME_PATHFirst(t *testing.T) {
-	dir := t.TempDir()
-	binary := filepath.Join(dir, "my-chrome")
+// candidateName is the name a browser binary has on this system: Windows starts a file
+// by its extension, so a candidate without .exe is not one.
+func candidateName(base string) string {
+	if runtime.GOOS == "windows" {
+		return base + ".exe"
+	}
 
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // the point is an executable candidate
+	return base
+}
+
+func writeCandidate(t *testing.T, dir, base string) string {
+	t.Helper()
+
+	path := filepath.Join(dir, candidateName(base))
+
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // the point is an executable candidate
 		t.Fatalf("writing the candidate: %v", err)
 	}
+
+	return path
+}
+
+func TestFindChromeTakesCHROME_PATHFirst(t *testing.T) {
+	dir := t.TempDir()
+	binary := writeCandidate(t, dir, "my-chrome")
 
 	t.Setenv("CHROME_PATH", binary)
 
@@ -38,6 +56,9 @@ func TestFindChromeRefusesWhatCannotRun(t *testing.T) {
 
 	dir := t.TempDir()
 	plain := filepath.Join(dir, "not-executable")
+	if runtime.GOOS == "windows" {
+		plain += ".txt"
+	}
 
 	if err := os.WriteFile(plain, []byte("x"), 0o600); err != nil {
 		t.Fatalf("writing: %v", err)
@@ -77,11 +98,7 @@ func TestFindChromePrefersWhatTheUserConfigured(t *testing.T) {
 
 	dir := t.TempDir()
 
-	first := filepath.Join(dir, "first")
-
-	if err := os.WriteFile(first, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // the point is an executable candidate
-		t.Fatalf("writing the candidate: %v", err)
-	}
+	first := writeCandidate(t, dir, "first")
 
 	found, err := findChrome([]string{first}, "")
 	if err != nil || found != first {
