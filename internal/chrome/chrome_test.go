@@ -55,8 +55,11 @@ func TestFindChromeRefusesWhatCannotRun(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+
 	plain := filepath.Join(dir, "not-executable")
 	if runtime.GOOS == "windows" {
+		// Windows starts a file by its extension, so the unstartable one needs a name
+		// that is not .exe.
 		plain += ".txt"
 	}
 
