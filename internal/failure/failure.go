@@ -3,6 +3,8 @@
 // message here is safe to show: none carries a token or a cookie.
 package failure
 
+import "errors"
+
 // AuthError is a session Slack refused, or a login that could not finish. It
 // carries the next step, and the CLI exits 2 on it because the command can be
 // retried after signing in.
@@ -61,3 +63,7 @@ type ChannelError struct {
 }
 
 func (e *ChannelError) Error() string { return e.Message }
+
+// ErrNoForumStore is a caller that asked for the forum without saying where it
+// lives, which is a programming error rather than a user one.
+var ErrNoForumStore = errors.New("the forum context needs a store, an archive and a decision log")

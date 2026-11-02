@@ -246,8 +246,3 @@ func HumanStatusOf(peer Peer, hereSeconds int, ttlHours float64, now time.Time) 
 
 	return HumanUnknown
 }
-
-// PeerLabel is how a peer is named in output.
-func PeerLabel(peer Peer) string {
-	return peer.From
-}

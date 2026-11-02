@@ -29,6 +29,7 @@ const (
 	cmdThread  = "thread"
 	cmdStatus  = "status"
 	cmdRead    = "read"
+	cmdSend    = "send"
 	cmdArchive = "archive"
 
 	subList  = "list"
@@ -109,7 +110,7 @@ func dispatch(ctx Context, name string, parsed ParsedArgs) int {
 		return commandRead(ctx, parsed)
 	case cmdThread:
 		return commandThread(ctx, parsed)
-	case "send":
+	case cmdSend:
 		return commandSend(ctx, parsed)
 	case "assist":
 		return commandAssist(ctx, parsed)
@@ -1188,16 +1189,85 @@ func commandSend(ctx Context, parsed ParsedArgs) int {
 
 	workspace, _ := parsed.String("workspace")
 
-	store := newStore(ctx)
-
-	account, err := store.Resolve(workspace)
+	target, err := resolveSendTarget(ctx, reference, workspace)
 	if err != nil {
 		return fail(ctx, err)
 	}
 
+	threadTS, _ := parsed.String("thread")
+
+	attach, _ := parsed.String("attach")
+
+	planned, err := slack.PlanAttachments(splitPaths(attach))
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	signed, err := signedFor(ctx, target.account, text, parsed.Bool("no-assist"))
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	if !parsed.Bool("send") {
+		printDryRun(ctx, target.describe(), threadTS, signed, planned)
+
+		return 0
+	}
+
+	if len(planned) > 0 {
+		return sendWithAttachments(ctx, target, signed, planned, threadTS)
+	}
+
+	var blocks any
+	if len(signed.Blocks) > 0 {
+		blocks = signed.Blocks
+	}
+
+	posted, err := target.client.PostMessage(target.channel.ID, signed.Text, threadTS, blocks)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	audit, err := slack.RecordSend(ctx.Paths.AuditLog, slack.SendRecord{
+		Workspace: target.account.TeamName,
+		Channel:   target.label,
+		ChannelID: target.channel.ID,
+		ThreadTS:  threadTS,
+		MessageTS: posted.TS,
+		Text:      signed.Text,
+	}, time.Now())
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	emit(ctx.Stdout, "sent ts %s to %s; audit: %s\n", posted.TS, target.describe(), audit)
+
+	return 0
+}
+
+// sendTarget is where a message goes: the session, the conversation and how both
+// print.
+type sendTarget struct {
+	account auth.Account
+	client  *slack.Client
+	channel slack.Channel
+	label   string
+}
+
+func (t sendTarget) describe() string {
+	return t.account.TeamName + " · " + t.label + " (" + t.channel.ID + ")"
+}
+
+// resolveSendTarget names the target from the directory on disk; a send never
+// refreshes it, because a message should not wait on a directory rebuild.
+func resolveSendTarget(ctx Context, reference, workspace string) (sendTarget, error) {
+	account, err := newStore(ctx).Resolve(workspace)
+	if err != nil {
+		return sendTarget{}, err
+	}
+
 	client := newClient(account)
 
-	// A send names its target from the directory on disk; it never refreshes it.
 	directory, err := slack.NewDirectoryStore(ctx.Paths.ArchiveDir).Read(account.TeamID)
 	if err != nil {
 		directory = nil
@@ -1212,97 +1282,15 @@ func commandSend(ctx Context, parsed ParsedArgs) int {
 		return user.ID, true
 	})
 	if err != nil {
-		return fail(ctx, err)
+		return sendTarget{}, err
 	}
 
-	label := slack.ChannelLabel(channel, directory)
-	threadTS, _ := parsed.String("thread")
-
-	attach, _ := parsed.String("attach")
-
-	planned, err := slack.PlanAttachments(splitPaths(attach))
-	if err != nil {
-		return fail(ctx, err)
-	}
-
-	target := account.TeamName + " · " + label + " (" + channel.ID + ")"
-
-	settings, err := config.NewStore(ctx.Paths.SettingsFile).Read()
-	if err != nil {
-		return fail(ctx, err)
-	}
-
-	signing, err := config.SigningFor(settings, ctx.Env)
-	if err != nil {
-		return fail(ctx, err)
-	}
-
-	nickname := config.ResolveNickname(signing, "", account.User)
-
-	signed := slack.Signed{Text: text}
-
-	if nickname != nil && !parsed.Bool("no-assist") {
-		signed, err = slack.SignedMessage(text, *nickname)
-		if err != nil {
-			return fail(ctx, err)
-		}
-	}
-
-	if !parsed.Bool("send") {
-		where := target
-		if threadTS != "" {
-			where += " in thread " + threadTS
-		}
-
-		emit(ctx.Stdout, "dry run — would post to %s:\n", where)
-		emit(ctx.Stdout, "%s\n", signed.Text)
-
-		for _, plan := range planned {
-			emit(ctx.Stdout, "  attached: %s\n", slack.DescribeAttachment(plan))
-		}
-
-		emit(ctx.Stderr, "nothing sent; add --send to commit\n")
-
-		return 0
-	}
-
-	if len(planned) > 0 {
-		return sendWithAttachments(ctx, client, account, channel, label, target, signed, planned, threadTS)
-	}
-
-	var blocks any
-	if len(signed.Blocks) > 0 {
-		blocks = signed.Blocks
-	}
-
-	posted, err := client.PostMessage(channel.ID, signed.Text, threadTS, blocks)
-	if err != nil {
-		return fail(ctx, err)
-	}
-
-	audit, err := slack.RecordSend(ctx.Paths.AuditLog, slack.SendRecord{
-		Workspace: account.TeamName,
-		Channel:   label,
-		ChannelID: channel.ID,
-		ThreadTS:  threadTS,
-		MessageTS: posted.TS,
-		Text:      signed.Text,
-	}, time.Now())
-	if err != nil {
-		return fail(ctx, err)
-	}
-
-	emit(ctx.Stdout, "sent ts %s to %s; audit: %s\n", posted.TS, target, audit)
-
-	return 0
+	return sendTarget{account: account, client: client, channel: channel, label: slack.ChannelLabel(channel, directory)}, nil
 }
 
 func sendWithAttachments(
 	ctx Context,
-	client *slack.Client,
-	account auth.Account,
-	channel slack.Channel,
-	label, target string,
+	target sendTarget,
 	signed slack.Signed,
 	planned []slack.Plan,
 	threadTS string,
@@ -1312,7 +1300,7 @@ func sendWithAttachments(
 		return fail(ctx, err)
 	}
 
-	uploaded, err := client.UploadFiles(channel.ID, uploads, signed.Text, threadTS)
+	uploaded, err := target.client.UploadFiles(target.channel.ID, uploads, signed.Text, threadTS)
 	if err != nil {
 		return fail(ctx, err)
 	}
@@ -1323,9 +1311,9 @@ func sendWithAttachments(
 	}
 
 	audit, err := slack.RecordSend(ctx.Paths.AuditLog, slack.SendRecord{
-		Workspace: account.TeamName,
-		Channel:   label,
-		ChannelID: channel.ID,
+		Workspace: target.account.TeamName,
+		Channel:   target.label,
+		ChannelID: target.channel.ID,
 		ThreadTS:  threadTS,
 		MessageTS: uploaded.TS,
 		Text:      signed.Text,
@@ -1346,7 +1334,7 @@ func sendWithAttachments(
 	}
 
 	emit(ctx.Stdout, "sent to %s with %d attachment(s) at %s%s; audit: %s\n",
-		target, len(planned), ts, ids, audit)
+		target.describe(), len(planned), ts, ids, audit)
 
 	return 0
 }
@@ -1355,7 +1343,7 @@ func sendWithAttachments(
 func splitPaths(raw string) []string {
 	paths := make([]string, 0, 2)
 
-	for _, entry := range strings.Split(raw, ",") {
+	for entry := range strings.SplitSeq(raw, ",") {
 		if trimmed := strings.TrimSpace(entry); trimmed != "" {
 			paths = append(paths, trimmed)
 		}
@@ -1421,4 +1409,43 @@ func commandAssist(ctx Context, parsed ParsedArgs) int {
 	emit(ctx.Stdout, "%s%s\n", slack.DescribeSigning(signing, ""), source)
 
 	return 0
+}
+
+// signedFor resolves what signs the message: the environment over the settings file
+// over the generated default, and off for this send when --no-assist says so.
+func signedFor(ctx Context, account auth.Account, text string, noAssist bool) (slack.Signed, error) {
+	settings, err := config.NewStore(ctx.Paths.SettingsFile).Read()
+	if err != nil {
+		return slack.Signed{}, err
+	}
+
+	signing, err := config.SigningFor(settings, ctx.Env)
+	if err != nil {
+		return slack.Signed{}, err
+	}
+
+	nickname := config.ResolveNickname(signing, "", account.User)
+	if nickname == nil || noAssist {
+		return slack.Signed{Text: text}, nil
+	}
+
+	return slack.SignedMessage(text, *nickname)
+}
+
+// printDryRun is the whole of a preview: exactly what would be posted, and nothing
+// sent.
+func printDryRun(ctx Context, target, threadTS string, signed slack.Signed, planned []slack.Plan) {
+	where := target
+	if threadTS != "" {
+		where += " in thread " + threadTS
+	}
+
+	emit(ctx.Stdout, "dry run — would post to %s:\n", where)
+	emit(ctx.Stdout, "%s\n", signed.Text)
+
+	for _, plan := range planned {
+		emit(ctx.Stdout, "  attached: %s\n", slack.DescribeAttachment(plan))
+	}
+
+	emit(ctx.Stderr, "nothing sent; add --send to commit\n")
 }

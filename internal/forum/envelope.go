@@ -171,7 +171,7 @@ func (e *Envelope) validateAnnouncement() error {
 		}
 	case KindPresence:
 		switch e.State {
-		case "here", "away", "gone", "listening", "idle":
+		case string(HumanHere), string(HumanAway), "gone", "listening", "idle":
 		default:
 			return errors.New("state is not a presence")
 		}

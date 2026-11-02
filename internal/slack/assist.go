@@ -49,9 +49,11 @@ func DescribeSigning(signing config.Signing, agent string) string {
 		return "assisted nickname: " + signing.Nickname
 	case config.SigningOff:
 		return "assisted nickname off: posted messages carry no header"
-	default:
+	case config.SigningDefault:
 		return "no nickname configured: each send is signed as *" + AssistedHeader + " " +
 			config.DefaultNickname(agent, "") + " of <the sending account>*"
+	default:
+		return "assisted nickname: " + signing.Nickname
 	}
 }
 
