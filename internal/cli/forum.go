@@ -26,6 +26,13 @@ const (
 	subForumTask       = "task"
 	subForumDaemon     = "daemon"
 	subForumUnregister = "unregister"
+	subForumDelete     = "delete"
+	subForumEdit       = "edit"
+	subForumWait       = "wait"
+	subForumPoll       = "poll"
+
+	// jsonChannel is the key a JSON inbox line carries the channel under.
+	jsonChannel = "channel"
 )
 
 // forumRefreshDeadline bounds the catch-up a forum command runs before it decides:
@@ -57,6 +64,51 @@ func commandForum(ctx Context, parsed ParsedArgs) int {
 	return runForumMove(ctx, forumContext, parsed, subcommand, rest, confirm, by)
 }
 
+// forumMoves is the second half of the dispatch: a map so a new move is one line and
+// cannot change the order the others run in.
+var forumMoves = map[string]func(Context, forum.Context, ParsedArgs, []string, bool, string) int{
+	subForumList: func(ctx Context, fc forum.Context, _ ParsedArgs, _ []string, _ bool, _ string) int {
+		return forumList(ctx, fc)
+	},
+	"add": func(ctx Context, fc forum.Context, parsed ParsedArgs, rest []string, _ bool, _ string) int {
+		return forumAdd(ctx, fc, parsed, rest)
+	},
+	"remove": func(ctx Context, fc forum.Context, _ ParsedArgs, rest []string, _ bool, _ string) int {
+		return forumRemove(ctx, fc, rest)
+	},
+	subForumRegister: func(ctx Context, fc forum.Context, parsed ParsedArgs, rest []string, _ bool, _ string) int {
+		return forumRegister(ctx, fc, parsed, rest)
+	},
+	subForumUnregister: func(ctx Context, fc forum.Context, parsed ParsedArgs, rest []string, _ bool, _ string) int {
+		return forumUnregister(ctx, fc, parsed, rest)
+	},
+	subForumPeers: func(ctx Context, fc forum.Context, parsed ParsedArgs, _ []string, _ bool, _ string) int {
+		return forumPeers(ctx, fc, parsed)
+	},
+	subForumInbox: func(ctx Context, fc forum.Context, parsed ParsedArgs, _ []string, _ bool, _ string) int {
+		return forumInbox(ctx, fc, parsed)
+	},
+	subForumTask: func(ctx Context, fc forum.Context, parsed ParsedArgs, rest []string, _ bool, _ string) int {
+		return forumTask(ctx, fc, parsed, rest)
+	},
+	subForumPost: forumPost,
+	subForumAway: func(ctx Context, fc forum.Context, _ ParsedArgs, rest []string, _ bool, _ string) int {
+		return forumAway(ctx, fc, rest)
+	},
+	subForumDelete: func(ctx Context, fc forum.Context, parsed ParsedArgs, rest []string, confirm bool, _ string) int {
+		return forumDelete(ctx, fc, parsed, rest, confirm)
+	},
+	subForumEdit: func(ctx Context, fc forum.Context, parsed ParsedArgs, rest []string, confirm bool, _ string) int {
+		return forumEdit(ctx, fc, parsed, rest, confirm)
+	},
+	subForumWait: func(ctx Context, fc forum.Context, parsed ParsedArgs, _ []string, _ bool, _ string) int {
+		return forumWait(ctx, fc, parsed)
+	},
+	subForumPoll: func(ctx Context, fc forum.Context, parsed ParsedArgs, _ []string, _ bool, _ string) int {
+		return forumPoll(ctx, fc, parsed)
+	},
+}
+
 // runForumMove is the second half of the switch: the moves that act on a task are
 // one line because they differ only in the kind they carry.
 func runForumMove(
@@ -68,29 +120,13 @@ func runForumMove(
 	confirm bool,
 	by string,
 ) int {
+	if handler, known := forumMoves[subcommand]; known {
+		return handler(ctx, forumContext, parsed, rest, confirm, by)
+	}
+
 	switch subcommand {
-	case subForumList:
-		return forumList(ctx, forumContext)
-	case "add":
-		return forumAdd(ctx, forumContext, parsed, rest)
-	case "remove":
-		return forumRemove(ctx, forumContext, rest)
-	case subForumRegister:
-		return forumRegister(ctx, forumContext, parsed, rest)
-	case subForumUnregister:
-		return forumUnregister(ctx, forumContext, parsed, rest)
-	case subForumPeers:
-		return forumPeers(ctx, forumContext, parsed)
-	case subForumInbox:
-		return forumInbox(ctx, forumContext, parsed)
-	case subForumTask:
-		return forumTask(ctx, forumContext, parsed, rest)
-	case subForumPost:
-		return forumPost(ctx, forumContext, parsed, rest, confirm, by)
 	case "accept", "decline", subForumProgress, subForumResult, "ack", "reopen", "cancel":
 		return forumReply(ctx, forumContext, parsed, subcommand, rest, confirm, by)
-	case subForumAway:
-		return forumAway(ctx, forumContext, rest)
 	default:
 		return fail(ctx, errors.New("`agent-forum "+subcommand+"` is not ported yet"))
 	}
@@ -142,62 +178,23 @@ func forumTransports(ctx Context) forum.TransportResolver {
 	}
 }
 
-// refreshReport is what a catch-up found.
-type refreshReport struct {
-	Synced int
-	Locked bool
-	Errors []string
-}
-
 // refreshForum syncs every bound channel, which is what makes a write decide against
 // the thread and not against whatever this machine last saw.
-func refreshForum(ctx Context, forumContext forum.Context, deadline time.Duration) refreshReport {
-	report := refreshReport{}
+func refreshForum(ctx Context, forumContext forum.Context, deadline time.Duration) forum.CatchUpReport {
+	return forum.CatchUp(forum.CatchUpArgs{
+		Bindings: forumContext.File.Channels,
+		Deadline: deadline,
+		Now:      forumContext.Now,
+		Sync: func(teamID string, _ []string, options archive.SyncOptions) (archive.SyncReport, error) {
+			account, err := newStore(ctx).Get(teamID)
+			if err != nil {
+				return archive.SyncReport{}, errors.New("no stored Slack session for team " + teamID)
+			}
 
-	byWorkspace := map[string][]string{}
-
-	for _, binding := range forumContext.File.Channels {
-		byWorkspace[binding.Workspace] = append(byWorkspace[binding.Workspace], binding.Channel)
-	}
-
-	finish := time.Now().Add(deadline)
-
-	for workspace, channels := range byWorkspace {
-		account, err := newStore(ctx).Get(workspace)
-		if err != nil {
-			report.Errors = append(report.Errors, "no stored Slack session for team "+workspace)
-
-			continue
-		}
-
-		remaining := time.Until(finish)
-		if remaining <= 0 {
-			break
-		}
-
-		result, err := archive.SyncAccount(workspace, newClient(account),
-			archive.NewStore(ctx.Paths.ArchiveDir), archive.NewIndex(ctx.Paths.ArchiveIndex),
-			archive.SyncOptions{Channels: channels, Deadline: remaining})
-		if err != nil {
-			report.Errors = append(report.Errors, err.Error())
-
-			continue
-		}
-
-		if result.Skipped == "locked" {
-			report.Locked = true
-
-			continue
-		}
-
-		report.Synced += result.ChannelsSynced
-
-		for _, problem := range result.Errors {
-			report.Errors = append(report.Errors, problem.Channel+": "+problem.Error)
-		}
-	}
-
-	return report
+			return archive.SyncAccount(teamID, newClient(account),
+				archive.NewStore(ctx.Paths.ArchiveDir), archive.NewIndex(ctx.Paths.ArchiveIndex), options)
+		},
+	})
 }
 
 func forumList(ctx Context, forumContext forum.Context) int {
@@ -502,7 +499,7 @@ func forumInbox(ctx Context, forumContext forum.Context, parsed ParsedArgs) int 
 				"from":          entry.Task.From,
 				"to":            entry.Task.To,
 				"title":         entry.Task.Title,
-				"channel":       entry.View.Binding.Name,
+				jsonChannel:     entry.View.Binding.Name,
 				"ts":            entry.Task.TS,
 			}
 
@@ -681,4 +678,160 @@ func printWrite(ctx Context, result forum.WriteResult) int {
 	}
 
 	return 0
+}
+
+func forumDelete(ctx Context, forumContext forum.Context, parsed ParsedArgs, rest []string, confirm bool) int {
+	if len(rest) == 0 {
+		return fail(ctx, errors.New("agent-forum delete needs a task id or a message ts"))
+	}
+
+	refreshForum(ctx, forumContext, forumRefreshDeadline)
+
+	fresh, err := forumContext.Reload()
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	result, err := forum.DeletePosting(fresh, forumTransports(ctx), forum.RemoveArgs{
+		Ref: rest[0], Force: parsed.Bool("force"), Confirm: confirm,
+	})
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	emit(ctx.Stdout, "%s\n", result.Text)
+
+	return 0
+}
+
+func forumEdit(ctx Context, forumContext forum.Context, parsed ParsedArgs, rest []string, confirm bool) int {
+	body, _ := parsed.String("body")
+
+	if body == "" && len(rest) > 1 {
+		body = strings.TrimSpace(strings.Join(rest[1:], " "))
+	}
+
+	if len(rest) == 0 || body == "" {
+		return fail(ctx, errors.New("agent-forum edit needs a task id and a body: --body \"<text>\""))
+	}
+
+	refreshForum(ctx, forumContext, forumRefreshDeadline)
+
+	fresh, err := forumContext.Reload()
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	result, err := forum.EditTaskBody(fresh, forumTransports(ctx), forum.EditArgs{
+		ID: rest[0], Body: body, Confirm: confirm,
+	})
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	emit(ctx.Stdout, "%s\n", result.Text)
+
+	return 0
+}
+
+// forumPoll is one refresh pass, and the only place a timer is allowed to cause a
+// write: the beacon that says this machine is up.
+func forumPoll(ctx Context, forumContext forum.Context, parsed ParsedArgs) int {
+	deadlineSeconds, err := numberFlag(parsed, "deadline", 25)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	report := refreshForum(ctx, forumContext, time.Duration(deadlineSeconds)*time.Second)
+
+	fresh, err := forumContext.Reload()
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	announced, _ := forum.AnnounceLiveness(fresh, forumTransports(ctx), "poll", "", "", false)
+
+	if !parsed.Bool("quiet") {
+		line := "refreshed " + strconv.Itoa(report.Synced) + " channel(s)"
+
+		if announced.Posted > 0 {
+			line += " · beacon in " + strconv.Itoa(announced.Posted)
+		}
+
+		if len(report.Errors) > 0 {
+			line += " · " + strings.Join(report.Errors, " · ")
+		}
+
+		emit(ctx.Stdout, "%s\n", line)
+	}
+
+	if len(report.Errors) > 0 {
+		return 1
+	}
+
+	return 0
+}
+
+// forumWait blocks until work lands, or prints what is already there.
+func forumWait(ctx Context, forumContext forum.Context, parsed ParsedArgs) int {
+	offline := parsed.Bool("offline")
+	asJSON := parsed.Bool("json")
+	follow := parsed.Bool("follow")
+
+	timeout, err := numberFlag(parsed, "timeout", map[bool]int{true: 30, false: 0}[follow])
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	seen := map[string]bool{}
+
+	for {
+		result := forum.WaitForWork(forumContext, forum.WaitOptions{
+			Seconds: timeout,
+			Offline: offline,
+			Refresh: func() forum.CatchUpReport {
+				return refreshForum(ctx, forumContext, forumRefreshDeadline)
+			},
+		})
+
+		for _, entry := range result.Report.Entries {
+			if seen[entry.Task.ID] {
+				continue
+			}
+
+			seen[entry.Task.ID] = true
+
+			if asJSON {
+				line := map[string]any{
+					"event": "task", "id": entry.Task.ID, "from": entry.Task.From,
+					"to": entry.Task.To, "title": entry.Task.Title,
+					jsonChannel: entry.View.Binding.Name, "ts": entry.Task.TS,
+				}
+
+				encoded, err := json.Marshal(line)
+				if err != nil {
+					return fail(ctx, err)
+				}
+
+				emit(ctx.Stdout, "%s\n", encoded)
+
+				continue
+			}
+
+			emit(ctx.Stdout, "%s  %s  %s  %s: %s\n", entry.Task.ID,
+				forum.StateLabel(entry.Task, forumContext.Now),
+				forum.DecisionLabel(entry.Decision, entry.Decided),
+				entry.Task.From, entry.Task.Title)
+		}
+
+		if !follow {
+			if len(result.Report.Entries) == 0 {
+				emit(ctx.Stdout, "nothing pending\n")
+			}
+
+			return 0
+		}
+
+		time.Sleep(time.Duration(max(5, timeout)) * time.Second)
+	}
 }
