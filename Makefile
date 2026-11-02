@@ -39,6 +39,10 @@ fuzz:
 	$(GO) test -run XXX -fuzz=FuzzDecodeFence -fuzztime 30s ./internal/forum/
 	$(GO) test -run XXX -fuzz=FuzzReadFrontmatter -fuzztime 30s ./internal/forum/
 
+## mutation: Mutation-test a package with gremlins (go install github.com/go-gremlins/gremlins/cmd/gremlins@latest)
+mutation:
+	gremlins unleash --workers 4 ./internal/config ./internal/update ./internal/platform
+
 ## bench: Run the benchmarks and report allocations
 bench:
 	$(GO) test -run XXX -bench . -benchtime 200x -benchmem ./internal/archive/ ./internal/forum/

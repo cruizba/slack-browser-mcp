@@ -141,7 +141,14 @@ make diff       # the recorded behaviour of every command, checked against this 
 make lint       # golangci-lint, integration files included
 make fuzz       # the parsers that read somebody else's text
 make bench      # the hot paths, with allocation counts
+make mutation   # mutation-test the packages with the strongest suites
 ```
+
+`make mutation` runs [gremlins](https://github.com/go-gremlins/gremlins) over
+`internal/config`, `internal/update` and `internal/platform`: it edits the source one
+operator at a time and checks that a test fails. A mutant that survives is a test that
+would not notice the change — the boundary cases it found are why `DescribePolicy` has
+a test for exactly 60 minutes and `DefaultNickname` one for a name at its limit.
 
 `make diff` is the interesting one: `internal/difftest` runs the binary against a fake
 Slack and compares stdout, stderr and the exit code, byte for byte, with the goldens in
