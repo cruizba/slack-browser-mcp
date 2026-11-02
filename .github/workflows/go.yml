@@ -1,0 +1,93 @@
+name: go
+
+# The port has to work on three systems. A public repository runs the hosted
+# runners for free, so the matrix is the cheapest honest answer to "does this
+# build on Windows" — and the only way to exercise the code that a build tag or
+# a simulated GOOS would leave untested on the runner that does have it.
+#
+# `go-rewrite` is temporary: it disappears when the branch merges.
+on:
+  push:
+    branches:
+      - main
+      - go-rewrite
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify the module
+        run: go mod verify
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # -race needs cgo, and the Windows image has no C toolchain Go will pick up
+      # on its own, so the detector runs only where it works. Windows runs the
+      # same tests without it rather than being skipped.
+      - name: Test with the race detector
+        if: runner.os != 'Windows'
+        run: go test -race -shuffle=on ./...
+
+      - name: Test
+        if: runner.os == 'Windows'
+        run: go test -shuffle=on ./...
+
+      # A check on the file, not on the system, so one runner is enough.
+      - name: Check go mod tidy
+        if: runner.os == 'Linux'
+        run: go mod tidy && git diff --exit-code -- go.mod go.sum
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The integration build tag is included so the differential harness is held
+      # to the same bar as the code it judges.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: latest
+          args: --timeout 5m --build-tags=integration

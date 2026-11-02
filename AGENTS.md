@@ -27,10 +27,12 @@ domain (`config`, `auth`, `slack`, `archive`, `forum`, `mcp`, `cli`).
 Dependencies are wired by explicit constructors; there is no DI framework.
 
 Portability is a requirement, not a nicety: Linux, macOS and Windows, amd64 and
-arm64. Platform paths, file permissions and the forum transport live in
-`internal/platform` behind build tags rather than in scattered `runtime.GOOS`
-checks. `CGO_ENABLED=0` must stay buildable, which is why SQLite is
-`modernc.org/sqlite` and not the cgo binding.
+arm64. Platform paths live in `internal/platform`, resolved from an `Env` that
+carries the target GOOS so all three layouts are testable from any machine; the
+parts that are genuinely per-binary — file permissions, the forum transport — go
+behind build tags. The CI matrix runs the tests on all three systems, which is
+what actually exercises them. `CGO_ENABLED=0` must stay buildable, which is why
+SQLite is `modernc.org/sqlite` and not the cgo binding.
 
 The vendored agent skills are in `.agents/skills/`, copied from
 `samber/cc-skills-golang`; `/golang-how-to` routes between them.
