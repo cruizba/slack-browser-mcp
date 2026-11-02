@@ -72,8 +72,11 @@ try {
   if (Test-Path $target) { Move-Item -Force $target "$target.old" }
   Copy-Item $binary.FullName $target
 
-  # The forum surface is a second entry point on the same code.
-  Copy-Item $target (Join-Path $BinDir "slack-browser-forum.exe") -Force
+  # The forum surface has its own main package, so it travels as its own binary; a copy
+  # of the CLI would answer the wrong catalogue.
+  $forum = Get-ChildItem -Path $work -Recurse -Filter "slack-browser-forum.exe" | Select-Object -First 1
+  if (-not $forum) { throw "the archive did not carry a slack-browser-forum.exe" }
+  Copy-Item $forum.FullName (Join-Path $BinDir "slack-browser-forum.exe") -Force
   Write-Host "    $target"
 
   $commands = Get-ChildItem -Path $work -Recurse -Filter "*.md" | Where-Object { $_.DirectoryName -like "*commands*" }

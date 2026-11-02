@@ -112,20 +112,21 @@ printf '    ok\n'
 step "Installing"
 mkdir -p "$BIN_DIR" "$SHARE_DIR"
 tar -xzf "${tmp}/${archive}" -C "$tmp"
-for candidate in "$tmp"/*/slack-browser "$tmp"/slack-browser "${tmp}"/*/slack-browser.exe; do
-  if [ -f "$candidate" ]; then
-    cp "$candidate" "${BIN_DIR}/.slack-browser.new"
-    chmod 755 "${BIN_DIR}/.slack-browser.new"
-    mv "${BIN_DIR}/.slack-browser.new" "${BIN_DIR}/slack-browser"
-    break
-  fi
-done
-[ -x "${BIN_DIR}/slack-browser" ] || die "the archive did not carry a slack-browser binary"
 
-# The forum surface is a second entry point on the same code, so it is a link rather
-# than a second download.
-ln -sf "${BIN_DIR}/slack-browser" "${BIN_DIR}/slack-browser-forum" 2>/dev/null || true
-printf '    %s\n' "${BIN_DIR}/slack-browser"
+# Both entry points are real binaries in the archive: the forum surface has its own main
+# package, so a copy of the CLI under that name would answer the wrong catalogue.
+for name in slack-browser slack-browser-forum; do
+  for candidate in "$tmp"/*/"$name" "$tmp"/"$name" "$tmp"/*/"$name.exe" "$tmp"/"$name.exe"; do
+    if [ -f "$candidate" ]; then
+      cp "$candidate" "${BIN_DIR}/.${name}.new"
+      chmod 755 "${BIN_DIR}/.${name}.new"
+      mv "${BIN_DIR}/.${name}.new" "${BIN_DIR}/${name}"
+      break
+    fi
+  done
+  [ -x "${BIN_DIR}/${name}" ] || die "the archive did not carry a ${name} binary"
+  printf '    %s\n' "${BIN_DIR}/${name}"
+done
 
 if [ -d "$tmp/commands" ]; then
   mkdir -p "$SHARE_DIR/commands"

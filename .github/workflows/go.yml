@@ -231,3 +231,26 @@ jobs:
           args: release --snapshot --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The installers put two files in place, and a copy of the CLI under the forum's
+      # name would start the CLI: the archive has to carry the second binary, and only
+      # a look inside an archive says so.
+      - name: Check every archive carries both entry points
+        run: |
+          set -eu
+          checked=0
+          for archive in dist/*.tar.gz dist/*.zip; do
+            [ -f "$archive" ] || continue
+            case "$archive" in
+              *.zip) listing=$(unzip -l "$archive") ;;
+              *)     listing=$(tar -tzf "$archive") ;;
+            esac
+            for name in slack-browser slack-browser-forum; do
+              if ! grep -qE "/?$name(\.exe)?$" <<< "$listing"; then
+                echo "::error::$archive does not carry $name"
+                exit 1
+              fi
+            done
+            checked=$((checked + 1))
+          done
+          echo "$checked archives carry both entry points"

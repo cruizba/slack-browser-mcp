@@ -10,6 +10,9 @@ before:
     - go mod verify
 
 builds:
+  # Two entry points, two binaries: the forum surface is a separate main package, so a
+  # copy of the CLI under its name would start the CLI. Both travel in every archive,
+  # which is what lets the installers put a real file in place of each.
   - id: slack-browser
     main: ./cmd/slack-browser
     binary: slack-browser
@@ -17,18 +20,29 @@ builds:
       - CGO_ENABLED=0
     flags:
       - -trimpath
-    ldflags:
+    ldflags: &release_flags
       - -s -w
       - -X github.com/cruizba/slack-browser-mcp/internal/buildinfo.Version={{ .Version }}
       - -X github.com/cruizba/slack-browser-mcp/internal/buildinfo.Describe={{ .Tag }}
       - -X github.com/cruizba/slack-browser-mcp/internal/buildinfo.Dirty=
-    goos:
+    goos: &release_targets
       - linux
       - darwin
       - windows
-    goarch:
+    goarch: &release_arches
       - amd64
       - arm64
+
+  - id: slack-browser-forum
+    main: ./cmd/slack-browser-forum
+    binary: slack-browser-forum
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags: *release_flags
+    goos: *release_targets
+    goarch: *release_arches
 
 archives:
   - id: default
