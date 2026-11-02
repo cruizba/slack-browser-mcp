@@ -95,6 +95,10 @@ func TestServer_Handler_ServesEveryRecordedMethod(t *testing.T) {
 	httpServer := newHTTP(t, newServer(t))
 
 	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
 		method := strings.TrimSuffix(entry.Name(), ".json")
 
 		got := post(t, httpServer.URL, method, true)
