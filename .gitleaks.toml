@@ -1,0 +1,19 @@
+# Scans the whole history, not just the tree: a token that was committed and removed
+# is still in every clone.
+#
+# The default rules stay on. What is listed below are the placeholders this repository
+# deliberately contains, and they are allowlisted by their exact value rather than by
+# file, so a real token in a test file is still a finding.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Placeholders and their documentation"
+paths = [
+  '''^\.agents/skills/''',
+]
+regexes = [
+  '''xox[acdpsr]-1234567890-abcdef''',
+  '''xoxd-abcdef''',
+]

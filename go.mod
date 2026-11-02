@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/coder/websocket v1.8.15
+	go.uber.org/goleak v1.3.0
 	golang.org/x/text v0.43.0
 	modernc.org/sqlite v1.61.1
 )

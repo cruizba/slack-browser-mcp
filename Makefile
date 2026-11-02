@@ -39,6 +39,10 @@ fuzz:
 	$(GO) test -run XXX -fuzz=FuzzDecodeFence -fuzztime 30s ./internal/forum/
 	$(GO) test -run XXX -fuzz=FuzzReadFrontmatter -fuzztime 30s ./internal/forum/
 
+## bench: Run the benchmarks and report allocations
+bench:
+	$(GO) test -run XXX -bench . -benchtime 200x -benchmem ./internal/archive/ ./internal/forum/
+
 test-integration: Build both binaries and diff them against the goldens
 test-integration:
 	$(GO) test -tags integration -count=1 ./internal/difftest/

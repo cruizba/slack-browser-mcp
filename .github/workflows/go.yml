@@ -96,6 +96,112 @@ jobs:
           version: latest
           args: --timeout 5m --build-tags=integration
 
+      # A configuration the linter cannot read is a linter that silently checks
+      # nothing, so the file is validated before it is trusted.
+      - name: Check the linter configuration
+        run: golangci-lint config verify
+
+      # vet is cheap and it reads build tags, so the two platforms this job cannot run
+      # are type-checked here. It is not a substitute for the matrix; it is what
+      # catches a `//go:build windows` file that stopped compiling at review time.
+      - name: Vet against the other platforms
+        run: |
+          GOOS=windows go vet ./...
+          GOOS=darwin go vet ./...
+
+  # Three checks that need no test run, so they go beside the matrix rather than in it.
+  vuln:
+    name: vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Pinned: a scanner that changes under the build turns a green commit red for
+      # reasons that have nothing to do with this code.
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+      - name: Look for known vulnerabilities
+        run: govulncheck ./...
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    steps:
+      # The whole history, because a token that was committed and then removed is
+      # still in every clone of this repository.
+      - name: Check out the history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install gitleaks
+        run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+
+      - name: Scan every commit
+        run: gitleaks detect --source . --no-banner --redact --config .gitleaks.toml
+
+  # Coverage is measured on its own so the floor cannot depend on which platform ran
+  # it, and so the table lands in the job summary where the trend is visible.
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Measure
+        run: go test -coverprofile=coverage.out -covermode=count ./... >/dev/null
+
+      - name: Report and gate
+        run: |
+          go tool cover -func=coverage.out | tail -1
+
+          {
+            echo "### Coverage by package"
+            echo
+            echo "| package | statements |"
+            echo "| --- | --- |"
+            go test -cover ./... 2>/dev/null \
+              | grep -oE 'slack-browser-mcp/internal/[a-z/]+.*coverage: [0-9.]+%' \
+              | sed -E 's#.*slack-browser-mcp/(internal/[a-z/]+).*coverage: ([0-9.]+)%.*#| \1 | \2% |#' \
+              | sort
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          total=$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9]+\.[0-9]+')
+          floor=50
+
+          if awk -v t="$total" -v f="$floor" 'BEGIN { exit !(t >= f) }'; then
+            echo "coverage: ${total}% (floor ${floor}%)"
+          else
+            echo "::error::coverage fell to ${total}%, below the ${floor}% floor"
+            exit 1
+          fi
+
   # The tag is irreversible and the release workflow has never run, so the same
   # configuration is exercised on every push: all six targets are cross-compiled and
   # archived here, which is exactly what a tag would publish, minus the upload. This

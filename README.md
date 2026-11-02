@@ -139,6 +139,8 @@ make build-all  # every cmd/ binary
 make test       # the unit tests, with the race detector
 make diff       # the recorded behaviour of every command, checked against this build
 make lint       # golangci-lint, integration files included
+make fuzz       # the parsers that read somebody else's text
+make bench      # the hot paths, with allocation counts
 ```
 
 `make diff` is the interesting one: `internal/difftest` runs the binary against a fake
@@ -147,6 +149,14 @@ Slack and compares stdout, stderr and the exit code, byte for byte, with the gol
 implementation this replaces, so they are the specification of its behaviour rather than
 a snapshot of the port. `make golden` re-records them from this build — read the diff
 before committing it.
+
+CI runs the same list on Linux, macOS and Windows, twice each with `-shuffle=on`, and
+adds four checks the local targets leave out: `govulncheck` over the dependency graph,
+`gitleaks` over the **whole history** (a token that was committed and removed is still
+in every clone), a coverage floor with a per-package table in the job summary, and a
+`goreleaser --snapshot` build of the six targets — so a tag is never the first time the
+release configuration is read. Goroutine leaks are a test failure in `internal/forum`
+and `internal/slack` rather than something to notice by eye.
 
 ## Docs
 
