@@ -195,8 +195,10 @@ type Options struct {
 	// without waiting for it.
 	Sleep      func(time.Duration)
 	MaxRetries int
-	Pace       time.Duration
-	Burst      int
+	// Pace is the sustained gap between requests; nil means the default, which is why
+	// it is a pointer: zero is a value a caller may want to ask for.
+	Pace  *time.Duration
+	Burst int
 }
 
 // Client talks to one workspace.
@@ -244,9 +246,9 @@ func NewClient(account auth.Account, options Options) *Client {
 		maxRetries = defaultRetries
 	}
 
-	pace := options.Pace
-	if pace == 0 {
-		pace = paceFromEnv()
+	pace := paceFromEnv()
+	if options.Pace != nil {
+		pace = *options.Pace
 	}
 
 	burst := options.Burst

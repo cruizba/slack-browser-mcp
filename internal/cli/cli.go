@@ -367,8 +367,24 @@ func numberFlag(parsed ParsedArgs, name string, fallback int) (int, error) {
 	return int(value), nil
 }
 
-func newClient(account auth.Account) *slack.Client {
-	return slack.NewClient(account, slack.Options{})
+// newClient talks for one workspace against the base the run resolved, so a test or a
+// harness can point the whole command line at another Slack without touching the
+// process environment.
+func newClient(ctx Context, account auth.Account) *slack.Client {
+	base, _ := platform.Lookup(ctx.Env, "SLACK_BROWSER_API_BASE")
+
+	options := slack.Options{BaseURL: base}
+
+	// The pacing is read here rather than inside the client so a test or a harness can
+	// turn it off through the environment it already controls.
+	if raw, present := platform.Lookup(ctx.Env, "SLACK_BROWSER_PACE_MS"); present {
+		if milliseconds, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil && milliseconds >= 0 {
+			pace := time.Duration(milliseconds * float64(time.Millisecond))
+			options.Pace = &pace
+		}
+	}
+
+	return slack.NewClient(account, options)
 }
 
 func commandStatus(ctx Context, parsed ParsedArgs) int {
@@ -410,7 +426,7 @@ func commandStatus(ctx Context, parsed ParsedArgs) int {
 	failures := 0
 
 	for _, account := range accounts {
-		info, err := newClient(account).AuthTest()
+		info, err := newClient(ctx, account).AuthTest()
 		if err != nil {
 			failures++
 
@@ -467,7 +483,7 @@ func commandRead(ctx Context, parsed ParsedArgs) int {
 		return fail(ctx, err)
 	}
 
-	client := newClient(account)
+	client := newClient(ctx, account)
 	directory := loadDirectory(ctx, client, account.TeamID)
 
 	channel, err := client.ResolveChannel(reference, directory.Person)
@@ -534,7 +550,7 @@ func commandThread(ctx Context, parsed ParsedArgs) int {
 		return fail(ctx, err)
 	}
 
-	client := newClient(account)
+	client := newClient(ctx, account)
 	directory := loadDirectory(ctx, client, account.TeamID)
 
 	channel, err := client.ResolveChannel(reference, directory.Person)
@@ -1023,7 +1039,7 @@ func syncEach(ctx Context, accounts []auth.Account, options archive.SyncOptions,
 			accountOptions.OnProgress = func(line string) { emit(ctx.Stderr, "%s\n", line) }
 		}
 
-		report, err := archive.SyncAccount(account.TeamID, newClient(account),
+		report, err := archive.SyncAccount(account.TeamID, newClient(ctx, account),
 			archive.NewStore(ctx.Paths.ArchiveDir), archive.NewIndex(ctx.Paths.ArchiveIndex), accountOptions)
 		if err != nil {
 			failures++
@@ -1077,7 +1093,7 @@ func saveSession(ctx Context, store *auth.Store, session auth.CapturedSession) (
 		SavedAt:     time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 	}
 
-	info, err := newClient(account).AuthTest()
+	info, err := newClient(ctx, account).AuthTest()
 	if err != nil {
 		emit(ctx.Stderr, "failed %s (%s): %s\n", session.TeamName, session.TeamID, err.Error())
 
@@ -1288,7 +1304,7 @@ func resolveSendTarget(ctx Context, reference, workspace string) (sendTarget, er
 		return sendTarget{}, err
 	}
 
-	client := newClient(account)
+	client := newClient(ctx, account)
 
 	directory, err := slack.NewDirectoryStore(ctx.Paths.ArchiveDir).Read(account.TeamID)
 	if err != nil {

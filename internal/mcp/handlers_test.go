@@ -77,8 +77,11 @@ func newHarness(t *testing.T) *harness {
 			return ""
 		},
 		LookupEnv: func(name string) (string, bool) {
-			if name == "SLACK_BROWSER_API_BASE" {
+			switch name {
+			case "SLACK_BROWSER_API_BASE":
 				return base, true
+			case "SLACK_BROWSER_PACE_MS":
+				return "0", true
 			}
 
 			return "", false

@@ -177,7 +177,7 @@ func forumTransports(ctx Context) forum.TransportResolver {
 			return forum.Transport{}, err
 		}
 
-		return forum.Transport{Account: account, Client: newClient(account), Signing: signing}, nil
+		return forum.Transport{Account: account, Client: newClient(ctx, account), Signing: signing}, nil
 	}
 }
 
@@ -194,7 +194,7 @@ func refreshForum(ctx Context, forumContext forum.Context, deadline time.Duratio
 				return archive.SyncReport{}, errors.New("no stored Slack session for team " + teamID)
 			}
 
-			return archive.SyncAccount(teamID, newClient(account),
+			return archive.SyncAccount(teamID, newClient(ctx, account),
 				archive.NewStore(ctx.Paths.ArchiveDir), archive.NewIndex(ctx.Paths.ArchiveIndex), options)
 		},
 	})

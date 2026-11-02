@@ -131,7 +131,7 @@ func (f *fakeSlack) client(t *testing.T, pace time.Duration) *slack.Client {
 	}, slack.Options{
 		BaseURL:    f.server.URL + "/",
 		Sleep:      func(time.Duration) {},
-		Pace:       pace,
+		Pace:       &pace,
 		MaxRetries: 2,
 	})
 }

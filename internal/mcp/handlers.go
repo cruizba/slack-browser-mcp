@@ -109,7 +109,16 @@ func openSession(deps Deps, reference string) (session, error) {
 // newClient talks for one workspace, against the base the caller resolved rather than
 // whatever the process environment happens to hold.
 func newClient(deps Deps, account auth.Account) *slack.Client {
-	return slack.NewClient(account, slack.Options{BaseURL: deps.BaseURL})
+	options := slack.Options{BaseURL: deps.BaseURL}
+
+	if raw, present := platform.Lookup(deps.Env, "SLACK_BROWSER_PACE_MS"); present {
+		if milliseconds, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil && milliseconds >= 0 {
+			pace := time.Duration(milliseconds * float64(time.Millisecond))
+			options.Pace = &pace
+		}
+	}
+
+	return slack.NewClient(account, options)
 }
 
 func newAuthStore(deps Deps) *auth.Store {
