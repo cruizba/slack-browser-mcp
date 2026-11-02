@@ -111,10 +111,10 @@ linters:
       # Every message these two build reaches a terminal and is compared
       # byte-for-byte against the TypeScript build it replaces, so it is a
       # sentence with a capital and a full stop, not a Go error string.
-      - path: internal/(auth|cli|config|platform|slack|archive)/
+      - path: internal/(auth|cli|config|platform|slack|archive|mcp|forum)/
         linters: [revive]
         text: error-strings
-      - path: internal/(auth|cli|config|platform|slack|archive)/
+      - path: internal/(auth|cli|config|platform|slack|archive|mcp|forum)/
         linters: [staticcheck]
         text: ST1005
       # The help table is data: the same flag name appears in the doc map, in each

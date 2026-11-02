@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -838,8 +839,24 @@ func commandServe(ctx Context) int {
 		return fail(ctx, err)
 	}
 
+	self, _ := os.Executable()
+
+	available := mcp.Handlers(mcp.Deps{
+		Paths:   ctx.Paths,
+		Env:     ctx.Env,
+		Version: buildinfo.Version,
+		Self:    self,
+	})
+
 	handlers := make(map[string]mcp.Handler, len(tools))
+
 	for _, tool := range tools {
+		if handler, known := available[tool.Name]; known {
+			handlers[tool.Name] = handler
+
+			continue
+		}
+
 		handlers[tool.Name] = mcp.UnknownTool(tool.Name)
 	}
 
