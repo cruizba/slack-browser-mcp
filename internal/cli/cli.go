@@ -109,6 +109,10 @@ func dispatch(ctx Context, name string, parsed ParsedArgs) int {
 		return commandRead(ctx, parsed)
 	case cmdThread:
 		return commandThread(ctx, parsed)
+	case "send":
+		return commandSend(ctx, parsed)
+	case "assist":
+		return commandAssist(ctx, parsed)
 	case cmdArchive:
 		return commandArchive(ctx, parsed)
 	case "sync":
@@ -1166,4 +1170,255 @@ func orUnknown(value string) string {
 	}
 
 	return value
+}
+
+// commandSend writes one message, or says exactly what it would write. A dry run is
+// the default because a send is the only thing this tool does to a shared surface.
+func commandSend(ctx Context, parsed ParsedArgs) int {
+	reference := ""
+	if len(parsed.Positional) > 0 {
+		reference = parsed.Positional[0]
+	}
+
+	text := strings.Join(parsed.Positional[1:], " ")
+
+	if reference == "" || text == "" {
+		return fail(ctx, errors.New("send needs a channel and a message"))
+	}
+
+	workspace, _ := parsed.String("workspace")
+
+	store := newStore(ctx)
+
+	account, err := store.Resolve(workspace)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	client := newClient(account)
+
+	// A send names its target from the directory on disk; it never refreshes it.
+	directory, err := slack.NewDirectoryStore(ctx.Paths.ArchiveDir).Read(account.TeamID)
+	if err != nil {
+		directory = nil
+	}
+
+	channel, err := client.ResolveChannel(reference, func(name string) (string, bool) {
+		user := directory.UserByReference(name)
+		if user == nil {
+			return "", false
+		}
+
+		return user.ID, true
+	})
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	label := slack.ChannelLabel(channel, directory)
+	threadTS, _ := parsed.String("thread")
+
+	attach, _ := parsed.String("attach")
+
+	planned, err := slack.PlanAttachments(splitPaths(attach))
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	target := account.TeamName + " · " + label + " (" + channel.ID + ")"
+
+	settings, err := config.NewStore(ctx.Paths.SettingsFile).Read()
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	signing, err := config.SigningFor(settings, ctx.Env)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	nickname := config.ResolveNickname(signing, "", account.User)
+
+	signed := slack.Signed{Text: text}
+
+	if nickname != nil && !parsed.Bool("no-assist") {
+		signed, err = slack.SignedMessage(text, *nickname)
+		if err != nil {
+			return fail(ctx, err)
+		}
+	}
+
+	if !parsed.Bool("send") {
+		where := target
+		if threadTS != "" {
+			where += " in thread " + threadTS
+		}
+
+		emit(ctx.Stdout, "dry run — would post to %s:\n", where)
+		emit(ctx.Stdout, "%s\n", signed.Text)
+
+		for _, plan := range planned {
+			emit(ctx.Stdout, "  attached: %s\n", slack.DescribeAttachment(plan))
+		}
+
+		emit(ctx.Stderr, "nothing sent; add --send to commit\n")
+
+		return 0
+	}
+
+	if len(planned) > 0 {
+		return sendWithAttachments(ctx, client, account, channel, label, target, signed, planned, threadTS)
+	}
+
+	var blocks any
+	if len(signed.Blocks) > 0 {
+		blocks = signed.Blocks
+	}
+
+	posted, err := client.PostMessage(channel.ID, signed.Text, threadTS, blocks)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	audit, err := slack.RecordSend(ctx.Paths.AuditLog, slack.SendRecord{
+		Workspace: account.TeamName,
+		Channel:   label,
+		ChannelID: channel.ID,
+		ThreadTS:  threadTS,
+		MessageTS: posted.TS,
+		Text:      signed.Text,
+	}, time.Now())
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	emit(ctx.Stdout, "sent ts %s to %s; audit: %s\n", posted.TS, target, audit)
+
+	return 0
+}
+
+func sendWithAttachments(
+	ctx Context,
+	client *slack.Client,
+	account auth.Account,
+	channel slack.Channel,
+	label, target string,
+	signed slack.Signed,
+	planned []slack.Plan,
+	threadTS string,
+) int {
+	uploads, err := slack.ReadAttachments(planned)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	uploaded, err := client.UploadFiles(channel.ID, uploads, signed.Text, threadTS)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	files := make([]string, 0, len(planned))
+	for _, plan := range planned {
+		files = append(files, plan.Name+" ("+slack.HumanSize(plan.Bytes)+")")
+	}
+
+	audit, err := slack.RecordSend(ctx.Paths.AuditLog, slack.SendRecord{
+		Workspace: account.TeamName,
+		Channel:   label,
+		ChannelID: channel.ID,
+		ThreadTS:  threadTS,
+		MessageTS: uploaded.TS,
+		Text:      signed.Text,
+		Files:     files,
+	}, time.Now())
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	ts := "(no ts reported by Slack)"
+	if uploaded.TS != "" {
+		ts = "ts " + uploaded.TS
+	}
+
+	ids := ""
+	if len(uploaded.FileIDs) > 0 {
+		ids = " (" + strings.Join(uploaded.FileIDs, ", ") + ")"
+	}
+
+	emit(ctx.Stdout, "sent to %s with %d attachment(s) at %s%s; audit: %s\n",
+		target, len(planned), ts, ids, audit)
+
+	return 0
+}
+
+// splitPaths reads the comma-separated --attach value.
+func splitPaths(raw string) []string {
+	paths := make([]string, 0, 2)
+
+	for _, entry := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(entry); trimmed != "" {
+			paths = append(paths, trimmed)
+		}
+	}
+
+	return paths
+}
+
+// commandAssist reads or sets the nickname that signs every message.
+func commandAssist(ctx Context, parsed ParsedArgs) int {
+	settings := config.NewStore(ctx.Paths.SettingsFile)
+
+	if parsed.Bool("clear") {
+		if len(parsed.Positional) > 0 {
+			return fail(ctx, errors.New("assist --clear takes no nickname"))
+		}
+
+		updated, err := settings.SetAssistedNickname(nil)
+		if err != nil {
+			return fail(ctx, err)
+		}
+
+		signing, err := config.SigningFor(updated, ctx.Env)
+		if err != nil {
+			return fail(ctx, err)
+		}
+
+		emit(ctx.Stdout, "cleared; %s\n", slack.DescribeSigning(signing, ""))
+
+		return 0
+	}
+
+	nickname := strings.TrimSpace(strings.Join(parsed.Positional, " "))
+
+	if nickname != "" {
+		if _, err := settings.SetAssistedNickname(&nickname); err != nil {
+			return fail(ctx, err)
+		}
+
+		emit(ctx.Stdout, "assisted nickname: %s\n", nickname)
+		emit(ctx.Stdout, "every sent message now opens with *%s %s* between two rule lines\n",
+			slack.AssistedHeader, nickname)
+
+		return 0
+	}
+
+	current, err := settings.Read()
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	signing, err := config.SigningFor(current, ctx.Env)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	source := ""
+
+	if _, present := platform.Lookup(ctx.Env, config.AssistedNicknameEnv); present {
+		source = " (from " + config.AssistedNicknameEnv + ")"
+	}
+
+	emit(ctx.Stdout, "%s%s\n", slack.DescribeSigning(signing, ""), source)
+
+	return 0
 }
