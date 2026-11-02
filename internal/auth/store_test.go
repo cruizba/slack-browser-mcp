@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cruizba/slack-browser-mcp/internal/auth"
 	"github.com/cruizba/slack-browser-mcp/internal/config"
@@ -288,5 +289,149 @@ func TestInvalidTeamIDIsRefused(t *testing.T) {
 
 	if _, err := f.store.Get("../escape"); err == nil || !strings.Contains(err.Error(), "Invalid team id") {
 		t.Fatalf("Get(../escape) = %v", err)
+	}
+}
+
+func TestSaveWritesAPrivateFile(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, nil)
+
+	account := account("T01ACME", "Acme", "acme")
+
+	if err := f.store.Save(account); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	file := filepath.Join(f.dir, "T01ACME.json")
+
+	info, err := os.Stat(file)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %#o, want 0600", info.Mode().Perm())
+	}
+
+	if runtime.GOOS != "windows" {
+		dirInfo, err := os.Stat(f.dir)
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+
+		// A directory at 0600 would lock its owner out of its own files.
+		if dirInfo.Mode().Perm() != 0o700 {
+			t.Fatalf("directory mode = %#o, want 0700", dirInfo.Mode().Perm())
+		}
+	}
+
+	loaded, err := f.store.Get("T01ACME")
+	if err != nil || loaded.Token != account.Token {
+		t.Fatalf("Get = %+v, %v", loaded, err)
+	}
+}
+
+func TestSaveRefusesAnAccountSlackWouldNotAccept(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, nil)
+
+	broken := account("T01ACME", "Acme", "acme")
+	broken.Token = "not-a-token"
+
+	err := f.store.Save(broken)
+	if err == nil || !strings.Contains(err.Error(), "token") {
+		t.Fatalf("Save = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(f.dir, "T01ACME.json")); err == nil {
+		t.Fatal("a refused account was written anyway")
+	}
+}
+
+func TestSaveReplacesWhatWasThere(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, nil)
+
+	first := account("T01ACME", "Acme", "acme")
+
+	if err := f.store.Save(first); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	second := first
+	second.User = "other"
+
+	if err := f.store.Save(second); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := f.store.Get("T01ACME")
+	if err != nil || loaded.User != "other" {
+		t.Fatalf("the later save did not win: %+v, %v", loaded, err)
+	}
+
+	// The temporary file it writes through must not be left behind.
+	entries, err := os.ReadDir(f.dir)
+	if err != nil {
+		t.Fatalf("reading the directory: %v", err)
+	}
+
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Fatalf("a temporary file was left behind: %s", entry.Name())
+		}
+	}
+}
+
+func TestMarkValidatedRecordsWhenSlackAcceptedTheSession(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, nil)
+
+	if err := f.store.Save(account("T01ACME", "Acme", "acme")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	when := time.Date(2026, 11, 2, 10, 30, 0, 0, time.UTC)
+
+	if err := f.store.MarkValidated("T01ACME", when); err != nil {
+		t.Fatalf("MarkValidated: %v", err)
+	}
+
+	loaded, err := f.store.Get("T01ACME")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	// The accounts listing prints this verbatim, so the shape matters.
+	if loaded.LastOKAt != "2026-11-02T10:30:00.000Z" {
+		t.Fatalf("last_ok_at = %q", loaded.LastOKAt)
+	}
+}
+
+func TestRemoveForgetsAWorkspace(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, nil)
+
+	if err := f.store.Save(account("T01ACME", "Acme", "acme")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := f.store.Remove("T01ACME"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	accounts, err := f.store.List()
+	if err != nil || len(accounts) != 0 {
+		t.Fatalf("List = %v, %v", accounts, err)
+	}
+
+	// Removing one that is not there is not an error: the caller wanted it gone.
+	if err := f.store.Remove("T01ACME"); err != nil {
+		t.Fatalf("Remove of an absent account: %v", err)
 	}
 }

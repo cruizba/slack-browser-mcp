@@ -1,0 +1,152 @@
+package chrome
+
+import (
+	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+func TestFindChromeTakesCHROME_PATHFirst(t *testing.T) {
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "my-chrome")
+
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // the point is an executable candidate
+		t.Fatalf("writing the candidate: %v", err)
+	}
+
+	t.Setenv("CHROME_PATH", binary)
+
+	found, err := FindChrome()
+	if err != nil {
+		t.Fatalf("FindChrome: %v", err)
+	}
+
+	if found != binary {
+		t.Fatalf("FindChrome = %q, want the one CHROME_PATH names", found)
+	}
+}
+
+func TestFindChromeRefusesWhatCannotRun(t *testing.T) {
+	dir := t.TempDir()
+	plain := filepath.Join(dir, "not-executable")
+
+	if err := os.WriteFile(plain, []byte("x"), 0o600); err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+
+	// A file that exists but cannot run is not a browser, and saying so beats starting
+	// it and reading the error from exec.
+	t.Setenv("CHROME_PATH", plain)
+
+	if isExecutable(plain) {
+		t.Fatal("a 0600 file was treated as executable")
+	}
+
+	if _, err := FindChrome(); err == nil {
+		t.Skip("another candidate on this machine answered, which is correct")
+	}
+}
+
+func TestFindChromeSaysWhatToDoWhenNothingIsInstalled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("discovery looks at the machine")
+	}
+
+	// The message is the whole error: it has to name the variable that fixes it.
+	t.Setenv("CHROME_PATH", "/nonexistent/chrome")
+
+	if _, err := FindChrome(); err == nil {
+		t.Skip("a browser is installed here, so discovery cannot fail")
+	}
+}
+
+func TestArgsCarryTheProfileAndTheDebuggingPort(t *testing.T) {
+	t.Setenv("PATH", os.Getenv("PATH"))
+
+	args := strings.Join(Args("/tmp/profile", 9222, false), " ")
+
+	for _, wanted := range []string{
+		"--user-data-dir=/tmp/profile",
+		"--remote-debugging-port=9222",
+		"--no-first-run",
+		// Not cosmetic: an extension with the cookies permission can read `d`, which
+		// page JavaScript cannot.
+		"--disable-sync",
+		"--disable-extensions",
+	} {
+		if !strings.Contains(args, wanted) {
+			t.Fatalf("args do not carry %q: %s", wanted, args)
+		}
+	}
+
+	// The whole point of launching Chrome ourselves is that it does not report
+	// navigator.webdriver, which is what the automation flag would do.
+	if strings.Contains(args, "enable-automation") {
+		t.Fatalf("the automation flag is back: %s", args)
+	}
+
+	if headless := strings.Join(Args("/tmp/profile", 9222, true), " "); !strings.Contains(headless, "--headless=new") {
+		t.Fatalf("headless args: %s", headless)
+	}
+}
+
+func TestFreePortAnswersAPortNobodyHolds(t *testing.T) {
+	t.Parallel()
+
+	port, err := FreePort()
+	if err != nil {
+		t.Fatalf("FreePort: %v", err)
+	}
+
+	var config net.ListenConfig
+
+	listener, err := config.Listen(context.Background(), "tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		t.Fatalf("the port was not free: %v", err)
+	}
+
+	_ = listener.Close()
+}
+
+func TestFetchDevtoolsVersion(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+
+		_, _ = response.Write([]byte(`{"Browser":"Chrome/156.0","Protocol-Version":"1.3","webSocketDebuggerUrl":"ws://127.0.0.1:9222/devtools/browser/abc"}`))
+	}))
+	defer server.Close()
+
+	version, err := fetchDevtoolsVersion(server.URL)
+	if err != nil {
+		t.Fatalf("fetchDevtoolsVersion: %v", err)
+	}
+
+	if !strings.Contains(version.Browser, "Chrome/156") {
+		t.Fatalf("version = %+v", version)
+	}
+
+	if version.WebSocketDebuggerURL == "" {
+		t.Fatal("the endpoint a client attaches to was not read")
+	}
+}
+
+func TestFetchDevtoolsVersionRefusesAnError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	if _, err := fetchDevtoolsVersion(server.URL); err == nil {
+		t.Fatal("a 503 was read as a version")
+	}
+}
