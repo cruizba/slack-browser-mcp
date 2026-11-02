@@ -9,7 +9,17 @@ import { AuthError, SlackApiError } from '../errors.ts'
 import { redact } from '../log/redact.ts'
 import { parsePrintedReference } from './labels.ts'
 
-const API_BASE = 'https://slack.com/api/'
+const DEFAULT_API_BASE = 'https://slack.com/api/'
+
+/**
+ * Resolved per call, not at import: the differential harness points a whole
+ * process at a fake Slack, and tests retarget one client at a time.
+ */
+function apiBase(): string {
+  const override = process.env.SLACK_BROWSER_API_BASE?.trim()
+  if (!override) return DEFAULT_API_BASE
+  return override.endsWith('/') ? override : `${override}/`
+}
 
 const REAUTH_ERRORS = new Set([
   'invalid_auth',
@@ -261,7 +271,7 @@ export class SlackClient {
 
     for (let attempt = 0; ; attempt += 1) {
       await this.pace()
-      const response = await this.fetchImpl(`${API_BASE}${method}`, {
+      const response = await this.fetchImpl(`${apiBase()}${method}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',

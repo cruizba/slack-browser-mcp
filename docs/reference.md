@@ -556,7 +556,9 @@ Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),
 (milliseconds between requests), `SLACK_BROWSER_MCP_NO_AUTOSYNC` (`1` disables the
 background sync a read may start), `SLACK_BROWSER_MCP_AGENT` (the name this
 process is on the agent forum, otherwise the MCP client name is used),
-`CHROME_PATH` (Chrome binary), `XDG_CONFIG_HOME`, `XDG_DATA_HOME`.
+`CHROME_PATH` (Chrome binary), `XDG_CONFIG_HOME`, `XDG_DATA_HOME`,
+`SLACK_BROWSER_API_BASE` (Slack API base URL; the differential harness points
+it at a fake server, and nothing else should need it).
 
 ## Security
 

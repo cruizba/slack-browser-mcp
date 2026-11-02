@@ -95,6 +95,22 @@ describe('SlackClient', () => {
     assert.equal(headers['Content-Type'], 'application/x-www-form-urlencoded')
   })
 
+  it('sends every call to SLACK_BROWSER_API_BASE when it is set', async () => {
+    const previous = process.env.SLACK_BROWSER_API_BASE
+    process.env.SLACK_BROWSER_API_BASE = 'http://127.0.0.1:9999/api'
+    try {
+      const { fetchImpl, calls } = recordingFetch([
+        () => respond({ ok: true, team: 'Acme', team_id: 'T01', user: 'ana', user_id: 'U01' }),
+      ])
+      const client = new SlackClient(account, { fetch: fetchImpl })
+      await client.authTest()
+      assert.equal(calls[0]?.url, 'http://127.0.0.1:9999/api/auth.test')
+    } finally {
+      if (previous === undefined) delete process.env.SLACK_BROWSER_API_BASE
+      else process.env.SLACK_BROWSER_API_BASE = previous
+    }
+  })
+
   it('parses auth.test into the workspace identity', async () => {
     const { fetchImpl } = recordingFetch([
       () => respond({ ok: true, team: 'Acme', team_id: 'T01', user: 'ana', user_id: 'U01' }),
