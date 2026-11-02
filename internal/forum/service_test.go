@@ -3,6 +3,7 @@ package forum_test
 import (
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,13 +50,16 @@ func serviceFixture(t *testing.T) (forum.Context, *archive.Store) {
 }
 
 // nextTS hands out distinct Slack stamps: two messages with the same ts are one
-// message as far as the archive is concerned.
-var nextTS = 1793200000
+// message as far as the archive is concerned. It is atomic because the tests that use
+// it run in parallel.
+var nextTS atomic.Int64
+
+func init() {
+	nextTS.Store(1793200000)
+}
 
 func stamp() string {
-	nextTS++
-
-	return strconv.Itoa(nextTS) + ".000100"
+	return strconv.FormatInt(nextTS.Add(1), 10) + ".000100"
 }
 
 // seedPeer writes a register envelope into the archive, which is the only way a name

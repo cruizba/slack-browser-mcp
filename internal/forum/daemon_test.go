@@ -1,6 +1,7 @@
 package forum_test
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -66,7 +67,9 @@ func TestIdleSecondsIgnoresAnEmptyOverride(t *testing.T) {
 func TestListenAnswersAndCleansUp(t *testing.T) {
 	t.Parallel()
 
-	path := t.TempDir() + "/forum.sock"
+	// A Unix address is short: a macOS temporary directory is 90-odd bytes on its own,
+	// which is what made this fail on that runner and not on Linux.
+	path := shortSocket(t)
 
 	listener, err := forum.Listen(path)
 	if err != nil {
@@ -113,7 +116,12 @@ func TestSayNeedsAConnectedPeer(t *testing.T) {
 func TestLocalLinesAreSpooledPerPeer(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir := shortSocket(t) + ".dir"
+
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("creating the directory: %v", err)
+	}
+
 	path := dir + "/forum.sock"
 
 	listener, err := forum.Listen(path)
@@ -141,4 +149,18 @@ func TestLocalLinesAreSpooledPerPeer(t *testing.T) {
 	if len(forum.DrainSay(dir, "builder@laptop")) != 0 {
 		t.Fatal("a drain left the line behind")
 	}
+}
+
+// shortSocket is a socket path the kernel can hold, which t.TempDir() cannot promise.
+func shortSocket(t *testing.T) string {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "forum") //nolint:usetesting // t.TempDir() is a macOS path too long for a Unix address
+	if err != nil {
+		t.Fatalf("creating a temporary directory: %v", err)
+	}
+
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	return dir + "/forum.sock"
 }
