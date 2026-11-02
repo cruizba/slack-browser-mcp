@@ -108,6 +108,10 @@ var (
 	dateTime    = regexp.MustCompile(`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`)
 	slackStamp  = regexp.MustCompile(`\b\d{10}\.\d{6}\b`)
 	versionText = regexp.MustCompile(`\bv?\d+\.\d+\.\d+(?:-[0-9A-Za-z.\-]+)?\b`)
+	// The dirty marker is the state of the working tree at the moment of the run, not
+	// the behaviour of the command, and recording it would make the golden depend on
+	// whether somebody had an edit open.
+	dirtyMarker = regexp.MustCompile(`, local changes`)
 	nodeWarning = regexp.MustCompile("\\(node:\\d+\\) [^\\n]*\\n(?:\\(Use `node --trace-warnings \\.\\.\\.` to show where the warning was created\\)\\n)?")
 )
 
@@ -125,6 +129,7 @@ func (n Normalizer) Apply(text string) string {
 	text = dateTime.ReplaceAllString(text, "<date>")
 	text = slackStamp.ReplaceAllString(text, "<ts>")
 	text = versionText.ReplaceAllString(text, "<version>")
+	text = dirtyMarker.ReplaceAllString(text, "")
 
 	// Node's experimental warning is the runtime talking, not the command, and
 	// the Go build will never print it.
