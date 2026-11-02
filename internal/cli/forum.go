@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,8 @@ const (
 	subForumEdit       = "edit"
 	subForumWait       = "wait"
 	subForumPoll       = "poll"
+	subForumSay        = "say"
+	subForumForget     = "forget"
 
 	// jsonChannel is the key a JSON inbox line carries the channel under.
 	jsonChannel = "channel"
@@ -56,8 +59,6 @@ func commandForum(ctx Context, parsed ParsedArgs) int {
 	if err != nil {
 		return fail(ctx, err)
 	}
-
-	forum.SetVersion(buildinfo.Version)
 
 	announceUnlessItsOwn(ctx, forumContext, subcommand)
 
@@ -110,6 +111,12 @@ var forumMoves = map[string]func(Context, forum.Context, ParsedArgs, []string, b
 	subForumDaemon: func(ctx Context, fc forum.Context, _ ParsedArgs, rest []string, _ bool, _ string) int {
 		return commandDaemon(ctx, fc, rest)
 	},
+	subForumSay: func(ctx Context, fc forum.Context, _ ParsedArgs, rest []string, _ bool, _ string) int {
+		return forumSay(ctx, fc, rest)
+	},
+	subForumForget: func(ctx Context, fc forum.Context, _ ParsedArgs, rest []string, _ bool, _ string) int {
+		return forumForget(ctx, fc, rest)
+	},
 }
 
 // runForumMove is the second half of the switch: the moves that act on a task are
@@ -156,6 +163,7 @@ func openForum(ctx Context) (forum.Context, error) {
 		Decisions: forum.NewDecisionLog(ctx.Paths.ForumDir),
 		Env:       ctx.Env,
 		AuditLog:  ctx.Paths.AuditLog,
+		Version:   buildinfo.Version,
 	})
 }
 
@@ -285,6 +293,102 @@ func forumAdd(ctx Context, forumContext forum.Context, parsed ParsedArgs, rest [
 	}
 
 	return 0
+}
+
+// forumSay hands a line to an agent attached to this machine's daemon. Nothing records
+// it, so the daemon has to be there: a nudge delivered into nothing would read as work
+// somebody accepted.
+func forumSay(ctx Context, forumContext forum.Context, rest []string) int {
+	if len(rest) < 2 {
+		return fail(ctx, errors.New("agent-forum say needs <name@host> and something to say"))
+	}
+
+	identity, err := forumContext.RequireIdentity()
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	to := rest[0]
+	text := strings.TrimSpace(strings.Join(rest[1:], " "))
+	paths := forum.PathsFor(ctx.Paths.ForumDir, ctx.Env)
+
+	if err := forum.DeliverSay(ctx.Paths.ForumDir, paths.Socket, to, forum.LabelOf(identity.Name, identity.Host), text, 2*time.Second); err != nil {
+		return fail(ctx, err)
+	}
+
+	emit(ctx.Stdout, "delivered to %s on this machine (nothing was posted to Slack)\n", to)
+
+	return 0
+}
+
+// forumForget retires a label locally, which is the only way to stop an inbox filling
+// with work from an agent that is gone for good. It posts nothing: the roster follows
+// the channel, and rewriting Slack history is not this tool's business.
+func forumForget(ctx Context, forumContext forum.Context, rest []string) int {
+	if len(rest) == 0 {
+		return fail(ctx, errors.New("agent-forum forget needs a name or a name@host"))
+	}
+
+	label, err := resolveForgottenLabel(forumContext, rest[0])
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	added, err := forumContext.Store.Ignore(label)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	if !added {
+		emit(ctx.Stdout, "%s was already retired here\n", label)
+
+		return 0
+	}
+
+	emit(ctx.Stdout, "retired %s here; its tasks stop appearing in the inbox and nothing was posted to Slack\n", label)
+
+	return 0
+}
+
+// resolveForgottenLabel turns what somebody typed into the one label to retire. A bare
+// name answers for a peer that is still in a roster, and is refused when it names more
+// than one machine; a label nobody has registered is kept as typed, because the entry
+// worth retiring is often the one whose register already aged out.
+func resolveForgottenLabel(forumContext forum.Context, typed string) (string, error) {
+	value := strings.TrimPrefix(strings.TrimSpace(typed), "@")
+	if value == "" {
+		return "", errors.New("agent-forum forget needs a name or a name@host")
+	}
+
+	views := forum.LoadViews(forumContext, forum.ViewFilter{})
+	candidates := make(map[string]struct{})
+
+	for i := range views {
+		for _, peer := range views[i].Roster {
+			if peer.From == value || peer.Name == value {
+				candidates[peer.From] = struct{}{}
+			}
+		}
+	}
+
+	switch len(candidates) {
+	case 0:
+		return value, nil
+	case 1:
+		for only := range candidates {
+			return only, nil
+		}
+	}
+
+	labels := make([]string, 0, len(candidates))
+	for label := range candidates {
+		labels = append(labels, label)
+	}
+
+	sort.Strings(labels)
+
+	return "", errors.New("\"" + value + "\" is more than one machine (" + strings.Join(labels, ", ") +
+		"); forget one of them by name@host")
 }
 
 func forumRemove(ctx Context, forumContext forum.Context, rest []string) int {

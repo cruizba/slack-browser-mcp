@@ -981,17 +981,8 @@ func AnnounceEnvelope(context Context, identity Identity) Envelope {
 		From: LabelOf(identity.Name, identity.Host),
 		Sent: context.Now.UTC().Format("2006-01-02T15:04:05.000Z"),
 		Name: identity.Name, Host: identity.Host,
-		Capabilities: identity.Capabilities, Version: buildVersion,
+		Capabilities: identity.Capabilities, Version: context.Version,
 	}
-}
-
-// buildVersion is stamped by the caller, so the envelope names the build that posted
-// it without this package importing the binary's build info.
-var buildVersion = ""
-
-// SetVersion tells the forum which build it is running as.
-func SetVersion(version string) {
-	buildVersion = version
 }
 
 // AnnounceResult is how many channels heard something, and how many stayed quiet.

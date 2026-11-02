@@ -26,6 +26,9 @@ type Context struct {
 	// AuditLog is where every posted envelope is recorded, which the caller knows
 	// because it resolves the paths.
 	AuditLog string
+	// Version names the build in the envelopes this process posts, so a peer can see
+	// what wrote a message without this package importing the binary's build info.
+	Version string
 }
 
 // OpenOptions is what opening the forum can be pointed at, which is how a test
@@ -38,6 +41,9 @@ type OpenOptions struct {
 	Decisions  *DecisionLog
 	Env        platform.Env
 	AuditLog   string
+	// Version names the build in the envelopes this process posts, so a peer can see
+	// what wrote a message without this package importing the binary's build info.
+	Version string
 }
 
 // OpenForum assembles the context. Reading the identity is part of it because "am I
@@ -76,6 +82,7 @@ func OpenForum(options OpenOptions) (Context, error) {
 		Now:         now,
 		Env:         options.Env,
 		AuditLog:    options.AuditLog,
+		Version:     options.Version,
 	}, nil
 }
 

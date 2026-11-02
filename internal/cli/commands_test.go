@@ -345,16 +345,119 @@ func TestUnknownForumMoveListsTheMoves(t *testing.T) {
 	}
 }
 
-func TestAForumMoveThatIsListedButNotPorted(t *testing.T) {
+func TestForumSayWithoutAnIdentity(t *testing.T) {
 	t.Parallel()
 
 	m := newMachine(t)
 
-	// `say` and `forget` are in the help table because the surface advertises them;
-	// until they are wired, the command says so instead of pretending.
+	// Nothing says who is speaking, and a local line carries that name, so the answer
+	// is the one command that fixes it.
 	got := m.run("agent-forum", "say", "builder@laptop", "hello")
 
-	if got.code != 1 || !strings.Contains(got.stderr, "not ported yet") {
+	if got.code != 1 || !strings.Contains(got.stderr, "register <name>") {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestForumSayWithNoDaemon(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+	m.run("agent-forum", "register", "ana")
+
+	got := m.run("agent-forum", "say", "builder@laptop", "stop, the branch moved")
+
+	// Nothing records a local line, so a nudge with nobody to hear it is refused
+	// instead of being dropped: the answer is to post to Slack.
+	if got.code != 1 || !strings.Contains(got.stderr, "no forum daemon is running") {
+		t.Fatalf("got %+v", got)
+	}
+
+	if !strings.Contains(got.stderr, "post to Slack instead") {
+		t.Fatalf("the refusal does not say what to do: %q", got.stderr)
+	}
+}
+
+func TestForumSayNeedsSomethingToSay(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+	m.run("agent-forum", "register", "ana")
+
+	got := m.run("agent-forum", "say", "builder@laptop")
+
+	if got.code != 1 || !strings.Contains(got.stderr, "needs <name@host> and something to say") {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestForumForgetRetiresALabelHere(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+	m.run("agent-forum", "register", "ana")
+
+	got := m.run("agent-forum", "forget", "alice@old")
+
+	if got.code != 0 {
+		t.Fatalf("forget failed: %+v", got)
+	}
+
+	// The point of the command is that Slack is untouched: only this machine changed.
+	if !strings.Contains(got.stdout, "retired alice@old here") ||
+		!strings.Contains(got.stdout, "nothing was posted to Slack") {
+		t.Fatalf("stdout = %q", got.stdout)
+	}
+
+	file, err := os.ReadFile(m.paths.ForumFile)
+	if err != nil {
+		t.Fatalf("reading the forum file: %v", err)
+	}
+
+	var stored struct {
+		Ignored []string `json:"ignored"`
+	}
+
+	if err := json.Unmarshal(file, &stored); err != nil {
+		t.Fatalf("the forum file is not JSON: %v", err)
+	}
+
+	if len(stored.Ignored) != 1 || stored.Ignored[0] != "alice@old" {
+		t.Fatalf("ignored = %v", stored.Ignored)
+	}
+
+	again := m.run("agent-forum", "forget", "alice@old")
+
+	if again.code != 0 || !strings.Contains(again.stdout, "already retired") {
+		t.Fatalf("forgetting twice = %+v", again)
+	}
+}
+
+func TestForumForgetKeepsALabelNobodyRegistered(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+	m.run("agent-forum", "register", "ana")
+
+	got := m.run("agent-forum", "forget", "@alice@old")
+
+	// No roster entry to resolve against, so the label is kept as typed — the entry
+	// worth retiring is usually the one whose register already aged out — and the
+	// leading @ a person types is dropped.
+	if got.code != 0 || !strings.Contains(got.stdout, "retired alice@old here") {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestForumForgetRefusesANameThatIsTwoMachines(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+	m.run("agent-forum", "register", "ana")
+
+	got := m.run("agent-forum", "forget", "@")
+
+	if got.code != 1 || !strings.Contains(got.stderr, "needs a name or a name@host") {
 		t.Fatalf("got %+v", got)
 	}
 }

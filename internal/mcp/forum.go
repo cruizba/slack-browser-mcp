@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cruizba/slack-browser-mcp/internal/archive"
+	"github.com/cruizba/slack-browser-mcp/internal/buildinfo"
 	"github.com/cruizba/slack-browser-mcp/internal/config"
 	"github.com/cruizba/slack-browser-mcp/internal/forum"
 )
@@ -99,6 +100,7 @@ func openForumContext(deps Deps) (forum.Context, error) {
 		Decisions: forum.NewDecisionLog(deps.Paths.ForumDir),
 		Env:       deps.Env,
 		AuditLog:  deps.Paths.AuditLog,
+		Version:   buildinfo.Version,
 	})
 }
 
