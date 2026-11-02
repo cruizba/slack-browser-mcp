@@ -20,7 +20,7 @@ import (
 	"sync"
 )
 
-//go:embed tools.json
+//go:embed tools.json forum_tools.json
 var toolFiles embed.FS
 
 // ProtocolVersion is what this server speaks, and what it echoes back when a

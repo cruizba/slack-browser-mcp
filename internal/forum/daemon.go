@@ -25,12 +25,6 @@ type DaemonStatus struct {
 	Peers   []string
 }
 
-// LocalMessage is one `forum say` line waiting for the peer it names.
-type LocalMessage struct {
-	From string
-	Text string
-}
-
 // Daemon is the process that owns the archive and serves every local agent.
 //
 // It starts when a client needs it and leaves after a window with nobody connected,

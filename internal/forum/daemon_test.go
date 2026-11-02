@@ -109,3 +109,36 @@ func TestSayNeedsAConnectedPeer(t *testing.T) {
 		t.Fatal("a drain left the message behind")
 	}
 }
+
+func TestLocalLinesAreSpooledPerPeer(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := dir + "/forum.sock"
+
+	listener, err := forum.Listen(path)
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+
+	defer func() { _ = listener.Close() }()
+
+	// Without a daemon a line is refused: nothing in Slack records what was said.
+	if err := forum.DeliverSay(t.TempDir(), dir+"/absent.sock", "builder@laptop", "ana@laptop", "hi", 200*time.Millisecond); err == nil {
+		t.Fatal("a line was accepted with no daemon running")
+	}
+
+	if err := forum.DeliverSay(dir, path, "builder@laptop", "ana@laptop", "hi", time.Second); err != nil {
+		t.Fatalf("DeliverSay: %v", err)
+	}
+
+	lines := forum.DrainSay(dir, "builder@laptop")
+	if len(lines) != 1 || lines[0].Text != "hi" || lines[0].From != "ana@laptop" {
+		t.Fatalf("DrainSay = %+v", lines)
+	}
+
+	// A drain forgets what it answered.
+	if len(forum.DrainSay(dir, "builder@laptop")) != 0 {
+		t.Fatal("a drain left the line behind")
+	}
+}
