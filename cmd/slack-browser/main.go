@@ -16,6 +16,7 @@ func main() {
 	os.Exit(cli.Run(os.Args[1:], cli.Context{
 		Env:    env,
 		Paths:  config.Resolve(env),
+		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}))

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/cruizba/slack-browser-mcp/internal/buildinfo"
 	"github.com/cruizba/slack-browser-mcp/internal/config"
 	"github.com/cruizba/slack-browser-mcp/internal/failure"
+	"github.com/cruizba/slack-browser-mcp/internal/mcp"
 	"github.com/cruizba/slack-browser-mcp/internal/platform"
 	"github.com/cruizba/slack-browser-mcp/internal/slack"
 )
@@ -41,6 +43,7 @@ const (
 type Context struct {
 	Env    platform.Env
 	Paths  config.Paths
+	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 }
@@ -108,6 +111,8 @@ func dispatch(ctx Context, name string, parsed ParsedArgs) int {
 		return commandThread(ctx, parsed)
 	case cmdArchive:
 		return commandArchive(ctx, parsed)
+	case "serve":
+		return commandServe(ctx)
 	default:
 		emit(ctx.Stderr, "%s %s is not ported yet.\n", program, name)
 
@@ -811,4 +816,34 @@ func workspaceLabels(ctx Context) map[string]string {
 	}
 
 	return labels
+}
+
+// commandServe runs the MCP server on stdio, which is how every agent reaches
+// this tool. A tool this build has not ported yet says so in its result instead
+// of pretending the call worked.
+func commandServe(ctx Context) int {
+	instructions, tools, err := mcp.Catalog()
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	handlers := make(map[string]mcp.Handler, len(tools))
+	for _, tool := range tools {
+		handlers[tool.Name] = mcp.UnknownTool(tool.Name)
+	}
+
+	server := &mcp.Server{
+		Version:      buildinfo.Version,
+		Instructions: instructions,
+		Tools:        tools,
+		Handlers:     handlers,
+		In:           ctx.Stdin,
+		Out:          ctx.Stdout,
+	}
+
+	if err := server.Serve(context.Background()); err != nil {
+		return fail(ctx, err)
+	}
+
+	return 0
 }
