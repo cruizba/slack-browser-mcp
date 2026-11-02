@@ -1,6 +1,7 @@
 package slack_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,6 +118,17 @@ func TestPlanAttachmentsRefusesWhatSlackWouldRefuse(t *testing.T) {
 	if _, err := slack.PlanAttachments([]string{t.TempDir()}); err == nil ||
 		!strings.Contains(err.Error(), "not a regular file") {
 		t.Fatalf("a directory was planned: %v", err)
+	}
+
+	// Exactly the limit is accepted: a boundary that refuses ten because the rule said
+	// "fewer than" would break a legitimate message.
+	atLimit := make([]string, slack.MaxAttachments)
+	for index := range atLimit {
+		atLimit[index] = writeFile(t, fmt.Sprintf("f%d.md", index), "x")
+	}
+
+	if plans, err := slack.PlanAttachments(atLimit); err != nil || len(plans) != slack.MaxAttachments {
+		t.Fatalf("PlanAttachments at the limit = %d plans, %v", len(plans), err)
 	}
 
 	tooMany := make([]string, slack.MaxAttachments+1)

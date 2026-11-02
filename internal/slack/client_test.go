@@ -476,3 +476,207 @@ func TestPostMessageSendsBlocks(t *testing.T) {
 		t.Fatalf("blocks = %q", sent.Get("blocks"))
 	}
 }
+
+// The methods below are the ones a write or a paging read goes through, and they were
+// the least exercised part of the client: what they send matters as much as what they
+// return, because Slack rejects a call with a missing ts as happily as it accepts it.
+
+func TestDeleteMessageSendsChannelAndTS(t *testing.T) {
+	t.Parallel()
+
+	fake := newFake(t)
+
+	// Queued before the first call: the fake reuses its last answer, so an answer added
+	// later would not be the one the second call consumes.
+	fake.reply("chat.delete", `{"ok":true,"channel":"C01GENERAL","ts":"1793200000.000100"}`)
+	fake.reply("chat.delete", `{"ok":false,"error":"cant_delete_message"}`)
+
+	if err := fake.client(t, 0).DeleteMessage("C01GENERAL", "1793200000.000100"); err != nil {
+		t.Fatalf("DeleteMessage: %v", err)
+	}
+
+	calls := fake.callsTo("chat.delete")
+	if len(calls) != 1 {
+		t.Fatalf("calls = %d", len(calls))
+	}
+
+	if calls[0].form.Get("channel") != "C01GENERAL" || calls[0].form.Get("ts") != "1793200000.000100" {
+		t.Fatalf("form = %v", calls[0].form)
+	}
+
+	// A refusal comes back as the API error, not as a silent success: a delete that
+	// says it worked when it did not is the worst answer this method can give.
+	err := fake.client(t, 0).DeleteMessage("C01GENERAL", "1793200000.000100")
+	if err == nil || !strings.Contains(err.Error(), "cant_delete_message") {
+		t.Fatalf("DeleteMessage = %v", err)
+	}
+}
+
+func TestRepliesPagePagesAndRepliesFollows(t *testing.T) {
+	t.Parallel()
+
+	fake := newFake(t)
+
+	fake.reply("conversations.replies", `{"ok":true,"messages":[
+		{"ts":"1793200000.000100","text":"parent","thread_ts":"1793200000.000100","reply_count":2},
+		{"ts":"1793200100.000100","text":"first","thread_ts":"1793200000.000100"}
+	],"response_metadata":{"next_cursor":"next-page"}}`)
+	fake.reply("conversations.replies", `{"ok":true,"messages":[
+		{"ts":"1793200000.000100","text":"parent","thread_ts":"1793200000.000100"},
+		{"ts":"1793200100.000100","text":"first","thread_ts":"1793200000.000100"},
+		{"ts":"1793200200.000100","text":"second","thread_ts":"1793200000.000100"}
+	]}`)
+
+	page, err := fake.client(t, 0).RepliesPage("C01GENERAL", "1793200000.000100", 2, "")
+	if err != nil {
+		t.Fatalf("RepliesPage: %v", err)
+	}
+
+	if len(page.Messages) != 2 || page.NextCursor != "next-page" {
+		t.Fatalf("page = %+v", page)
+	}
+
+	calls := fake.callsTo("conversations.replies")
+	if calls[0].form.Get("ts") != "1793200000.000100" || calls[0].form.Get("limit") != "2" {
+		t.Fatalf("form = %v", calls[0].form)
+	}
+
+	// A first page carries no cursor: sending an empty one is how a thread comes back
+	// empty from Slack, which reads as "this thread has no replies".
+	if _, present := calls[0].form["cursor"]; present {
+		t.Fatalf("the first page sent a cursor: %v", calls[0].form)
+	}
+
+	messages, err := fake.client(t, 0).Replies("C01GENERAL", "1793200000.000100")
+	if err != nil {
+		t.Fatalf("Replies: %v", err)
+	}
+
+	if len(messages) != 3 || messages[2].Text != "second" {
+		t.Fatalf("messages = %+v", messages)
+	}
+}
+
+func TestSearchMessages(t *testing.T) {
+	t.Parallel()
+
+	fake := newFake(t)
+	fake.reply("search.messages", `{"ok":true,"messages":{"total":1,"matches":[
+		{"ts":"1793200000.000100","text":"the deploy","channel":{"id":"C01GENERAL","name":"general"},"user":"U01ANA","username":"ana","score":0.5}
+	]}}`)
+	fake.reply("search.messages", `{"ok":true,"messages":{"total":0,"matches":[]}}`)
+
+	page, err := fake.client(t, 0).SearchMessages("deploy", 0, 1)
+	if err != nil {
+		t.Fatalf("SearchMessages: %v", err)
+	}
+
+	if page.Total != 1 || len(page.Matches) != 1 || page.Matches[0].Text != "the deploy" {
+		t.Fatalf("page = %+v", page)
+	}
+
+	calls := fake.callsTo("search.messages")
+
+	// A zero count means "the default", not "zero results": sending 0 asks Slack for
+	// nothing and comes back empty.
+	if calls[0].form.Get("count") != "20" {
+		t.Fatalf("count = %q, want the default", calls[0].form.Get("count"))
+	}
+
+	if _, present := calls[0].form["page"]; present {
+		t.Fatalf("the first page sent a page number: %v", calls[0].form)
+	}
+
+	if _, err := fake.client(t, 0).SearchMessages("deploy", 5, 3); err != nil {
+		t.Fatalf("SearchMessages: %v", err)
+	}
+
+	later := fake.callsTo("search.messages")[1]
+	if later.form.Get("count") != "5" || later.form.Get("page") != "3" {
+		t.Fatalf("form = %v", later.form)
+	}
+}
+
+func TestListDMChannelsKeepsOnlyDirectMessages(t *testing.T) {
+	t.Parallel()
+
+	fake := newFake(t)
+	fake.reply("users.conversations", `{"ok":true,"channels":[
+		{"id":"C01GENERAL","name":"general","is_channel":true},
+		{"id":"D01ANA","is_im":true,"user":"U01ANA"},
+		{"id":"G01GROUP","is_mpim":true,"name":"mpdm-ana--bob-1"}
+	]}`)
+
+	direct, err := fake.client(t, 0).ListDMChannels()
+	if err != nil {
+		t.Fatalf("ListDMChannels: %v", err)
+	}
+
+	// A DM has no name, and listing a channel here would make `dm:` addressing offer a
+	// channel that is not one.
+	if len(direct) != 2 || direct[0].ID != "D01ANA" || direct[1].ID != "G01GROUP" {
+		t.Fatalf("direct = %+v", direct)
+	}
+}
+
+func TestListAllChannelsFollowsTheCursor(t *testing.T) {
+	t.Parallel()
+
+	fake := newFake(t)
+
+	fake.reply("conversations.list", `{"ok":true,"channels":[{"id":"C01GENERAL","name":"general"}],
+		"response_metadata":{"next_cursor":"page-2"}}`)
+	fake.reply("conversations.list", `{"ok":true,"channels":[{"id":"C02LEADS","name":"leads"}],
+		"response_metadata":{"next_cursor":""}}`)
+
+	channels, err := fake.client(t, 0).ListAllChannels()
+	if err != nil {
+		t.Fatalf("ListAllChannels: %v", err)
+	}
+
+	if len(channels) != 2 || channels[1].ID != "C02LEADS" {
+		t.Fatalf("channels = %+v", channels)
+	}
+
+	calls := fake.callsTo("conversations.list")
+	if len(calls) != 2 {
+		t.Fatalf("calls = %d, want the cursor followed once", len(calls))
+	}
+
+	if _, present := calls[0].form["cursor"]; present {
+		t.Fatalf("the first request sent a cursor: %v", calls[0].form)
+	}
+
+	if calls[1].form.Get("cursor") != "page-2" {
+		t.Fatalf("the second request sent %q", calls[1].form.Get("cursor"))
+	}
+
+	// Public and private channels, and archived ones left out: an archived channel in
+	// the list is one a person cannot read.
+	if calls[0].form.Get("types") != "public_channel,private_channel" || calls[0].form.Get("exclude_archived") != "true" {
+		t.Fatalf("form = %v", calls[0].form)
+	}
+}
+
+func TestListUsergroups(t *testing.T) {
+	t.Parallel()
+
+	fake := newFake(t)
+	fake.reply("usergroups.list", `{"ok":true,"usergroups":[{"id":"S01ONCALL","handle":"oncall","name":"On Call"}]}`)
+	fake.reply("usergroups.list", `{"ok":true,"usergroups":[]}`)
+
+	groups, err := fake.client(t, 0).ListUsergroups()
+	if err != nil {
+		t.Fatalf("ListUsergroups: %v", err)
+	}
+
+	if len(groups) != 1 || groups[0].Handle != "oncall" {
+		t.Fatalf("groups = %+v", groups)
+	}
+
+	// An empty answer is normal, not an error: most workspaces have no mention groups.
+	empty, err := fake.client(t, 0).ListUsergroups()
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("ListUsergroups on an empty workspace = %+v, %v", empty, err)
+	}
+}

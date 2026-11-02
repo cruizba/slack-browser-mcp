@@ -194,7 +194,7 @@ jobs:
 
           total=$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9]+\.[0-9]+')
           # Raise this as coverage goes up: it is a ratchet, not a target.
-          floor=54
+          floor=56
 
           if awk -v t="$total" -v f="$floor" 'BEGIN { exit !(t >= f) }'; then
             echo "coverage: ${total}% (floor ${floor}%)"

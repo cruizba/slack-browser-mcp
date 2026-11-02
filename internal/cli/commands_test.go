@@ -46,19 +46,31 @@ func newMachine(t *testing.T) *machine {
 		t.Fatalf("loading fixtures: %v", err)
 	}
 
-	// The fixtures are reads; the writes a test needs answer here.
+	// The pre-signed upload is an absolute URL on this same server, because the client
+	// posts the bytes there without credentials: the test checks that path is taken.
+	var uploadURL string
+
+	// The fixtures are reads; the writes a test needs answer here, and so does the
+	// three-step upload Slack makes a client walk.
 	fake := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if strings.HasSuffix(request.URL.Path, "/chat.postMessage") {
-			response.Header().Set("Content-Type", "application/json")
+		response.Header().Set("Content-Type", "application/json")
 
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/chat.postMessage"):
 			_, _ = response.Write([]byte(`{"ok":true,"ts":"1793200000.000100","channel":"C000000002","message":{"text":"hi"}}`))
-
-			return
+		case strings.HasSuffix(request.URL.Path, "/files.getUploadURLExternal"):
+			_, _ = response.Write([]byte(`{"ok":true,"upload_url":"` + uploadURL + `","file_id":"F01REPORT"}`))
+		case request.URL.Path == "/upload":
+			response.WriteHeader(http.StatusOK)
+		case strings.HasSuffix(request.URL.Path, "/files.completeUploadExternal"):
+			_, _ = response.Write([]byte(`{"ok":true,"files":[{"id":"F01REPORT","shares":{"public":{"C01GENERAL":[{"ts":"1793300000.000100"}]}}}]}`))
+		default:
+			server.Handler().ServeHTTP(response, request)
 		}
-
-		server.Handler().ServeHTTP(response, request)
 	}))
 	t.Cleanup(fake.Close)
+
+	uploadURL = fake.URL + "/upload"
 
 	base := fake.URL + "/api/"
 
@@ -561,5 +573,56 @@ func TestSendDryRunWithAttachments(t *testing.T) {
 	missing := m.run("send", "general", "see the report", "--attach", filepath.Join(t.TempDir(), "gone.md"))
 	if missing.code != 1 || !strings.Contains(missing.stderr, "No file at") {
 		t.Fatalf("a missing attachment = %+v", missing)
+	}
+}
+
+func TestSendWithAttachments(t *testing.T) {
+	t.Parallel()
+
+	m := newMachine(t)
+
+	report := filepath.Join(t.TempDir(), "report.md")
+	if err := os.WriteFile(report, []byte("# the report"), 0o600); err != nil {
+		t.Fatalf("writing the attachment: %v", err)
+	}
+
+	// The bytes are only read once the send is confirmed, which is what makes the dry
+	// run cheap: a 90 MB log is not loaded to print its name.
+	dry := m.run("send", "general", "see attached", "--attach", report)
+	if dry.code != 0 || !strings.Contains(dry.stdout, "attached: report.md (text/markdown, 12 B)") {
+		t.Fatalf("dry run = %+v", dry)
+	}
+
+	if !strings.Contains(dry.stderr, "nothing sent; add --send") {
+		t.Fatalf("the dry run does not say it sent nothing: %q", dry.stderr)
+	}
+
+	got := m.run("send", "general", "see attached", "--attach", report, "--send")
+	if got.code != 0 {
+		t.Fatalf("send failed: %+v", got)
+	}
+
+	// The answer names the files, the ts Slack reported and where the audit went: those
+	// three are what a caller needs to find the message afterwards.
+	if !strings.Contains(got.stdout, "with 1 attachment(s)") || !strings.Contains(got.stdout, "ts 1793300000.000100") {
+		t.Fatalf("stdout = %q", got.stdout)
+	}
+
+	if !strings.Contains(got.stdout, "F01REPORT") {
+		t.Fatalf("the file id is missing: %q", got.stdout)
+	}
+
+	// The audit line records the files by name and size, never their bytes.
+	audit, err := os.ReadFile(m.paths.AuditLog)
+	if err != nil {
+		t.Fatalf("reading the audit log: %v", err)
+	}
+
+	if !strings.Contains(string(audit), "report.md") || strings.Contains(string(audit), "# the report") {
+		t.Fatalf("audit = %s", audit)
+	}
+
+	if strings.Count(strings.TrimSpace(string(audit)), "\n") != 0 {
+		t.Fatalf("the audit holds more than the one send: %s", audit)
 	}
 }
