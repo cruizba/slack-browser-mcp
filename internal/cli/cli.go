@@ -111,6 +111,8 @@ func dispatch(ctx Context, name string, parsed ParsedArgs) int {
 		return commandThread(ctx, parsed)
 	case cmdArchive:
 		return commandArchive(ctx, parsed)
+	case "sync":
+		return commandSync(ctx, parsed)
 	case "serve":
 		return commandServe(ctx)
 	default:
@@ -843,6 +845,188 @@ func commandServe(ctx Context) int {
 
 	if err := server.Serve(context.Background()); err != nil {
 		return fail(ctx, err)
+	}
+
+	return 0
+}
+
+func commandSync(ctx Context, parsed ParsedArgs) int {
+	store := newStore(ctx)
+
+	accounts, code := syncAccounts(ctx, store, parsed)
+	if code >= 0 {
+		return code
+	}
+
+	quiet := parsed.Bool("quiet")
+
+	// Before any workspace touches the archive: an old layout must be upgraded first,
+	// and this also holds the sync lock for the rewrite.
+	log := func(string) {}
+
+	if !quiet {
+		log = func(line string) { emit(ctx.Stderr, "%s\n", line) }
+	}
+
+	schema, err := archive.EnsureSchema(ctx.Paths.ArchiveDir, log)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	switch {
+	case schema.Locked:
+		emit(ctx.Stderr, "another sync is running; archive schema left untouched\n")
+	case len(schema.Applied) > 0:
+		emit(ctx.Stderr, "archive schema migrated %d -> %d\n", schema.From, schema.To)
+	}
+
+	options, ok := syncOptions(parsed)
+	if !ok {
+		return 1
+	}
+
+	return syncEach(ctx, accounts, options, quiet)
+}
+
+// syncAccounts is the stored sessions the run covers, or an exit code when there is
+// nothing to run: no session is not an error, because the boot sync runs before
+// anybody signs in.
+func syncAccounts(ctx Context, store *auth.Store, parsed ParsedArgs) ([]auth.Account, int) {
+	reference, hasReference := parsed.String("workspace")
+
+	if hasReference {
+		account, err := store.Resolve(reference)
+		if err != nil {
+			return nil, fail(ctx, err)
+		}
+
+		return []auth.Account{account}, -1
+	}
+
+	summaries, err := store.List()
+	if err != nil {
+		return nil, fail(ctx, err)
+	}
+
+	accounts := make([]auth.Account, 0, len(summaries))
+
+	for _, summary := range summaries {
+		account, err := store.Get(summary.TeamID)
+		if err != nil {
+			return nil, fail(ctx, err)
+		}
+
+		accounts = append(accounts, account)
+	}
+
+	if len(accounts) == 0 {
+		emit(ctx.Stderr, "No Slack session stored yet. Run `slack-browser login`.\n")
+
+		return nil, 0
+	}
+
+	return accounts, -1
+}
+
+// syncOptions reads the flags, answering the deadline and the windows. The second
+// answer is false when a flag was refused, and the command has already said why.
+func syncOptions(parsed ParsedArgs) (archive.SyncOptions, bool) {
+	deadlineSeconds, err := numberFlag(parsed, "deadline", 600)
+	if err != nil {
+		return archive.SyncOptions{}, false
+	}
+
+	options := archive.SyncOptions{
+		Full:     parsed.Bool("full"),
+		Deadline: time.Until(time.Now().Add(time.Duration(deadlineSeconds) * time.Second)),
+	}
+
+	if _, given := parsed.String("since"); given {
+		days, err := numberFlag(parsed, "since", archive.DefaultBackfillDays)
+		if err != nil {
+			return archive.SyncOptions{}, false
+		}
+
+		options.BackfillDays = days
+	}
+
+	if _, given := parsed.String("reconcile-days"); given {
+		days, err := numberFlag(parsed, "reconcile-days", 7)
+		if err != nil {
+			return archive.SyncOptions{}, false
+		}
+
+		options.ReconcileDays = days
+	}
+
+	return options, true
+}
+
+func syncEach(ctx Context, accounts []auth.Account, options archive.SyncOptions, quiet bool) int {
+	// One budget for the whole run: the timer asks for a deadline, not one per
+	// workspace.
+	deadline := time.Now().Add(options.Deadline)
+
+	failures, synced := 0, 0
+
+	for index, account := range accounts {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			emit(ctx.Stderr, "deadline reached; %d workspace(s) left for the next run\n", len(accounts)-index)
+
+			break
+		}
+
+		prefix := ""
+
+		if len(accounts) > 1 {
+			prefix = account.TeamName + ": "
+
+			if !quiet {
+				emit(ctx.Stderr, "— %s (%s)\n", account.TeamName, account.TeamID)
+			}
+		}
+
+		accountOptions := options
+		accountOptions.Deadline = remaining
+
+		if !quiet {
+			accountOptions.OnProgress = func(line string) { emit(ctx.Stderr, "%s\n", line) }
+		}
+
+		report, err := archive.SyncAccount(account.TeamID, newClient(account),
+			archive.NewStore(ctx.Paths.ArchiveDir), archive.NewIndex(ctx.Paths.ArchiveIndex), accountOptions)
+		if err != nil {
+			failures++
+
+			emit(ctx.Stderr, "FAIL %s (%s): %s\n", account.TeamName, account.TeamID, err.Error())
+
+			continue
+		}
+
+		if report.Skipped == "locked" {
+			emit(ctx.Stdout, "another sync is already running; nothing to do\n")
+
+			return 0
+		}
+
+		synced++
+
+		emit(ctx.Stdout, "%ssynced %d/%d channels in %ds: +%d messages, +%d replies, %d deletions, %d threads\n",
+			prefix, report.ChannelsSynced, report.ChannelsSeen, int(report.Duration.Seconds()),
+			report.MessagesAdded, report.RepliesAdded, report.DeletionsMarked, report.ThreadsFetched)
+
+		if report.Truncated {
+			emit(ctx.Stderr, "%sdeadline reached; the remaining channels continue on the next run\n", prefix)
+		}
+
+		for _, problem := range report.Errors {
+			emit(ctx.Stderr, "%s%s: %s\n", prefix, problem.Channel, problem.Error)
+		}
+	}
+
+	if synced == 0 && failures > 0 {
+		return 1
 	}
 
 	return 0

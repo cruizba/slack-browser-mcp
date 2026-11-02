@@ -39,8 +39,7 @@ func ToRecord(channel slack.Channel, message slack.Message, now time.Time, sourc
 		record.EditedTS = message.Edited.TS
 	}
 
-	replies := message.ReplyCount
-	record.ReplyCount = &replies
+	record.ReplyCount = message.ReplyCount
 
 	for _, file := range message.Files {
 		archived := ArchivedFile{
@@ -139,9 +138,7 @@ func FromRecord(record ArchivedMessage) slack.Message {
 		message.Edited = &slack.Edit{TS: record.EditedTS}
 	}
 
-	if record.ReplyCount != nil {
-		message.ReplyCount = *record.ReplyCount
-	}
+	message.ReplyCount = record.ReplyCount
 
 	for _, file := range record.Files {
 		message.Files = append(message.Files, slack.File{

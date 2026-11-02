@@ -133,8 +133,8 @@ func RenderMessages(messages []Message, options RenderOptions) string {
 		body := indentContinuation(messageBody(message, options.Scope), "    ")
 
 		thread := ""
-		if message.ReplyCount > 0 && message.ThreadTS == "" {
-			thread = fmt.Sprintf("  (%d replies, thread_ts %s)", message.ReplyCount, message.TS)
+		if message.ReplyCount != nil && *message.ReplyCount > 0 && message.ThreadTS == "" {
+			thread = fmt.Sprintf("  (%d replies, thread_ts %s)", *message.ReplyCount, message.TS)
 		}
 
 		lines = append(lines, "["+message.TS+"] "+FormatTS(message.TS)+" "+name+": "+body+thread)

@@ -124,14 +124,16 @@ type Edit struct {
 
 // Message is one message, as history, a thread or a search returns it.
 type Message struct {
-	TS          string `json:"ts"`
-	User        string `json:"user,omitempty"`
-	BotID       string `json:"bot_id,omitempty"`
-	Username    string `json:"username,omitempty"`
-	Text        string `json:"text,omitempty"`
-	Subtype     string `json:"subtype,omitempty"`
-	ThreadTS    string `json:"thread_ts,omitempty"`
-	ReplyCount  int    `json:"reply_count,omitempty"`
+	TS       string `json:"ts"`
+	User     string `json:"user,omitempty"`
+	BotID    string `json:"bot_id,omitempty"`
+	Username string `json:"username,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Subtype  string `json:"subtype,omitempty"`
+	ThreadTS string `json:"thread_ts,omitempty"`
+	// ReplyCount is a pointer because Slack omits it for a message nobody answered,
+	// and "no thread" is not the same as "a thread of zero".
+	ReplyCount  *int   `json:"reply_count,omitempty"`
 	LatestReply string `json:"latest_reply,omitempty"`
 	Edited      *Edit  `json:"edited,omitempty"`
 	Files       []File `json:"files,omitempty"`
@@ -243,6 +245,9 @@ func NewClient(account auth.Account, options Options) *Client {
 	}
 
 	pace := options.Pace
+	if pace == 0 {
+		pace = paceFromEnv()
+	}
 
 	burst := options.Burst
 	if burst == 0 {
@@ -266,6 +271,22 @@ func NewClient(account auth.Account, options Options) *Client {
 // WorkspaceName is the team the session belongs to, for output that has no room
 // to ask Slack again.
 func (c *Client) WorkspaceName() string { return c.account.TeamName }
+
+// paceFromEnv is the sustained gap between requests, which a bulk sync needs and a
+// single-call tool does not feel: SLACK_BROWSER_PACE_MS=0 turns it off.
+func paceFromEnv() time.Duration {
+	raw := strings.TrimSpace(envValue("SLACK_BROWSER_PACE_MS"))
+	if raw == "" {
+		return defaultPace
+	}
+
+	milliseconds, err := strconv.ParseFloat(raw, 64)
+	if err != nil || milliseconds < 0 {
+		return defaultPace
+	}
+
+	return time.Duration(milliseconds * float64(time.Millisecond))
+}
 
 func baseFromEnv() string {
 	if value := strings.TrimSpace(envValue("SLACK_BROWSER_API_BASE")); value != "" {

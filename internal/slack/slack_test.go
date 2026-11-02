@@ -142,7 +142,7 @@ func TestRenderMessages(t *testing.T) {
 	t.Parallel()
 
 	messages := []slack.Message{
-		{TS: "1792500000.000100", User: "U01ANA", Text: "hello <@U02MICHEL>", ReplyCount: 2},
+		{TS: "1792500000.000100", User: "U01ANA", Text: "hello <@U02MICHEL>", ReplyCount: new(2)},
 		{TS: "1792500060.000200", User: "U01ANA", Text: "line one\nline two", ThreadTS: "1792500000.000100"},
 		{TS: "1792500120.000300", Username: "bot", Text: ""},
 	}
