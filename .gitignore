@@ -8,3 +8,7 @@ dist/
 accounts/
 *.credentials.json
 .env
+bin/
+coverage.out
+coverage.html
+*.test
