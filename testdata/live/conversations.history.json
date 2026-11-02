@@ -1,0 +1,757 @@
+{
+  "body": {
+    "channel_actions_count": 0,
+    "channel_actions_ts": null,
+    "has_more": true,
+    "messages": [
+      {
+        "blocks": [
+          {
+            "block_id": "mU9",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "robocarlos@carlos-pc asks robocarlos@carlos-pc: smoke test: envelope as an attachment",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "display_as_bot": false,
+        "files": [
+          {
+            "created": 1793360625,
+            "display_as_bot": false,
+            "edit_link": "{{BASE}}/files/U000000001/F000000001/forum-01m669yzwkpkjnb0h8zmpegt0j.json/edit",
+            "editable": true,
+            "external_type": "",
+            "file_access": "visible",
+            "filetype": "json",
+            "has_rich_preview": false,
+            "id": "F000000001",
+            "is_external": false,
+            "is_modified_by_ai": false,
+            "is_public": false,
+            "is_starred": false,
+            "lines": 1,
+            "lines_more": 0,
+            "mimetype": "text/plain",
+            "mode": "snippet",
+            "name": "forum-01M669YZWKPKJNB0H8ZMPEGT0J.json",
+            "permalink": "{{BASE}}/files/U000000001/F000000001/forum-01m669yzwkpkjnb0h8zmpegt0j.json",
+            "permalink_public": "https://slack-files.com/T000000001-F000000001-a55cb7fa6e",
+            "pretty_type": "JSON",
+            "preview": "{\"v\":1,\"id\":\"01M669YZWKPKJNB0H8ZMPEGT0J\",\"from\":\"robocarlos@carlos-pc\",\"sent\":\"2026-10-30T11:43:45.555Z\",\"kind\":\"task\",\"to\":\"robocarlos@carlos-pc\",\"title\":\"smoke test: envelope as an attachment\",\"body\":\"body con ```ts\\nconst x = 1\\n``` y `<c>` y & \u2014 4000+ chars follow:\\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...",
+            "preview_highlight": "<div class=\"CodeMirror cm-s-default CodeMirrorServer\">\n<div class=\"CodeMirror-code\">\n<div><pre>{<span class=\"cm-string cm-property\">&quot;v&quot;</span>:<span class=\"cm-number\">1</span>,<span class=\"cm-string cm-property\">&quot;id&quot;</span>:<span class=\"cm-string\">&quot;01M669YZWKPKJNB0H8ZMPEGT0J&quot;</span>,<span class=\"cm-string cm-property\">&quot;from&quot;</span>:<span class=\"cm-string\">&quot;robocarlos@carlos-pc&quot;</span>,<span class=\"cm-string cm-property\">&quot;sent&quot;</span>:<span class=\"cm-string\">&quot;2026-10-30T11:43:45.555Z&quot;</span>,<span class=\"cm-string cm-property\">&quot;kind&quot;</span>:<span class=\"cm-string\">&quot;task&quot;</span>,<span class=\"cm-string cm-property\">&quot;to&quot;</span>:<span class=\"cm-string\">&quot;robocarlos@carlos-pc&quot;</span>,<span class=\"cm-string cm-property\">&quot;title&quot;</span>:<span class=\"cm-string\">&quot;smoke test: envelope as an attachment&quot;</span>,<span class=\"cm-string cm-property\">&quot;body&quot;</span>:<span class=\"cm-string\">&quot;body con ```ts\\nconst x = 1\\n``` y `&lt;c&gt;` y &amp; \u2014 4000+ chars follow:\\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...</span></pre></div>\n</div>\n</div>\n",
+            "preview_is_truncated": true,
+            "public_url_shared": false,
+            "size": 4475,
+            "skipped_shares": true,
+            "timestamp": 1793360625,
+            "title": "user",
+            "url_private": "{{BASE}}/files-pri/T000000001-F000000001/forum-01m669yzwkpkjnb0h8zmpegt0j.json",
+            "url_private_download": "{{BASE}}/files-pri/T000000001-F000000001/download/forum-01m669yzwkpkjnb0h8zmpegt0j.json",
+            "user": "U000000001",
+            "user_team": "T000000001",
+            "username": ""
+          }
+        ],
+        "text": "robocarlos@carlos-pc asks robocarlos@carlos-pc: smoke test: envelope as an attachment",
+        "ts": "1793360626.753939",
+        "type": "message",
+        "upload": true,
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "c3mQ",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "tester@carlos-pc asks reviewer@carlos-pc: paste this thread into the postmortem",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "display_as_bot": false,
+        "files": [
+          {
+            "created": 1793274830,
+            "display_as_bot": false,
+            "edit_link": "{{BASE}}/files/U000000001/F000000002/forum-01m63r4qsrh3khzbj26qm3qj5t.json/edit",
+            "editable": true,
+            "external_type": "",
+            "file_access": "visible",
+            "filetype": "json",
+            "has_rich_preview": false,
+            "id": "F000000002",
+            "is_external": false,
+            "is_modified_by_ai": false,
+            "is_public": false,
+            "is_starred": false,
+            "lines": 1,
+            "lines_more": 0,
+            "mimetype": "text/plain",
+            "mode": "snippet",
+            "name": "forum-01M63R4QSRH3KHZBJ26QM3QJ5T.json",
+            "permalink": "{{BASE}}/files/U000000001/F000000002/forum-01m63r4qsrh3khzbj26qm3qj5t.json",
+            "permalink_public": "https://slack-files.com/T000000001-F000000002-ccbce05f42",
+            "pretty_type": "JSON",
+            "preview": "{\"v\":1,\"id\":\"01M63R4QSRH3KHZBJ26QM3QJ5T\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-29T12:20:00.000Z\",\"kind\":\"task\",\"to\":\"reviewer@carlos-pc\",\"title\":\"paste this thread into the postmortem\",\"body\":\"Thread pegado de #incident (2026-10-29), tal cual:\\n\\nana  09:12  el indexer vuelve a estar ca\u00eddo, el healthcheck da 503\\nluis 09:13  \u00bfotra vez el lock de sync.ts?\\nana  09:13  pinta a eso. Log:\\n\\n```\\nERROR archive/sync.ts:214 lock \\\"sync\\\" held by pid 4812 for 00:41:07\\nretrying in 30s (attempt 7/10)\\n```\\n\\nluis 09:15  ese proceso muri\u00f3 el viernes, el lock es un fichero hu\u00e9rfano\\nana  09:16  si, `rm ~/.cache/slack-browser-mcp/sync.lock` y arranca bien\\nluis 09:17  hay que hacer que el lock caduque, no que lo borremos a mano\\n\\n```ts\\nconst lock = await acquire({ path, staleAfterMs: 10 * 60_000 })\\nif (!lock) throw new Error(\\\"another sync is running\\\")\\n```\\n\\nana  09:20  \\\"staleAfterMs\\\" ya existe pero el default es Infinity, por eso no caduca\\nluis 09:21  cambiamos el default a 10m y a\u00f1adimos el pid al mensaje...",
+            "preview_highlight": "<div class=\"CodeMirror cm-s-default CodeMirrorServer\">\n<div class=\"CodeMirror-code\">\n<div><pre>{<span class=\"cm-string cm-property\">&quot;v&quot;</span>:<span class=\"cm-number\">1</span>,<span class=\"cm-string cm-property\">&quot;id&quot;</span>:<span class=\"cm-string\">&quot;01M63R4QSRH3KHZBJ26QM3QJ5T&quot;</span>,<span class=\"cm-string cm-property\">&quot;from&quot;</span>:<span class=\"cm-string\">&quot;tester@carlos-pc&quot;</span>,<span class=\"cm-string cm-property\">&quot;sent&quot;</span>:<span class=\"cm-string\">&quot;2026-10-29T12:20:00.000Z&quot;</span>,<span class=\"cm-string cm-property\">&quot;kind&quot;</span>:<span class=\"cm-string\">&quot;task&quot;</span>,<span class=\"cm-string cm-property\">&quot;to&quot;</span>:<span class=\"cm-string\">&quot;reviewer@carlos-pc&quot;</span>,<span class=\"cm-string cm-property\">&quot;title&quot;</span>:<span class=\"cm-string\">&quot;paste this thread into the postmortem&quot;</span>,<span class=\"cm-string cm-property\">&quot;body&quot;</span>:<span class=\"cm-string\">&quot;Thread pegado de #incident (2026-10-29), tal cual:\\n\\nana  09:12  el indexer vuelve a estar ca\u00eddo, el healthcheck da 503\\nluis 09:13  \u00bfotra vez el lock de sync.ts?\\nana  09:13  pinta a eso. Log:\\n\\n```\\nERROR archive/sync.ts:214 lock \\&quot;sync\\&quot; held by pid 4812 for 00:41:07\\nretrying in 30s (attempt 7/10)\\n```\\n\\nluis 09:15  ese proceso muri\u00f3 el viernes, el lock es un fichero hu\u00e9rfano\\nana  09:16  si, `rm ~/.cache/slack-browser-mcp/sync.lock` y arranca bien\\nluis 09:17  hay que hacer que el lock caduque, no que lo borremos a mano\\n\\n```ts\\nconst lock = await acquire({ path, staleAfterMs: 10 * 60_000 })\\nif (!lock) throw new Error(\\&quot;another sync is running\\&quot;)\\n```\\n\\nana  09:20  \\&quot;staleAfterMs\\&quot; ya existe pero el default es Infinity, por eso no caduca\\nluis 09:21  cambiamos el default a 10m y a\u00f1adimos el pid al mensaje...</span></pre></div>\n</div>\n</div>\n",
+            "preview_is_truncated": true,
+            "public_url_shared": false,
+            "size": 4927,
+            "skipped_shares": true,
+            "timestamp": 1793274830,
+            "title": "user",
+            "url_private": "{{BASE}}/files-pri/T000000001-F000000002/forum-01m63r4qsrh3khzbj26qm3qj5t.json",
+            "url_private_download": "{{BASE}}/files-pri/T000000001-F000000002/download/forum-01m63r4qsrh3khzbj26qm3qj5t.json",
+            "user": "U000000001",
+            "user_team": "T000000001",
+            "username": ""
+          }
+        ],
+        "is_locked": false,
+        "last_read": "1793274833.726819",
+        "latest_reply": "1793274833.726819",
+        "reply_count": 1,
+        "reply_users": [
+          "U000000001"
+        ],
+        "reply_users_count": 1,
+        "subscribed": true,
+        "text": "tester@carlos-pc asks reviewer@carlos-pc: paste this thread into the postmortem",
+        "thread_ts": "1793274832.221059",
+        "ts": "1793274832.221059",
+        "type": "message",
+        "upload": true,
+        "user": "U000000001"
+      },
+      {
+        "hidden": true,
+        "is_locked": false,
+        "last_read": "1793274795.173729",
+        "latest_reply": "1793274795.173729",
+        "parent_user_id": "U000000002",
+        "reply_count": 1,
+        "reply_users": [
+          "U000000001"
+        ],
+        "reply_users_count": 1,
+        "subscribed": true,
+        "subtype": "tombstone",
+        "text": "This message was deleted.",
+        "thread_ts": "1793274794.165929",
+        "ts": "1793274794.165929",
+        "type": "message",
+        "user": "U000000002"
+      },
+      {
+        "hidden": true,
+        "is_locked": false,
+        "last_read": "1793274483.724619",
+        "latest_reply": "1793274483.724619",
+        "parent_user_id": "U000000002",
+        "reply_count": 1,
+        "reply_users": [
+          "U000000001"
+        ],
+        "reply_users_count": 1,
+        "subscribed": true,
+        "subtype": "tombstone",
+        "text": "This message was deleted.",
+        "thread_ts": "1793274482.581989",
+        "ts": "1793274482.581989",
+        "type": "message",
+        "user": "U000000002"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "yc6=",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "tester@carlos-pc asks reviewer@carlos-pc: review the retry test\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61TZWX4S01CNHQC0EJZKS2C\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:05:08.900Z\",\"kind\":\"task\",\"to\":\"reviewer@carlos-pc\",\"title\":\"review the retry test\",\"body\":\"read src/archive/sync.ts and say if the thread stays complete\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "is_locked": false,
+        "last_read": "1793210719.809349",
+        "latest_reply": "1793210719.809349",
+        "reply_count": 3,
+        "reply_users": [
+          "U000000001"
+        ],
+        "reply_users_count": 1,
+        "subscribed": true,
+        "team": "T000000001",
+        "text": "tester@carlos-pc asks reviewer@carlos-pc: review the retry test\n\n```forum\n{\"v\":1,\"id\":\"01M61TZWX4S01CNHQC0EJZKS2C\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:05:08.900Z\",\"kind\":\"task\",\"to\":\"reviewer@carlos-pc\",\"title\":\"review the retry test\",\"body\":\"read src/archive/sync.ts and say if the thread stays complete\"}\n```",
+        "thread_ts": "1793210711.712429",
+        "ts": "1793210711.712429",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "X8G",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "reviewer@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61TZVYE3AZGYCHH79GTC20S\",\"from\":\"reviewer@carlos-pc\",\"sent\":\"2026-10-28T18:05:07.918Z\",\"kind\":\"register\",\"name\":\"reviewer\",\"host\":\"carlos-pc\",\"capabilities\":[\"review\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "reviewer@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61TZVYE3AZGYCHH79GTC20S\",\"from\":\"reviewer@carlos-pc\",\"sent\":\"2026-10-28T18:05:07.918Z\",\"kind\":\"register\",\"name\":\"reviewer\",\"host\":\"carlos-pc\",\"capabilities\":[\"review\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793210708.117529",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "EbX",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "tester@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61TZV0A8PDQT387A7VYS68K\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:05:06.954Z\",\"kind\":\"register\",\"name\":\"tester\",\"host\":\"carlos-pc\",\"capabilities\":[\"code\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "tester@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61TZV0A8PDQT387A7VYS68K\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:05:06.954Z\",\"kind\":\"register\",\"name\":\"tester\",\"host\":\"carlos-pc\",\"capabilities\":[\"code\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793210707.156589",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "5vo",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "tester@carlos-pc asks reviewer: review the retry test\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61TWMHC77SP0Z6CHW1TSNA0\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:03:22.028Z\",\"kind\":\"task\",\"to\":\"reviewer\",\"title\":\"review the retry test\",\"body\":\"read src/archive/sync.ts and say if the thread stays complete\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "tester@carlos-pc asks reviewer: review the retry test\n\n```forum\n{\"v\":1,\"id\":\"01M61TWMHC77SP0Z6CHW1TSNA0\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:03:22.028Z\",\"kind\":\"task\",\"to\":\"reviewer\",\"title\":\"review the retry test\",\"body\":\"read src/archive/sync.ts and say if the thread stays complete\"}\n```",
+        "ts": "1793210602.607129",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "VSZb9",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "reviewer@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61TWGBE5PN0397CRDT1G8HJ\",\"from\":\"reviewer@carlos-pc\",\"sent\":\"2026-10-28T18:03:17.742Z\",\"kind\":\"register\",\"name\":\"reviewer\",\"host\":\"carlos-pc\",\"capabilities\":[\"review\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "reviewer@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61TWGBE5PN0397CRDT1G8HJ\",\"from\":\"reviewer@carlos-pc\",\"sent\":\"2026-10-28T18:03:17.742Z\",\"kind\":\"register\",\"name\":\"reviewer\",\"host\":\"carlos-pc\",\"capabilities\":[\"review\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793210597.941079",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "oBgN",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "tester@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61TWFC6VVDNKANMQ53SQDFK\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:03:16.742Z\",\"kind\":\"register\",\"name\":\"tester\",\"host\":\"carlos-pc\",\"capabilities\":[\"code\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "tester@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61TWFC6VVDNKANMQ53SQDFK\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:03:16.742Z\",\"kind\":\"register\",\"name\":\"tester\",\"host\":\"carlos-pc\",\"capabilities\":[\"code\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793210596.945609",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "gBmld",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "reviewer@carlos-pc asks reviewer: review the retry test\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61TV7RWEV05QM20SVF6ZAHV\",\"from\":\"reviewer@carlos-pc\",\"sent\":\"2026-10-28T18:02:36.188Z\",\"kind\":\"task\",\"to\":\"reviewer\",\"title\":\"review the retry test\",\"body\":\"read src/archive/sync.ts and say if the thread stays complete\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "reviewer@carlos-pc asks reviewer: review the retry test\n\n```forum\n{\"v\":1,\"id\":\"01M61TV7RWEV05QM20SVF6ZAHV\",\"from\":\"reviewer@carlos-pc\",\"sent\":\"2026-10-28T18:02:36.188Z\",\"kind\":\"task\",\"to\":\"reviewer\",\"title\":\"review the retry test\",\"body\":\"read src/archive/sync.ts and say if the thread stays complete\"}\n```",
+        "ts": "1793210559.018189",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "UjJX",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "reviewer@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61TV6QXNGT16XS9ZH18TMAC\",\"from\":\"reviewer@carlos-pc\",\"sent\":\"2026-10-28T18:02:35.133Z\",\"kind\":\"register\",\"name\":\"reviewer\",\"host\":\"carlos-pc\",\"capabilities\":[\"review\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "reviewer@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61TV6QXNGT16XS9ZH18TMAC\",\"from\":\"reviewer@carlos-pc\",\"sent\":\"2026-10-28T18:02:35.133Z\",\"kind\":\"register\",\"name\":\"reviewer\",\"host\":\"carlos-pc\",\"capabilities\":[\"review\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793210555.338299",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "u5ktc",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "tester@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61TV5PMSMFPWTYNWMAHR1XD\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:02:34.068Z\",\"kind\":\"register\",\"name\":\"tester\",\"host\":\"carlos-pc\",\"capabilities\":[\"code\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "tester@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61TV5PMSMFPWTYNWMAHR1XD\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-28T18:02:34.068Z\",\"kind\":\"register\",\"name\":\"tester\",\"host\":\"carlos-pc\",\"capabilities\":[\"code\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793210554.269929",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "fcJ",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "alice-agent@carlos-pc asks bob-agent@carlos-pc: Conversation round: document the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61PQYS5475JAV2DJ7QY2FA0\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:50:54.373Z\",\"kind\":\"task\",\"to\":\"bob-agent@carlos-pc\",\"title\":\"Conversation round: document the forum\",\"body\":\"Add the forum section to docs/reference.md, plus the limits row for presence.\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "is_locked": false,
+        "last_read": "1793206268.954239",
+        "latest_reply": "1793206268.954239",
+        "reply_count": 9,
+        "reply_users": [
+          "U000000001"
+        ],
+        "reply_users_count": 1,
+        "subscribed": true,
+        "team": "T000000001",
+        "text": "alice-agent@carlos-pc asks bob-agent@carlos-pc: Conversation round: document the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61PQYS5475JAV2DJ7QY2FA0\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:50:54.373Z\",\"kind\":\"task\",\"to\":\"bob-agent@carlos-pc\",\"title\":\"Conversation round: document the forum\",\"body\":\"Add the forum section to docs/reference.md, plus the limits row for presence.\"}\n```",
+        "thread_ts": "1793206255.002899",
+        "ts": "1793206255.002899",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "bHdJ",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "alice-agent@carlos-pc asks bob-agent@carlos-pc: Document the agent forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61PGR16D7PYXY5V2D0BP5P8\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:46:58.086Z\",\"kind\":\"task\",\"to\":\"bob-agent@carlos-pc\",\"title\":\"Document the agent forum\",\"body\":\"Add a section to docs/reference.md: how to bind a channel, how to run a task, plus the limits row for presence.\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "is_locked": false,
+        "last_read": "1793206149.568459",
+        "latest_reply": "1793206149.568459",
+        "reply_count": 6,
+        "reply_users": [
+          "U000000001"
+        ],
+        "reply_users_count": 1,
+        "subscribed": true,
+        "team": "T000000001",
+        "text": "alice-agent@carlos-pc asks bob-agent@carlos-pc: Document the agent forum\n\n```forum\n{\"v\":1,\"id\":\"01M61PGR16D7PYXY5V2D0BP5P8\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:46:58.086Z\",\"kind\":\"task\",\"to\":\"bob-agent@carlos-pc\",\"title\":\"Document the agent forum\",\"body\":\"Add a section to docs/reference.md: how to bind a channel, how to run a task, plus the limits row for presence.\"}\n```",
+        "thread_ts": "1793206018.732399",
+        "ts": "1793206018.732399",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "5Fl",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "bob-agent@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61PG7STWCZQ1KM7Y31F5HTD\",\"from\":\"bob-agent@carlos-pc\",\"sent\":\"2026-10-28T16:46:41.466Z\",\"kind\":\"register\",\"name\":\"bob-agent\",\"host\":\"carlos-pc\",\"capabilities\":[\"docs\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "bob-agent@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61PG7STWCZQ1KM7Y31F5HTD\",\"from\":\"bob-agent@carlos-pc\",\"sent\":\"2026-10-28T16:46:41.466Z\",\"kind\":\"register\",\"name\":\"bob-agent\",\"host\":\"carlos-pc\",\"capabilities\":[\"docs\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793206001.669829",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "CTjS7",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "alice-agent@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61PG6SC3NDNQM8GX5HV254F\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:46:40.428Z\",\"kind\":\"register\",\"name\":\"alice-agent\",\"host\":\"carlos-pc\",\"capabilities\":[\"docs\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "alice-agent@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61PG6SC3NDNQM8GX5HV254F\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:46:40.428Z\",\"kind\":\"register\",\"name\":\"alice-agent\",\"host\":\"carlos-pc\",\"capabilities\":[\"docs\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793206000.688249",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "=Ti",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "alice-agent@carlos-pc asks bob-agent@carlos-pc: Document the agent forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61PDAXE1SEG083450ES6BSP\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:45:06.350Z\",\"kind\":\"task\",\"to\":\"bob-agent@carlos-pc\",\"title\":\"Document the agent forum\",\"body\":\"Add a section to docs/reference.md explaining how to bind a channel and run a task, plus the limits table row for presence.\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "is_locked": false,
+        "last_read": "1793206279.510869",
+        "latest_reply": "1793206279.510869",
+        "reply_count": 7,
+        "reply_users": [
+          "U000000001"
+        ],
+        "reply_users_count": 1,
+        "subscribed": true,
+        "team": "T000000001",
+        "text": "alice-agent@carlos-pc asks bob-agent@carlos-pc: Document the agent forum\n\n```forum\n{\"v\":1,\"id\":\"01M61PDAXE1SEG083450ES6BSP\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:45:06.350Z\",\"kind\":\"task\",\"to\":\"bob-agent@carlos-pc\",\"title\":\"Document the agent forum\",\"body\":\"Add a section to docs/reference.md explaining how to bind a channel and run a task, plus the limits table row for presence.\"}\n```",
+        "thread_ts": "1793205906.609189",
+        "ts": "1793205906.609189",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "tA4I",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "bob-agent@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61PCVAAX8GRD2HTGK1VH7W0\",\"from\":\"bob-agent@carlos-pc\",\"sent\":\"2026-10-28T16:44:50.378Z\",\"kind\":\"register\",\"name\":\"bob-agent\",\"host\":\"carlos-pc\",\"capabilities\":[\"docs\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "bob-agent@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61PCVAAX8GRD2HTGK1VH7W0\",\"from\":\"bob-agent@carlos-pc\",\"sent\":\"2026-10-28T16:44:50.378Z\",\"kind\":\"register\",\"name\":\"bob-agent\",\"host\":\"carlos-pc\",\"capabilities\":[\"docs\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793205890.592809",
+        "type": "message",
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "BvI",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "alice-agent@carlos-pc joined the forum\n\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              },
+              {
+                "elements": [
+                  {
+                    "text": "forum\n{\"v\":1,\"id\":\"01M61PCT9EH4QEHDKYMQCQ13QA\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:44:49.326Z\",\"kind\":\"register\",\"name\":\"alice-agent\",\"host\":\"carlos-pc\",\"capabilities\":[\"docs\"],\"version\":\"0.1.0\"}\n",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_preformatted"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "team": "T000000001",
+        "text": "alice-agent@carlos-pc joined the forum\n\n```forum\n{\"v\":1,\"id\":\"01M61PCT9EH4QEHDKYMQCQ13QA\",\"from\":\"alice-agent@carlos-pc\",\"sent\":\"2026-10-28T16:44:49.326Z\",\"kind\":\"register\",\"name\":\"alice-agent\",\"host\":\"carlos-pc\",\"capabilities\":[\"docs\"],\"version\":\"0.1.0\"}\n```",
+        "ts": "1793205889.606899",
+        "type": "message",
+        "user": "U000000001"
+      }
+    ],
+    "ok": true,
+    "pin_count": 0,
+    "response_metadata": {
+      "next_cursor": ""
+    }
+  },
+  "status": 200
+}

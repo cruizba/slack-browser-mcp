@@ -29,18 +29,26 @@ the agent does it through a local MCP server.
 > No warranty of any kind; the authors are not liable for what the tool does to your
 > account or workspace. Published under the [MIT license](LICENSE).
 
-**Linux only.** The installer targets Linux and refuses anything else. There is no
-service to enable and no init system involved: the agent's MCP server warms the
-archive at session start, and a read that finds it stale starts a sync behind the
-answer. Needs Node.js 22 or newer and Google Chrome.
+**Linux, macOS and Windows**, on amd64 and arm64, from one static binary with no
+runtime to install. There is no service to enable and no init system involved: the
+agent's MCP server warms the archive at session start, and a read that finds it
+stale starts a sync behind the answer. Needs Google Chrome (or Chromium, Edge,
+Brave, Vivaldi or Opera) for the sign-in only.
 
 ## Install
 
 ```bash
-git clone https://github.com/cruizba/slack-browser-mcp ~/slack-browser-mcp && ~/slack-browser-mcp/install.sh
+curl -fsSL https://raw.githubusercontent.com/cruizba/slack-browser-mcp/main/install.sh | sh
 ```
 
-It pulls `main`, builds the checkout, puts `slack-browser` on your PATH and then,
+On Windows, from PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/cruizba/slack-browser-mcp/main/install.ps1 | iex
+```
+
+The installer downloads the release for your machine, **verifies its published
+sha256**, installs `slack-browser` (with `slack-browser-forum` beside it) and then,
 for every agent it finds — `pi`, `claude`, `opencode`:
 
 - registers two MCP servers: `slack` (reads and posts) and `forum` (agents handing
@@ -49,8 +57,9 @@ for every agent it finds — `pi`, `claude`, `opencode`:
 
 Then sign in from the agent with `/slack-login`: it opens Chrome once, keeps the
 session it finds there, and the first workspace becomes the default. Re-running
-`install.sh` is safe, and an update from 0.7 or earlier stops and deletes the
-systemd timer those versions installed. `install.sh --help` lists the flags.
+the installer is safe: it replaces the binary and re-registers the servers, so an
+agent never points at a path that moved. `install.sh --help` lists the flags, and
+`slack-browser update` moves an installed copy to a newer release.
 
 ## Commands
 
@@ -68,7 +77,7 @@ current state and changes nothing.
 | `/slack-search <query> [channel]` | Full-text over the local archive |
 | `/slack-post <channel> <text>` | Shows the exact message and posts only after you say yes |
 | `/slack-sync [workspace]` | Refreshes the archive now |
-| `/slack-update` | Moves to the latest release and rebuilds |
+| `/slack-update` | Moves to the latest release |
 
 ## What you can ask
 
@@ -118,6 +127,43 @@ Everything the agent does is also a shell command (`slack-browser read`,
 only exist in a terminal: binding a forum channel, updating, and the daemon. It is
 there for scripts and for the steps where an agent cannot run; it is not the way in.
 [docs/reference.md](docs/reference.md) has every command, tool and flag.
+
+## Development
+
+One Go module, no cgo, two binaries: `cmd/slack-browser` (the CLI and the `slack` MCP
+server) and `cmd/slack-browser-forum` (the forum surface).
+
+```bash
+make build      # one binary for this machine
+make build-all  # every cmd/ binary
+make test       # the unit tests, with the race detector
+make diff       # the recorded behaviour of every command, checked against this build
+make lint       # golangci-lint, integration files included
+make fuzz       # the parsers that read somebody else's text
+make bench      # the hot paths, with allocation counts
+make mutation   # mutation-test the packages with the strongest suites
+```
+
+`make mutation` runs [gremlins](https://github.com/go-gremlins/gremlins) over
+`internal/config`, `internal/update` and `internal/platform`: it edits the source one
+operator at a time and checks that a test fails. A mutant that survives is a test that
+would not notice the change — the boundary cases it found are why `DescribePolicy` has
+a test for exactly 60 minutes and `DefaultNickname` one for a name at its limit.
+
+`make diff` is the interesting one: `internal/difftest` runs the binary against a fake
+Slack and compares stdout, stderr and the exit code, byte for byte, with the goldens in
+`internal/difftest/testdata/golden`. Those were recorded from the TypeScript
+implementation this replaces, so they are the specification of its behaviour rather than
+a snapshot of the port. `make golden` re-records them from this build — read the diff
+before committing it.
+
+CI runs the same list on Linux, macOS and Windows, twice each with `-shuffle=on`, and
+adds four checks the local targets leave out: `govulncheck` over the dependency graph,
+`gitleaks` over the **whole history** (a token that was committed and removed is still
+in every clone), a coverage floor with a per-package table in the job summary, and a
+`goreleaser --snapshot` build of the six targets — so a tag is never the first time the
+release configuration is read. Goroutine leaks are a test failure in `internal/forum`
+and `internal/slack` rather than something to notice by eye.
 
 ## Docs
 

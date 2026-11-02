@@ -17,13 +17,13 @@ per session, so history survives and a read answers from it instead of the API.
 
 ## Requirements
 
-- Linux. `install.sh` refuses anything else. There is no service to enable and no
-  init system involved: the agent's MCP server warms the archive at session start.
-- Node.js 22 or newer
-- Google Chrome. The login starts it as a normal browser and attaches over CDP;
-  set `CHROME_PATH` if it is not in a standard location. Playwright's bundled
-  Chromium works via `npx playwright install chromium`, but Slack is more likely
-  to accept a stock Chrome install.
+- Linux, macOS or Windows, on amd64 or arm64. The release is one static binary with
+  no runtime to install. There is no service to enable and no init system involved:
+  the agent's MCP server warms the archive at session start.
+- Google Chrome, or a Chromium-family browser (Chromium, Edge, Brave, Vivaldi,
+  Opera, and their beta or canary channels). The login starts it as a normal
+  browser and attaches over CDP; set `CHROME_PATH` if it is not in a standard
+  location. Firefox is not supported: it removed the protocol this needs.
 
 ## Slash commands
 
@@ -556,14 +556,18 @@ Environment overrides: `SLACK_BROWSER_MCP_CONFIG_DIR` (store directory),
 (milliseconds between requests), `SLACK_BROWSER_MCP_NO_AUTOSYNC` (`1` disables the
 background sync a read may start), `SLACK_BROWSER_MCP_AGENT` (the name this
 process is on the agent forum, otherwise the MCP client name is used),
-`CHROME_PATH` (Chrome binary), `XDG_CONFIG_HOME`, `XDG_DATA_HOME`.
+`CHROME_PATH` (Chrome binary), `XDG_CONFIG_HOME`, `XDG_DATA_HOME`,
+`SLACK_BROWSER_API_BASE` (Slack API base URL; the differential harness points
+it at a fake server, and nothing else should need it).
 
 ## Security
 
 - The store refuses to read a file that is not `0600` or not owned by you, and
-  says which `chmod` to run.
+  says which `chmod` to run. On Windows, where there are no mode bits, the file
+  inherits the profile directory's ACL instead and the check says so.
 - Secrets never appear in tool output, errors or logs; messages are redacted on
-  the way out (`src/log/redact.ts`).
+  the way out (`internal/redact/redact.go`), and `internal/credentialguard` fails the
+  build if a real token or cookie ever lands in the tree.
 - Nothing credential-shaped is committed: the store lives outside the repo and
   `accounts/` is ignored.
 - Treat a stored account like a password: it can read every private channel you
@@ -600,40 +604,36 @@ cannot run. The agent surface above never needs it.
 
 ### install.sh
 
-The README installs with it. It pulls `main`, runs `npm ci` and `npm run build`,
-`npm link`, then walks the agents found in `PATH` and, for each, links the
-`commands/` slash commands into that agent's directory and registers the MCP
-server `slack`. Nothing is left running afterwards: there is no unit, no timer and
-no linger to enable. Up to 0.7.x it installed `slack-browser-sync.timer`, so an
-install over one of those stops, disables and deletes it (and its service and the
-`timers.target.wants` link) instead of leaving a timer pointing at nothing. It never
-opens a browser: signing in is a command the agent runs. Re-running it
-is safe: it pulls, rebuilds and rewrites what it owns (a dirty checkout is left
-on its branch). It always follows `main`; releases are installed by
-`slack-browser update`, and re-running install.sh on a release checkout brings it
-back to the branch.
+The README installs with it. It downloads the release archive for the machine it
+runs on, verifies it against the published sha256, installs `slack-browser` and the
+`slack-browser-forum` entry point that sits beside it, then walks the agents found in
+`PATH` and, for each, links the `commands/` slash commands into that agent's
+directory and registers the two MCP servers, `slack` and `forum`. Nothing is left
+running afterwards: there is no unit, no timer and no linger to enable. It never
+opens a browser: signing in is a command the agent runs.
+
+Re-running it is safe: it replaces the binary, re-registers the servers and rewrites
+what it owns, so an agent never points at a path that moved. A newer release is
+installed by `slack-browser update`, which verifies the same checksum before it
+replaces the running binary.
 
 ```bash
 ./install.sh --help
 
-  --dir <path>      where to install (default: ~/slack-browser-mcp)
-  --branch <name>   branch to install (default: main)
-  --no-pull         keep the checkout as it is, do not fetch or pull
+  --tag <vX.Y.Z>   install that release instead of the latest
+  --bin <path>     where the binary goes (default: ~/.local/bin)
 ```
+
+On Windows, `install.ps1` does the same with a zip, into
+`%LOCALAPPDATA%\Programs\slack-browser-mcp`.
 
 ### Install by hand
 
-The README has the one-liner. Step by step, it is:
-
-```bash
-git clone https://github.com/cruizba/slack-browser-mcp
-cd slack-browser-mcp
-npm install && npm run build
-npm link          # puts `slack-browser` on PATH
-```
-
-Without `npm link`, replace `slack-browser serve` below with
-`node /path/to/slack-browser-mcp/dist/mcp/server.js`.
+The README has the one-liner. Step by step, it is: download the archive for your
+platform from the releases page, check it against
+`slack-browser-mcp_<version>_checksums.txt`, and put the `slack-browser` binary
+somewhere on `PATH`. Nothing else is needed: the binary carries the SQLite engine,
+the CDP client and the tool catalogue.
 
 ### Register the MCP server by hand
 
@@ -708,78 +708,55 @@ slack-browser update --pre      # consider prereleases too
 slack-browser version
 ```
 
-`update` fetches the tags from `origin`, compares the tag at `HEAD` with the
-highest one, checks it out detached and runs `install.sh --no-pull`, so the build,
-the `npm link`, the agent registrations and the units all come from the installer
-that is already there. Three rules keep it predictable:
+`update` reads the release list, picks the archive for this platform, downloads it with
+the published `slack-browser-mcp_<version>_checksums.txt`, and replaces the running
+binary only when the sha256 matches. Three rules keep it predictable:
 
-- A checkout on `main` past the latest release is not rolled back; `--to` pins a
-  tag when that is what was asked for.
-- A dirty checkout refuses to move, with the same advice as install.sh: commit or
-  stash, or rebuild in place with `install.sh --no-pull`.
-- A copy that is not a git checkout says so instead of guessing; reinstall it with
-  install.sh.
+- A build newer than the latest release is left alone; `--to` names a release when a
+  downgrade is what was asked for.
+- A checksum that does not match stops the update with "nothing was replaced"; the
+  new file is written under a temporary name and only renamed into place after the
+  check.
+- On Windows the running file cannot be replaced, so the old one is moved aside
+  first and removed on the next run.
 
-After the update, restart the agent so its MCP server process loads the new
-build. The sync and forum timers start a new process on every tick, so they pick
-the build up by themselves.
+After the update, restart the agent so its MCP server process loads the new build.
 
-`release.sh` cuts one from a clean `main` equal to `origin/main`: it resolves the
-next version (`major`, `minor`, `patch`, or a full version, prereleases included),
-bumps `package.json`, commits `chore: release vX`, tags, pushes the branch and the
-tag, and opens the GitHub release when `gh` is available.
-`--dry-run` prints the plan, `--no-push` stops after the local tag, `--no-notes`
-skips the GitHub release.
+### Release
 
-The release notes are grouped from the commits instead of listing them: the range is
-the previous tag to the new one, each subject is read as
-`type(scope): summary`, and the entries land under `Breaking changes`, `Features`,
-`Fixes`, `Performance`, `Refactoring`, `Dependencies`, `Build and CI` or
-`Maintenance`, with a compare link at the end. `chore: release vX` commits are
-skipped, so the bump does not appear as a change of its own, and so are `docs:` and
-`test:`: a release implies both and listing them buries what a reader came for. A
-`!` after the type or a `BREAKING CHANGE:` footer moves an entry to
-`Breaking changes`, which is the only section that shows a second line. The rules
-live in `src/release/notes.ts` and the script that feeds them,
-`src/release/notes-cli.ts`, reads `git log` on stdin; if the generation fails,
-`release.sh` warns and falls back to `--generate-notes` rather than block a release.
+A tag is the release: `git tag v1.0.0 && git push origin v1.0.0`.
+`.github/workflows/release.yml` reacts to the tag, runs the tests and then
+goreleaser, which builds `linux`, `darwin` and `windows` on amd64 and arm64 from one
+runner (the module is CGO-free by design), packs each archive with the README and
+`commands/*.md`, and publishes the `checksums.txt` that both `install.sh` and
+`slack-browser update` verify. There is no version file to bump: the release commit
+message is the changelog, grouped by goreleaser from the commit subjects.
 
-`.github/workflows/release.yml` runs the same script from the Actions tab: a
-manual run takes the version or the bump as its input, checks out `main` with the
-tags, runs `npm ci`, the typecheck and the tests, and only then calls
-`release.sh`. The job asks for `contents: write` and authenticates with
-`github.token` as `GH_TOKEN` and `GH_REPO`; no personal access token lives in the
-repository or in the workflow, and the token is never echoed. The release commit
-is authored by `github-actions[bot]`, and a push made with that token does not
-trigger another workflow run, so the job cannot loop.
+The workflow's actions are pinned to a commit SHA, with the tag in the trailing
+comment so Dependabot can read it. `.github/dependabot.yml` opens a weekly PR for the
+actions (one group) and for the Go modules (minor and patch grouped, majors on their
+own).
 
-The workflow's actions are pinned to a commit SHA with `pinact`, with the tag in
-the trailing comment so Dependabot can read it. `.github/dependabot.yml` opens a
-weekly PR for the actions (one group) and for npm (minor and patch grouped, majors
-on their own), using `versioning-strategy: increase` so `package.json` and the
-lockfile move together.
-
-`commands/slack-update.md` is the agent surface for the same CLI command: it runs
-`slack-browser update --check` first, applies the release, reports the tag it moved
-to and says that the running MCP server keeps the old build until the agent
-reconnects. install.sh links `commands/slack*.md`, so the update that installs the
-release also installs the prompt.
-
-`.github/workflows/ci.yml` runs `npm ci`, the typecheck, the tests and the build
-on every push to `main` and on a manual dispatch. It has no `pull_request` trigger
-on purpose: a PR, Dependabot's included, never runs CI here, so the post-merge run
-on `main` is the first automated check. The job asks only for `contents: read` and
-checks out without persisting the token.
+`.github/workflows/go.yml` runs the tests on `ubuntu-latest`, `macos-latest` and
+`windows-latest`, plus a lint job. The matrix is what exercises the per-platform
+code — file permissions, path separators, process handling — because a Linux runner
+cannot. `-race` runs everywhere but Windows, where the toolchain has no C compiler
+Go will pick up; the same tests run there without the detector. It has no
+`pull_request` trigger on purpose: a PR, Dependabot's included, never runs CI here,
+so the post-merge run is the first automated check.
 
 ### Development
 
 ```bash
-npm test          # unit + in-memory MCP tests, no browser needed
-npm run build     # dist/
-npm run typecheck
+make test         # the unit tests, with the race detector
+make diff         # the recorded behaviour of every command, against this build
+make lint         # golangci-lint, integration files included
+make build-all    # every binary in cmd/
 ```
 
-Layout: `src/auth` (capture, store), `src/slack` (API client, rendering),
-`src/mcp` (tool surface), `src/cli.ts` (human entry point), `commands/` (the
-agent slash commands). Design notes and the next milestones:
+Layout: `internal/auth` (capture over CDP, the store), `internal/slack` (API client,
+rendering, directory), `internal/archive` (JSONL, SQLite index, sync), `internal/forum`
+(the envelope, the ledger, the service, the daemon), `internal/mcp` (both tool
+surfaces), `internal/cli` (the entry point), `commands/` (the agent slash commands).
+The design of record is [agent-forum-spec.md](agent-forum-spec.md) and
 [implementation-spec.md](implementation-spec.md).

@@ -1,0 +1,76 @@
+# exit: 0
+# stdout 3905
+slack-browser — Slack read access from a browser session
+
+Usage:
+  slack-browser login [--timeout <seconds>] [--headless]
+  slack-browser accounts
+  slack-browser workspace [list]
+  slack-browser workspace use <name|domain|team-id>
+  slack-browser workspace clear
+  slack-browser assist [<nickname>] [--clear]
+  slack-browser status [--workspace <ref>]
+  slack-browser read <channel> [--limit <n>] [--oldest <ts>] [--latest <ts>] [--workspace <ref>]
+  slack-browser thread <channel> <thread_ts> [--workspace <ref>]
+  slack-browser send <channel> <message> [--thread <ts>] [--attach <path,...>] [--send] [--no-assist] [--workspace <ref>]
+  slack-browser sync [--full] [--since <days>] [--deadline <seconds>] [--quiet] [--workspace <ref>]
+  slack-browser archive search <query> [--channel <name>] [--workspace <ref>] [--limit <n>] [--deleted]
+  slack-browser archive stats [--workspace <ref>]
+  slack-browser archive reindex
+  slack-browser archive migrate
+  slack-browser agent-forum [list]
+  slack-browser agent-forum add <channel> [--backfill] [--signed] [--no-presence] [--workspace <ref>]
+  slack-browser agent-forum remove <channel>
+  slack-browser agent-forum register <name> [--host <name>] [--accepts <tag,...>] [--no-post]
+  slack-browser agent-forum unregister [<name>] [--no-post]
+  slack-browser agent-forum peers [--workspace <ref>]
+  slack-browser agent-forum away [<note>]
+  slack-browser agent-forum inbox [--all] [--json] [--offline]
+  slack-browser agent-forum task <id>
+  slack-browser agent-forum post <to> <title> --body <text> [--capability <tag>] [--parent <id>] [--deadline <iso>] [--binding <name>] [--post]
+  slack-browser agent-forum accept <id> [--body <text>] [--post]
+  slack-browser agent-forum decline <id> [--body <text>] [--post]
+  slack-browser agent-forum progress <id> --body <text> [--post]
+  slack-browser agent-forum result <id> --body <text> [--fail] [--post]
+  slack-browser agent-forum ack <id> [--body <text>] [--post]
+  slack-browser agent-forum reopen <id> --body <text> [--post]
+  slack-browser agent-forum cancel <id> [--body <text>] [--post]
+  slack-browser agent-forum delete <id|ts> [--force] [--post]
+  slack-browser agent-forum edit <id> --body <text> [--post]
+  slack-browser agent-forum wait [--timeout <s>] [--follow] [--json] [--offline]
+  slack-browser agent-forum poll [--quiet] [--deadline <s>]
+  slack-browser agent-forum daemon [start|stop|status|serve]
+  slack-browser agent-forum say <name@host> <text>
+  slack-browser agent-forum forget <name|name@host>
+  slack-browser update [--check] [--to <tag>] [--pre]
+  slack-browser version
+  slack-browser serve
+  slack-browser help [<command>]
+
+The browser opens once, during login. Everything else talks to the Slack Web API
+with the captured session, stored at ~/.config/slack-browser-mcp/accounts with
+mode 0600.
+
+Without --workspace, a command uses SLACK_BROWSER_MCP_TEAM, then the default
+saved by "workspace use", then the only stored session. "sync" without
+--workspace covers every stored workspace.
+
+With nothing configured, every sent message is still marked: the header reads
+"*Message Sent by AI Agent '<client>' of <account>*", naming the MCP client and
+the account it goes out from. Set your own with "assist <nickname>"; --no-assist
+posts the text alone, and SLACK_BROWSER_MCP_ASSISTED_NICKNAME wins over
+config.json.
+
+"agent-forum" (alias "forum") is the channel where agents hand each other work:
+bind a channel once, register a name, then post tasks to a peer by name. Every
+write is a dry run unless --post, and every post is audited.
+
+The forum runs behind a local daemon: it starts when an agent needs it, serves
+every agent on the machine over a socket, and exits after a quiet window. There
+is no service to enable for it.
+
+Every command answers --help with its own page: what it does, its usage and the
+flags it takes. `slack-browser help <command>` prints the same page.
+
+# stderr 0
+

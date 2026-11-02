@@ -41,9 +41,9 @@ during normal tool calls, which keeps latency, memory and failure modes small.
 
 ```mermaid
 flowchart TD
-    CLI["CLI<br/>src/cli.ts"]
-    MCP["MCP server<br/>src/mcp"]
-    FORUM["agent forum<br/>src/forum"]
+    CLI["CLI<br/>cmd/slack-browser"]
+    MCP["MCP server<br/>internal/mcp"]
+    FORUM["agent forum<br/>internal/forum"]
     STORE["credential store<br/>auth/store.ts"]
     SETTINGS["settings<br/>config/settings.ts"]
     LOGIN["login<br/>auth/login.ts<br/>Playwright, login only"]
@@ -84,7 +84,7 @@ Rules that hold across layers:
 
 - `slack/client.ts` never reads the filesystem and never launches a browser.
 - `auth/store.ts` never performs network calls.
-- `src/mcp` and `src/cli.ts` contain no protocol details beyond their own
+- `internal/mcp` and `internal/cli` contain no protocol details beyond their own
   surface; both build a `SlackClient` from a stored account and delegate.
 
 ## 5. Authentication
@@ -105,7 +105,7 @@ under that name. Hard-coding `d` breaks accounts where only `d-s` is present.
 
 ### 5.2 Capture order
 
-1. Start Chrome directly (`src/auth/chrome.ts`) with `--user-data-dir=<profile>`
+1. Start Chrome directly (`internal/auth/chrome.go`) with `--user-data-dir=<profile>`
    and `--remote-debugging-port=<free port>`, then attach with
    `chromium.connectOverCDP`. Playwright's own launcher must **not** be used for
    the login: it passes `--enable-automation`, which sets `navigator.webdriver`,
@@ -270,7 +270,7 @@ Behaviours:
 - Forum envelopes are posted as that attachment (`files.getUploadURLExternal` →
   POST → `files.completeUploadExternal` with the summary as `initial_comment`), so
   the `text` of a forum message is a sentence a person reads. The file is markdown:
-  frontmatter for the fields, the body below it (`src/forum/frontmatter.ts`). Bodies
+  frontmatter for the fields, the body below it (`internal/forum/frontmatter.go`). Bodies
   cap at 1 MiB.
 - Message text is truncated at 4000 chars per message, Slack's own recommended
   ceiling; the marker says how long the message really is and that
@@ -548,7 +548,7 @@ shell can be running different versions against the same files. So the layout ca
 version in `archive/schema.json` (`{"version": 2, …}`), and data written before
 that marker existed counts as version 1, because the layout has not changed since.
 
-`ensureArchiveSchema` (`src/archive/schema.ts`) runs before `sync`, before
+`ensureArchiveSchema` (`internal/archive/schema.go`) runs before `sync`, before
 `archive search|stats|reindex`, and before the MCP tools that read the archive:
 
 - A version newer than the build is refused, naming the update, instead of being
@@ -745,7 +745,7 @@ task approved locally and every write going through the same `confirm` gate as
 - **Private API.** `xoxc` + `d` is undocumented; Slack can rotate or restrict it.
   Mitigation: capture and API layers are separate, so a replacement transport
   (real app token, or browser-based DOM if it ever comes to that) stays local to
-  `src/slack/client.ts`.
+  `internal/slack/client.go`.
 - **Per-workspace cookies.** Multi-workspace capture may pair a token with the
   wrong cookie; §5.3 validation contains the damage, but the UX for "log in again
   to that other workspace" is unpolished until M2.

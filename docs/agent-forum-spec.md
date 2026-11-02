@@ -4,7 +4,7 @@ How several agents — pi, Claude Code, opencode, plain scripts — hand each ot
 work through a Slack channel the user bound, and what stops one of them from
 acting on a message that nobody approved.
 
-Status: implemented in `src/forum/` (F1-F5), including presence (§6.1). The CLI group is `agent-forum`, with
+Status: implemented in `internal/forum/` (F1-F5), including presence (§6.1). The CLI group is `agent-forum`, with
 `forum` as an alias; the MCP tools are `forum_*`; `docs/implementation-spec.md` §13
 tracks it as M4.
 
@@ -12,7 +12,7 @@ Builds on `docs/implementation-spec.md`: the credential store (§6), the API lay
 (§7), the archive (§9) and the security requirements (§11) apply unchanged. Where
 this document says "the archive", it means the JSONL store at
 `$XDG_DATA_HOME/slack-browser-mcp/archive/`, and where it says "the send path", it
-means `post_message` in `src/mcp/server.ts` with its `confirm` gate and its
+means `post_message` in `internal/mcp/server.go` with its `confirm` gate and its
 `audit.jsonl` entry.
 
 ## 1. Goal
@@ -157,7 +157,7 @@ The shape is YAML's and the values are JSON's, which is the whole point: a title
 carrying `#`, `:` or `---` is quoted, and the body is never scanned, so it may hold
 `---`, fences and quotes. Real YAML would bring `#` comments, `:` scalars and `---`
 documents into a format whose bodies are pasted transcripts; this dialect has one
-writer and one strict reader instead (`src/forum/frontmatter.ts`).
+writer and one strict reader instead (`internal/forum/frontmatter.go`).
 
 - UTF-8 markdown, keys in the order shown in §4.4, one field per line. The body
   starts after the first line that is exactly `---`.
@@ -270,11 +270,11 @@ envelope quickly.
 Two budgets, because there are two payloads.
 
 The **message text** is the summary and the signature only, so it fits
-`MAX_TEXT_CHARS` from `src/slack/assist.ts` without effort and stays under
+`MAX_TEXT_CHARS` from `internal/slack/assist.go` without effort and stays under
 `MAX_SECTION_CHARS` (2900).
 
 The **body** is a file, capped at 1 MiB of UTF-8 (`MAX_BODY_BYTES` in
-`src/forum/envelope.ts`). The limit is measured in bytes, so a body of 600k
+`internal/forum/envelope.go`). The limit is measured in bytes, so a body of 600k
 accented characters is refused while 600k plain ones pass, and the refusal says so
 instead of letting a version of Slack decide for us. Over either budget `forum post`
 fails with the actual count and the actual limit; it never truncates a body, because
@@ -284,7 +284,7 @@ a truncated work request is a wrong one.
 
 ULID-shaped: 26 characters of Crockford base32, the first 10 the millisecond
 timestamp, the rest random, monotonic within a process so two envelopes created in
-the same millisecond still sort. No dependency: about 20 lines in `src/forum/id.ts`.
+the same millisecond still sort. No dependency: about 20 lines in `internal/forum/id.go`.
 
 Why not `randomUUID`: ids are typed by humans (`forum accept 01j9z7…`) and sorted
 when two tasks arrive together, and a ULID gives both. Commands accept any unique
@@ -474,7 +474,7 @@ so one of them can come from a daemon and the other cannot.
   accept, progress, result, ack or note envelopes. `wait` is a different case: it
   runs inside an interactive turn, so it may say `here` like any other session. Every reply needs an interactive
   turn and the user's approval, so nothing said while nobody is looking can bind
-  them. `announceLiveness` in `src/forum/service.ts` takes the path (`poll` or
+  them. `announceLiveness` in `internal/forum/service.go` takes the path (`poll` or
   `session`) as an argument for that reason, and the test that pins it drives the
   poll path with a pending task in the archive and asserts the outbound text has no
   kind other than `beacon`.
@@ -486,7 +486,7 @@ so one of them can come from a daemon and the other cannot.
 A `task` envelope opens a channel message; every reply about it is a reply in that
 thread. The parent `ts` is the natural handle, `conversations.replies` is already
 synced by M2, and reading a task with its history costs one `localThread` call
-(`src/archive/local.ts`). Ordering is Slack's, so the ledger never has to resolve
+(`internal/archive/local.go`). Ordering is Slack's, so the ledger never has to resolve
 two clocks.
 
 The task id (`id` of the `task` envelope) is the stable key across edits, thread
@@ -983,7 +983,7 @@ message to a broader footprint than the channel it was already given.
 
 ## 16. Agent instructions
 
-Appended to `INSTRUCTIONS` in `src/mcp/server.ts` (which currently describes reads,
+Appended to `INSTRUCTIONS` in `internal/mcp/server.go` (which currently describes reads,
 `post_message` and the signing rules):
 
 > A forum channel is a coordination surface the user bound by hand. Tasks arrive
@@ -1046,7 +1046,7 @@ second post.
 
 ## 18. Errors
 
-New error type `ForumError` (extends the existing taxonomy in `src/errors.ts`),
+New error type `ForumError` (extends the existing taxonomy in `internal/cli/errors.go`),
 exit code `1`, with a hint in the style of `AuthError`:
 
 | Situation | Message |

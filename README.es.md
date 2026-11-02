@@ -32,19 +32,27 @@ un comando `/slack…` — y el agente lo hace a través de un servidor MCP loca
 > haga con tu cuenta o tu espacio de trabajo. Publicado bajo la
 > [licencia MIT](LICENSE).
 
-**Solo Linux.** El instalador apunta a Linux y se niega en cualquier otro sistema. No
-hay servicio que habilitar ni init de por medio: el servidor MCP del agente calienta
-el archivo al empezar la sesión, y una lectura que lo encuentra viejo lanza un sync
-detrás de la respuesta. Necesita Node.js 22 o superior y Google Chrome.
+**Linux, macOS y Windows**, en amd64 y arm64, desde un único binario estático sin
+runtime que instalar. No hay servicio que habilitar ni init de por medio: el servidor
+MCP del agente calienta el archivo al empezar la sesión, y una lectura que lo
+encuentra viejo lanza un sync detrás de la respuesta. Necesita Google Chrome (o
+Chromium, Edge, Brave, Vivaldi u Opera) sólo para el inicio de sesión.
 
 ## Instalación
 
 ```bash
-git clone https://github.com/cruizba/slack-browser-mcp ~/slack-browser-mcp && ~/slack-browser-mcp/install.sh
+curl -fsSL https://raw.githubusercontent.com/cruizba/slack-browser-mcp/main/install.sh | sh
 ```
 
-Trae `main`, compila el checkout, pone `slack-browser` en tu PATH y después, para
-cada agente que encuentre — `pi`, `claude`, `opencode`:
+En Windows, desde PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/cruizba/slack-browser-mcp/main/install.ps1 | iex
+```
+
+El instalador descarga la release de tu máquina, **verifica su sha256 publicado**,
+instala `slack-browser` (con `slack-browser-forum` al lado) y después, para cada
+agente que encuentre — `pi`, `claude`, `opencode`:
 
 - registra dos servidores MCP: `slack` (leer y publicar) y `forum` (agentes que se
   pasan trabajo, detrás de un daemon local que arranca cuando hace falta)
@@ -72,7 +80,7 @@ cuenta el estado actual y no cambia nada.
 | `/slack-search <consulta> [canal]` | Texto completo sobre el archivo local |
 | `/slack-post <canal> <texto>` | Enseña el mensaje exacto y publica solo si dices que sí |
 | `/slack-sync [espacio]` | Refresca el archivo ahora |
-| `/slack-update` | Pasa a la última release y recompila |
+| `/slack-update` | Pasa a la última release |
 
 ## Qué puedes pedir
 
@@ -124,6 +132,26 @@ solo viven en la terminal: enlazar un canal del foro, actualizar y el daemon. Es
 para scripts y para los pasos que un agente no puede ejecutar; no es la forma de
 entrar. [docs/reference.md](docs/reference.md) tiene todos los comandos, herramientas
 y flags.
+
+## Desarrollo
+
+Un módulo Go, sin cgo, dos binarios: `cmd/slack-browser` (la CLI y el servidor MCP
+`slack`) y `cmd/slack-browser-forum` (la superficie del foro).
+
+```bash
+make build      # un binario para esta máquina
+make build-all  # todos los binarios de cmd/
+make test       # los tests unitarios, con el detector de carreras
+make diff       # el comportamiento grabado de cada comando, contra esta compilación
+make lint       # golangci-lint, con los ficheros de integración
+```
+
+`make diff` es el interesante: `internal/difftest` ejecuta el binario contra un Slack
+falso y compara stdout, stderr y el código de salida, byte a byte, con los goldens de
+`internal/difftest/testdata/golden`. Se grabaron de la implementación TypeScript a la
+que esto sustituye, así que son la especificación de su comportamiento y no una foto
+del port. `make golden` los vuelve a grabar desde esta compilación: lee el diff antes
+de commitearlo.
 
 ## Documentación
 

@@ -1,5 +1,3 @@
-node_modules/
-dist/
 *.log
 
 # Credentials never belong in the repository. The store lives in
@@ -8,3 +6,20 @@ dist/
 accounts/
 *.credentials.json
 .env
+.env.*
+*.pem
+
+# The browser profile and the forum file live outside the repository, but a run with
+# both variables pointed here would drop them in the tree; the guard in
+# internal/credentialguard is the second net.
+profile/
+forum.json
+slack-browser-mcp/
+bin/
+coverage.out
+coverage.html
+*.test
+
+# The release archives and the coverage report a local run leaves behind.
+/coverage.out
+/coverage.html
