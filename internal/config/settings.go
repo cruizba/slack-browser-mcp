@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/cruizba/slack-browser-mcp/internal/platform"
 )
 
 // Settings is the file the user may edit by hand. Absent fields are nil rather
@@ -132,7 +134,7 @@ func (s *Store) Write(settings Settings) error {
 		return fmt.Errorf("replacing %s: %w", s.file, err)
 	}
 
-	return nil
+	return platform.Harden(s.file)
 }
 
 // SetDefaultWorkspace stores a workspace reference, or removes the default when

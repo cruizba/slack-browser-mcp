@@ -1,17 +1,12 @@
 package config_test
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/cruizba/slack-browser-mcp/internal/config"
 	"github.com/cruizba/slack-browser-mcp/internal/platform"
 )
-
-func slash(path string) string {
-	return strings.ReplaceAll(path, `\`, "/")
-}
 
 func TestResolve(t *testing.T) {
 	t.Parallel()
@@ -33,7 +28,7 @@ func TestResolve(t *testing.T) {
 			{name: "archive", got: paths.ArchiveDir, want: "/home/ana/.local/share/slack-browser-mcp/archive"},
 			{name: "index", got: paths.ArchiveIndex, want: "/home/ana/.local/share/slack-browser-mcp/archive.sqlite"},
 		} {
-			if tc.got != filepath.FromSlash(tc.want) {
+			if slash(tc.got) != tc.want {
 				t.Fatalf("%s = %q, want %q", tc.name, tc.got, tc.want)
 			}
 		}
@@ -54,11 +49,11 @@ func TestResolve(t *testing.T) {
 			OS:   "linux",
 		})
 
-		if paths.ConfigDir != "/tmp/store" || paths.Accounts != "/tmp/store/accounts" {
-			t.Fatalf("config = %q/%q, want /tmp/store", paths.ConfigDir, paths.Accounts)
+		if dir, accounts := slash(paths.ConfigDir), slash(paths.Accounts); dir != "/tmp/store" || accounts != "/tmp/store/accounts" {
+			t.Fatalf("config = %q/%q, want /tmp/store", dir, accounts)
 		}
 
-		if paths.DataDir != "/home/ana/.local/share/slack-browser-mcp" {
+		if slash(paths.DataDir) != "/home/ana/.local/share/slack-browser-mcp" {
 			t.Fatalf("data = %q, want it untouched", paths.DataDir)
 		}
 	})
@@ -78,7 +73,7 @@ func TestResolve(t *testing.T) {
 			OS:   "linux",
 		})
 
-		if paths.SettingsFile != "/tmp/elsewhere.json" {
+		if slash(paths.SettingsFile) != "/tmp/elsewhere.json" {
 			t.Fatalf("settings = %q, want /tmp/elsewhere.json", paths.SettingsFile)
 		}
 	})

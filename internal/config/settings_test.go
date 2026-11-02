@@ -4,10 +4,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/cruizba/slack-browser-mcp/internal/config"
+	"github.com/cruizba/slack-browser-mcp/internal/platform"
 )
 
 func settingsFileIn(t *testing.T) (config.Store, string) {
@@ -135,12 +137,18 @@ func TestStore_Write(t *testing.T) {
 		t.Fatalf("SetDefaultWorkspace: %v", err)
 	}
 
-	info, err := os.Stat(file)
+	// Windows has no mode bits, so the contract there is "nobody else can reach
+	// it" rather than a number; internal/platform says why.
+	private, mode, err := platform.Private(file)
 	if err != nil {
-		t.Fatalf("stat: %v", err)
+		t.Fatalf("checking permissions: %v", err)
 	}
 
-	if mode := info.Mode().Perm(); mode != 0o600 {
+	if !private {
+		t.Fatalf("the settings file is reachable by other users (mode %#o)", mode)
+	}
+
+	if runtime.GOOS != "windows" && mode != 0o600 {
 		t.Fatalf("mode = %#o, want 0600", mode)
 	}
 
