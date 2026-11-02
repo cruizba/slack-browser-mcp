@@ -78,15 +78,20 @@ about 320 ms headless and 600 ms with a window (that includes process start).
   do not script the sign-in), which is why nothing here calls `Input` or
   `Runtime.callFunctionOn` against the sign-in form.
 
-## Open questions, for before the port is written
+## Decisions taken before the port
 
-- **Windows fallback.** Chrome can be absent on a machine that has Edge, and Edge
-  is Chromium speaking the same CDP. Accepting it widens what 2b has to test on a
-  real Windows box; refusing it leaves a Windows user with no login at all.
-- **Following a new tab.** The TypeScript polls `context.pages()[0]`, so a
-  sign-in that opens a new tab is not followed. Raw CDP sessions are
-  target-bound, so `Target.setDiscoverTargets` fixes a latent bug instead of
-  reproducing it.
-- **Token fallback.** `Network.requestWillBeSent` plus `getRequestPostData`
-  recovers the token from the sign-in request itself. It is the only login
-  mechanism this spike did not exercise.
+- **Browsers: the Chromium family only.** Chrome, Chromium, Edge, Brave, Vivaldi
+  and Opera, plus the Beta/Canary variants, with `CHROME_PATH` always first.
+  Windows gets the same set under `%PROGRAMFILES%`, `%PROGRAMFILES(X86)%` and
+  `%LOCALAPPDATA%`, so a machine with Edge and no Chrome still logs in.
+- **Firefox is out, on purpose.** It dropped CDP in Firefox 141, so it speaks
+  WebDriver BiDi and would need a second protocol client just for the login.
+  When no browser is found the error names what to install and says why Firefox
+  does not work, rather than failing with "Chrome not found".
+- **Follow a new tab.** `Target.setDiscoverTargets` instead of polling
+  `context.pages()[0]`. This is a deliberate divergence from the TypeScript,
+  which inherits the bug; it is a fix, not a port difference.
+- **Token fallback comes after parity.** `Network.requestWillBeSent` plus
+  `getRequestPostData` recovers the token from the sign-in request itself, but
+  it is the one mechanism this spike did not exercise, so it waits until the
+  port can be checked against a real login.
