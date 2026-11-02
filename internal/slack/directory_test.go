@@ -3,6 +3,7 @@ package slack_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -139,7 +140,8 @@ func TestDirectoryStoreRoundTrip(t *testing.T) {
 		t.Fatalf("stat: %v", err)
 	}
 
-	if info.Mode().Perm() != 0o600 {
+	// Windows has no mode bits; the contract there is that the store can read it back.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %#o, want 0600", info.Mode().Perm())
 	}
 

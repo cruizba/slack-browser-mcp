@@ -1007,6 +1007,22 @@ func syncOptions(parsed ParsedArgs) (archive.SyncOptions, bool) {
 	return options, true
 }
 
+// syncAccount builds what a run needs and closes the index when it is done: a leaked
+// handle keeps the SQLite file locked, which on Windows fails the next open.
+func syncAccount(ctx Context, teamID string, options archive.SyncOptions) (archive.SyncReport, error) {
+	account, err := newStore(ctx).Get(teamID)
+	if err != nil {
+		return archive.SyncReport{}, err
+	}
+
+	index := archive.NewIndex(ctx.Paths.ArchiveIndex)
+
+	defer func() { _ = index.Close() }()
+
+	return archive.SyncAccount(teamID, newClient(ctx, account),
+		archive.NewStore(ctx.Paths.ArchiveDir), index, options)
+}
+
 func syncEach(ctx Context, accounts []auth.Account, options archive.SyncOptions, quiet bool) int {
 	// One budget for the whole run: the timer asks for a deadline, not one per
 	// workspace.
@@ -1039,8 +1055,7 @@ func syncEach(ctx Context, accounts []auth.Account, options archive.SyncOptions,
 			accountOptions.OnProgress = func(line string) { emit(ctx.Stderr, "%s\n", line) }
 		}
 
-		report, err := archive.SyncAccount(account.TeamID, newClient(ctx, account),
-			archive.NewStore(ctx.Paths.ArchiveDir), archive.NewIndex(ctx.Paths.ArchiveIndex), accountOptions)
+		report, err := syncAccount(ctx, account.TeamID, accountOptions)
 		if err != nil {
 			failures++
 

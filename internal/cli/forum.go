@@ -189,13 +189,7 @@ func refreshForum(ctx Context, forumContext forum.Context, deadline time.Duratio
 		Deadline: deadline,
 		Now:      forumContext.Now,
 		Sync: func(teamID string, _ []string, options archive.SyncOptions) (archive.SyncReport, error) {
-			account, err := newStore(ctx).Get(teamID)
-			if err != nil {
-				return archive.SyncReport{}, errors.New("no stored Slack session for team " + teamID)
-			}
-
-			return archive.SyncAccount(teamID, newClient(ctx, account),
-				archive.NewStore(ctx.Paths.ArchiveDir), archive.NewIndex(ctx.Paths.ArchiveIndex), options)
+			return syncAccount(ctx, teamID, options)
 		},
 	})
 }

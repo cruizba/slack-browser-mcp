@@ -132,15 +132,25 @@ func refresh(deps Deps, forumContext forum.Context, deadline time.Duration) foru
 		Deadline: deadline,
 		Now:      forumContext.Now,
 		Sync: func(teamID string, _ []string, options archive.SyncOptions) (archive.SyncReport, error) {
-			account, err := newAuthStore(deps).Get(teamID)
-			if err != nil {
-				return archive.SyncReport{}, errors.New("no stored Slack session for team " + teamID)
-			}
-
-			return archive.SyncAccount(teamID, newClient(deps, account),
-				archive.NewStore(deps.Paths.ArchiveDir), archive.NewIndex(deps.Paths.ArchiveIndex), options)
+			return syncAccount(deps, teamID, options)
 		},
 	})
+}
+
+// syncAccount builds what a run needs and closes the index when it is done: a leaked
+// handle keeps the SQLite file locked, which on Windows fails the next open.
+func syncAccount(deps Deps, teamID string, options archive.SyncOptions) (archive.SyncReport, error) {
+	account, err := newAuthStore(deps).Get(teamID)
+	if err != nil {
+		return archive.SyncReport{}, errors.New("no stored Slack session for team " + teamID)
+	}
+
+	index := archive.NewIndex(deps.Paths.ArchiveIndex)
+
+	defer func() { _ = index.Close() }()
+
+	return archive.SyncAccount(teamID, newClient(deps, account),
+		archive.NewStore(deps.Paths.ArchiveDir), index, options)
 }
 
 func forumStatusTool(deps Deps) Handler {
@@ -495,13 +505,7 @@ func archiveRefreshTool(deps Deps) Handler {
 			Deadline: 20 * time.Second,
 			Now:      forumContext.Now,
 			Sync: func(teamID string, _ []string, options archive.SyncOptions) (archive.SyncReport, error) {
-				account, err := newAuthStore(deps).Get(teamID)
-				if err != nil {
-					return archive.SyncReport{}, errors.New("no stored Slack session for team " + teamID)
-				}
-
-				return archive.SyncAccount(teamID, newClient(deps, account),
-					archive.NewStore(deps.Paths.ArchiveDir), archive.NewIndex(deps.Paths.ArchiveIndex), options)
+				return syncAccount(deps, teamID, options)
 			},
 		})
 
