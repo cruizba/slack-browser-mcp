@@ -95,3 +95,32 @@ jobs:
         with:
           version: latest
           args: --timeout 5m --build-tags=integration
+
+  # The tag is irreversible and the release workflow has never run, so the same
+  # configuration is exercised on every push: all six targets are cross-compiled and
+  # archived here, which is exactly what a tag would publish, minus the upload. This
+  # job exists so that `v1.0.0` cannot be the first time .goreleaser.yaml is read.
+  goreleaser:
+    name: release dry run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the commit, with its history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the six targets without publishing
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.3.0
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
