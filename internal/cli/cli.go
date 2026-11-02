@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cruizba/slack-browser-mcp/internal/archive"
 	"github.com/cruizba/slack-browser-mcp/internal/auth"
 	"github.com/cruizba/slack-browser-mcp/internal/buildinfo"
 	"github.com/cruizba/slack-browser-mcp/internal/config"
@@ -23,12 +24,14 @@ const (
 	cmdWorkspace = "workspace"
 	cmdVersion   = "version"
 
-	cmdThread = "thread"
-	cmdStatus = "status"
-	cmdRead   = "read"
+	cmdThread  = "thread"
+	cmdStatus  = "status"
+	cmdRead    = "read"
+	cmdArchive = "archive"
 
 	subList  = "list"
 	subClear = "clear"
+	subStats = "stats"
 )
 
 // Context is everything a command may touch: where the files are, what the
@@ -83,6 +86,11 @@ func Run(args []string, ctx Context) int {
 		return 1
 	}
 
+	return dispatch(ctx, name, parsed)
+}
+
+// dispatch runs the command the table resolved the name to.
+func dispatch(ctx Context, name string, parsed ParsedArgs) int {
 	switch name {
 	case cmdAccounts:
 		return commandAccounts(ctx)
@@ -98,6 +106,8 @@ func Run(args []string, ctx Context) int {
 		return commandRead(ctx, parsed)
 	case cmdThread:
 		return commandThread(ctx, parsed)
+	case cmdArchive:
+		return commandArchive(ctx, parsed)
 	default:
 		emit(ctx.Stderr, "%s %s is not ported yet.\n", program, name)
 
@@ -532,4 +542,273 @@ func commandThread(ctx Context, parsed ParsedArgs) int {
 	emit(ctx.Stdout, "%s\n", slack.RenderMessages(messages, slack.RenderOptions{Names: names, Scope: dir.Scope()}))
 
 	return 0
+}
+
+func commandArchive(ctx Context, parsed ParsedArgs) int {
+	subcommand := subStats
+	if len(parsed.Positional) > 0 {
+		subcommand = parsed.Positional[0]
+	}
+
+	log := func(line string) { emit(ctx.Stderr, "%s\n", line) }
+
+	if subcommand == "migrate" {
+		status, err := archive.EnsureSchema(ctx.Paths.ArchiveDir, log)
+		if err != nil {
+			return fail(ctx, err)
+		}
+
+		switch {
+		case status.Locked:
+			emit(ctx.Stdout, "schema v%d: a sync holds the lock, retry when it finishes\n", status.From)
+		case len(status.Applied) > 0:
+			emit(ctx.Stdout, "schema migrated %d -> %d\n", status.From, status.To)
+		default:
+			emit(ctx.Stdout, "schema v%d, up to date\n", status.To)
+		}
+
+		return 0
+	}
+
+	if _, err := archive.EnsureSchema(ctx.Paths.ArchiveDir, func(string) {}); err != nil {
+		return fail(ctx, err)
+	}
+
+	index := archive.NewIndex(ctx.Paths.ArchiveIndex)
+
+	defer func() { _ = index.Close() }()
+
+	switch subcommand {
+	case subStats:
+		return archiveStats(ctx, parsed, index)
+	case "search":
+		return archiveSearch(ctx, parsed, index)
+	case "reindex":
+		store := archive.NewStore(ctx.Paths.ArchiveDir)
+
+		total, err := archive.RebuildIndex(store, index)
+		if err != nil {
+			return fail(ctx, err)
+		}
+
+		emit(ctx.Stdout, "reindexed %d messages\n", total)
+
+		return 0
+	default:
+		return fail(ctx, errors.New("unknown archive subcommand: "+subcommand))
+	}
+}
+
+func archiveStats(ctx Context, parsed ParsedArgs, index *archive.Index) int {
+	reference, hasReference := parsed.String("workspace")
+	if !hasReference {
+		reference, hasReference = parsed.String("team")
+	}
+
+	team := ""
+
+	if hasReference {
+		account, err := newStore(ctx).Resolve(reference)
+		if err != nil {
+			return fail(ctx, err)
+		}
+
+		team = account.TeamID
+	}
+
+	stats, err := index.Stats(team)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	scope := ""
+
+	if team != "" {
+		labels := workspaceLabels(ctx)
+
+		name := labels[team]
+		if name == "" {
+			name = team
+		}
+
+		scope = name + ": "
+	}
+
+	line := scope + strconv.Itoa(stats.Messages) + " messages (" + strconv.Itoa(stats.Deleted) +
+		" deleted) in " + strconv.Itoa(stats.Channels) + " channels"
+
+	if stats.Oldest != "" {
+		line += ", " + stats.Oldest + " .. " + stats.Newest
+	}
+
+	emit(ctx.Stdout, "%s\n", line)
+
+	return 0
+}
+
+func archiveSearch(ctx Context, parsed ParsedArgs, index *archive.Index) int {
+	query := strings.Join(parsed.Positional[1:], " ")
+	if query == "" {
+		return fail(ctx, errors.New("archive search needs a query"))
+	}
+
+	limit, err := numberFlag(parsed, "limit", 20)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	target, err := newSearchTarget(ctx, parsed)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	hits, err := index.Search(archive.SearchParams{
+		Query:          query,
+		Limit:          limit,
+		IncludeDeleted: parsed.Bool("deleted"),
+		Team:           target.team,
+		Channel:        target.filter.Channel,
+		ChannelName:    target.filter.ChannelName,
+	})
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	if len(hits) == 0 {
+		emit(ctx.Stdout, "no hits for \"%s\"\n", query)
+
+		return 0
+	}
+
+	for _, hit := range hits {
+		target.directoryFor(hit.Team)
+	}
+
+	for _, hit := range hits {
+		emit(ctx.Stdout, "%s\n", formatHit(hit, target))
+	}
+
+	return 0
+}
+
+// searchTarget is the workspace the search is limited to, the conversation filter
+// built from the directories, and the directories themselves.
+type searchTarget struct {
+	team        string
+	filter      slack.ConversationFilter
+	labels      map[string]string
+	directories map[string]*slack.Directory
+}
+
+func (t searchTarget) directoryFor(teamID string) *slack.Directory {
+	return t.directories[teamID]
+}
+
+func newSearchTarget(ctx Context, parsed ParsedArgs) (searchTarget, error) {
+	store := newStore(ctx)
+	target := searchTarget{labels: map[string]string{}, directories: map[string]*slack.Directory{}}
+
+	reference, hasReference := parsed.String("workspace")
+
+	var teamIDs []string
+
+	if hasReference {
+		account, err := store.Resolve(reference)
+		if err != nil {
+			return target, err
+		}
+
+		target.team = account.TeamID
+		teamIDs = []string{account.TeamID}
+	} else {
+		summaries, err := store.List()
+		if err != nil {
+			return target, err
+		}
+
+		for _, summary := range summaries {
+			teamIDs = append(teamIDs, summary.TeamID)
+		}
+
+		target.labels = workspaceLabels(ctx)
+	}
+
+	directoryFor := func(teamID string) *slack.Directory {
+		if directory, seen := target.directories[teamID]; seen {
+			return directory
+		}
+
+		directory, err := slack.NewDirectoryStore(ctx.Paths.ArchiveDir).Read(teamID)
+		if err != nil {
+			directory = nil
+		}
+
+		target.directories[teamID] = directory
+
+		return directory
+	}
+
+	channel, hasChannel := parsed.String("channel")
+	if hasChannel {
+		ordered := make([]*slack.Directory, 0, len(teamIDs))
+		for _, teamID := range teamIDs {
+			ordered = append(ordered, directoryFor(teamID))
+		}
+
+		target.filter = slack.FilterOf(channel, ordered)
+	}
+
+	return target, nil
+}
+
+func formatHit(hit archive.SearchHit, target searchTarget) string {
+	directory := target.directoryFor(hit.Team)
+
+	label := slack.ConversationLabel(slack.ConversationRef{ID: hit.Channel, Name: hit.ChannelName}, directory)
+
+	author := hit.Username
+
+	if author == "" {
+		author = directory.User(hit.User)
+	}
+
+	if author == "" {
+		author = hit.User
+	}
+
+	if author == "" {
+		author = "unknown"
+	}
+
+	deleted := ""
+	if hit.Deleted {
+		deleted = " [deleted]"
+	}
+
+	prefix := ""
+
+	if scope := target.labels[hit.Team]; scope != "" {
+		prefix = scope + " · "
+	}
+
+	text := slack.ResolveReferences(hit.Text, directory.Scope())
+
+	return "[" + hit.TS + "] " + prefix + label + " " + author + ": " + text + deleted
+}
+
+// workspaceLabels is team id to team name, for output that can span workspaces.
+// Best effort: a broken account file must not take down a search over the archive.
+func workspaceLabels(ctx Context) map[string]string {
+	labels := map[string]string{}
+
+	summaries, err := newStore(ctx).List()
+	if err != nil {
+		return labels
+	}
+
+	for _, summary := range summaries {
+		labels[summary.TeamID] = summary.TeamName
+	}
+
+	return labels
 }
