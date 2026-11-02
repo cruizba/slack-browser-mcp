@@ -83,10 +83,6 @@ func TestFindChromePrefersWhatTheUserConfigured(t *testing.T) {
 		t.Fatalf("writing the candidate: %v", err)
 	}
 
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows decides by extension, not by an execute bit, so both files are candidates")
-	}
-
 	found, err := findChrome([]string{first}, "")
 	if err != nil || found != first {
 		t.Fatalf("findChrome = %q, %v", found, err)

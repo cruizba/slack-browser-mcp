@@ -5,12 +5,20 @@ package chrome
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
 
-// isExecutable only checks for a file: Windows has no executable mode bit.
+// isExecutable answers whether a path could be run. Windows has no execute bit, so
+// what decides is the extension: Go's exec only starts a file it recognises, and every
+// Chrome or Chromium build is a .exe.
 func isExecutable(path string) bool {
+	if !strings.EqualFold(filepath.Ext(path), ".exe") {
+		return false
+	}
+
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }
