@@ -113,6 +113,8 @@ func dispatch(ctx Context, name string, parsed ParsedArgs) int {
 		return commandArchive(ctx, parsed)
 	case "sync":
 		return commandSync(ctx, parsed)
+	case "login":
+		return commandLogin(ctx, parsed)
 	case "serve":
 		return commandServe(ctx)
 	default:
@@ -1030,4 +1032,138 @@ func syncEach(ctx Context, accounts []auth.Account, options archive.SyncOptions,
 	}
 
 	return 0
+}
+
+// errRejected marks a session Slack refused, which is reported and skipped rather
+// than failing the whole run: a stale cookie for a secondary workspace is common.
+var errRejected = errors.New("session rejected")
+
+// saveSession proves a captured session with the API and only then writes it.
+func saveSession(ctx Context, store *auth.Store, session auth.CapturedSession) (auth.Account, error) {
+	account := auth.Account{
+		TeamID:      session.TeamID,
+		TeamName:    session.TeamName,
+		TeamDomain:  session.TeamDomain,
+		Token:       session.Token,
+		DCookie:     session.DCookie,
+		DCookieName: session.DCookieName,
+		SavedAt:     time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+	}
+
+	info, err := newClient(account).AuthTest()
+	if err != nil {
+		emit(ctx.Stderr, "failed %s (%s): %s\n", session.TeamName, session.TeamID, err.Error())
+
+		return auth.Account{}, errRejected
+	}
+
+	if info.Team != "" {
+		account.TeamName = info.Team
+	}
+
+	account.User = info.User
+	account.UserID = info.UserID
+	account.LastOKAt = time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+
+	if err := store.Save(account); err != nil {
+		return auth.Account{}, err
+	}
+
+	return account, nil
+}
+
+// commandLogin opens Chrome once, keeps the session it finds there, and stores
+// nothing Slack has not accepted: a stale cookie for a secondary workspace is
+// reported, not saved.
+func commandLogin(ctx Context, parsed ParsedArgs) int {
+	lock := archive.NewLock(ctx.Paths.LoginLock)
+
+	acquired, err := lock.Acquire()
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	if !acquired {
+		if owner, _ := lock.Owner(); owner != nil {
+			emit(ctx.Stderr, "another sign-in is already running (pid %d, since %s); "+
+				"finish it in the browser window that is open\n", owner.PID,
+				owner.StartedAt.UTC().Format("2006-01-02T15:04:05.000Z"))
+		} else {
+			emit(ctx.Stderr, "another sign-in is already running; finish it in the browser window that is open\n")
+		}
+
+		return 1
+	}
+
+	defer func() { _ = lock.Release() }()
+
+	seconds, err := numberFlag(parsed, "timeout", 300)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	sessions, err := auth.CaptureSessions(auth.CaptureOptions{
+		Timeout:    time.Duration(seconds) * time.Second,
+		Headless:   parsed.Bool("headless"),
+		ProfileDir: ctx.Paths.ProfileDir,
+		OnProgress: func(line string) { emit(ctx.Stderr, "%s\n", line) },
+	})
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	store := newStore(ctx)
+
+	saved := make([]auth.Account, 0, len(sessions))
+	rejected := 0
+
+	for _, session := range sessions {
+		account, err := saveSession(ctx, store, session)
+		if err != nil {
+			if errors.Is(err, errRejected) {
+				rejected++
+
+				continue
+			}
+
+			return fail(ctx, err)
+		}
+
+		saved = append(saved, account)
+
+		emit(ctx.Stdout, "saved  %s (%s) as %s\n", account.TeamName, account.TeamID, orUnknown(account.User))
+	}
+
+	if len(saved) == 0 {
+		emit(ctx.Stderr, "Nothing was stored. If you have several workspaces, sign in to one at a time.\n")
+
+		return 1
+	}
+
+	// The first workspace signed in becomes the default, and a later run adds a
+	// workspace instead of replacing it.
+	settings := config.NewStore(ctx.Paths.SettingsFile)
+
+	changed, err := config.EnsureDefaultWorkspace(settings, saved[0].TeamID)
+	if err != nil {
+		return fail(ctx, err)
+	}
+
+	if changed {
+		emit(ctx.Stdout, "default workspace: %s (%s)\n", saved[0].TeamName, saved[0].TeamID)
+	}
+
+	if rejected > 0 {
+		return 1
+	}
+
+	return 0
+}
+
+func orUnknown(value string) string {
+	if value == "" {
+		return "unknown user"
+	}
+
+	return value
 }
