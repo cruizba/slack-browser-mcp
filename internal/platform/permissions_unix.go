@@ -5,6 +5,7 @@ package platform
 import (
 	"fmt"
 	"os"
+	"syscall"
 )
 
 // Harden makes a file reachable by its owner only. On these systems that means
@@ -29,4 +30,35 @@ func Private(path string) (bool, os.FileMode, error) {
 
 	// Any bit outside the owner's own is a way in for somebody else.
 	return mode&0o077 == 0, mode, nil
+}
+
+// CurrentUID is the user this process runs as.
+func CurrentUID() (int, bool) {
+	return os.Getuid(), true
+}
+
+// OwnerUID is the user that owns the file, when the system records one.
+func OwnerUID(info os.FileInfo) (int, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+
+	return int(stat.Uid), true
+}
+
+// CheckOwner refuses a file that belongs to somebody else. The mode bits stop
+// other users from reading it later; they say nothing about how it got here.
+func CheckOwner(path string, info os.FileInfo) error {
+	owner, ok := OwnerUID(info)
+	if !ok {
+		return nil
+	}
+
+	current, ok := CurrentUID()
+	if !ok || owner == current {
+		return nil
+	}
+
+	return fmt.Errorf("Refusing to read %s: it belongs to uid %d, not %d.", path, owner, current)
 }

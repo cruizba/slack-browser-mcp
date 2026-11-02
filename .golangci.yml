@@ -107,6 +107,21 @@ linters:
       - third_party$
       - testutils$
       - examples$
+    rules:
+      # Every message these two build reaches a terminal and is compared
+      # byte-for-byte against the TypeScript build it replaces, so it is a
+      # sentence with a capital and a full stop, not a Go error string.
+      - path: internal/(auth|cli|config|platform)/
+        linters: [revive]
+        text: error-strings
+      - path: internal/(auth|cli|config|platform)/
+        linters: [staticcheck]
+        text: ST1005
+      # The help table is data: the same flag name appears in the doc map, in each
+      # command that accepts it and in the subcommands that share it. Hoisting
+      # them into constants would make a table unreadable to save an allocation.
+      - path: internal/cli/help\.go
+        linters: [goconst]
 
   settings:
     dupl:
@@ -119,6 +134,7 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 4
+      ignore-tests: true
     gocyclo:
       min-complexity: 13 # strict; lower => stricter
     nolintlint:

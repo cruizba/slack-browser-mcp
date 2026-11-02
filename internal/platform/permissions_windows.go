@@ -27,3 +27,20 @@ func Private(path string) (bool, os.FileMode, error) {
 
 	return true, info.Mode().Perm(), nil
 }
+
+// CurrentUID and OwnerUID report false: Windows has no uid to compare, only a
+// DACL, which os.FileInfo does not carry.
+func CurrentUID() (int, bool) {
+	return 0, false
+}
+
+func OwnerUID(os.FileInfo) (int, bool) {
+	return 0, false
+}
+
+// CheckOwner accepts every file for the reason [Private] explains: the ACL
+// inherited from the profile is what keeps other users out, and the uid this
+// check would compare does not exist.
+func CheckOwner(string, os.FileInfo) error {
+	return nil
+}

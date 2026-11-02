@@ -5,6 +5,7 @@ package difftest_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -37,7 +38,8 @@ func TestMain(m *testing.M) {
 
 	goBinary = filepath.Join(dir, "slack-browser")
 
-	build := exec.CommandContext(context.Background(), "go", "build", "-o", goBinary, "./cmd/slack-browser") //nolint:gosec // the harness exists to launch the build under test
+	build := exec.CommandContext(context.Background(), "go", "build", //nolint:gosec // the harness exists to launch the build under test
+		"-ldflags", buildInfoFlags(), "-o", goBinary, "./cmd/slack-browser")
 	build.Dir = "../.."
 
 	if out, err := build.CombinedOutput(); err != nil {
@@ -50,6 +52,55 @@ func TestMain(m *testing.M) {
 
 	discardDir(dir)
 	os.Exit(code)
+}
+
+// buildInfoFlags stamps the build with the facts the TypeScript one learns at run
+// time: package.json holds the version until the two builds part company, and git
+// says where this commit stands. Without them `version` would differ for a reason
+// that has nothing to do with the port.
+func buildInfoFlags() string {
+	const pkg = "github.com/cruizba/slack-browser-mcp/internal/buildinfo"
+
+	var version struct {
+		Version string `json:"version"`
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "package.json"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "reading package.json: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := json.Unmarshal(raw, &version); err != nil {
+		fmt.Fprintf(os.Stderr, "parsing package.json: %v\n", err)
+		os.Exit(1)
+	}
+
+	flags := []string{"-X", pkg + ".Version=" + version.Version}
+
+	if describe := gitAt("..", "describe", "--tags", "--always"); describe != "" {
+		flags = append(flags, "-X", pkg+".Describe="+describe)
+
+		if gitAt("..", "status", "--porcelain") != "" {
+			flags = append(flags, "-X", pkg+".Dirty=1")
+		}
+	}
+
+	return strings.Join(flags, " ")
+}
+
+// gitAt answers the way the TypeScript build reads the same facts, including
+// treating a failing command as no answer at all.
+func gitAt(dir string, args ...string) string {
+	command := exec.CommandContext(context.Background(), "git", args...) //nolint:gosec // fixed subcommands, no input
+	command.Dir = dir
+
+	out, err := command.Output()
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(out))
 }
 
 func discardDir(dir string) {

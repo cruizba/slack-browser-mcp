@@ -2,8 +2,15 @@
 # every target from a single Linux runner. Tests still need cgo for -race.
 GO ?= go
 BIN_DIR ?= bin
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X main.version=$(VERSION)
+# `version` reports these three, so a release binary never has to shell out to git.
+VERSION ?= $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' || echo 0.0.0)
+DESCRIBE ?= $(shell git describe --tags --always 2>/dev/null)
+DIRTY ?= $(shell git status --porcelain 2>/dev/null | head -1)
+BUILDINFO := github.com/cruizba/slack-browser-mcp/internal/buildinfo
+LDFLAGS := -s -w -X $(BUILDINFO).Version=$(VERSION) -X $(BUILDINFO).Describe=$(DESCRIBE)
+ifneq ($(DIRTY),)
+LDFLAGS += -X $(BUILDINFO).Dirty=1
+endif
 
 .PHONY: all build build-all test test-short test-integration lint lint-fix fmt vet audit clean run help golden diff
 
