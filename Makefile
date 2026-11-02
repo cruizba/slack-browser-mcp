@@ -5,7 +5,7 @@ BIN_DIR ?= bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build build-all test test-short lint lint-fix fmt vet audit clean run help
+.PHONY: all build build-all test test-short test-integration lint lint-fix fmt vet audit clean run help golden diff
 
 all: lint test build-all
 
@@ -25,9 +25,22 @@ test:
 test-short:
 	$(GO) test -short ./...
 
-## lint: Run golangci-lint
+## test-integration: Build both binaries and diff them against the goldens
+test-integration:
+	$(GO) test -tags integration -count=1 ./internal/difftest/
+
+## golden: Re-record the goldens from the TypeScript build, the oracle
+golden:
+	npm run build
+	$(GO) test -tags integration -count=1 -run TestDifferential ./internal/difftest/ -update
+
+## diff: Compare the Go build against the recorded TypeScript behaviour
+diff:
+	$(GO) test -tags integration -count=1 -run TestDifferential ./internal/difftest/
+
+## lint: Run golangci-lint, integration files included
 lint:
-	golangci-lint run ./...
+	golangci-lint run --build-tags=integration ./...
 
 ## lint-fix: Apply the linters that can fix themselves
 lint-fix:

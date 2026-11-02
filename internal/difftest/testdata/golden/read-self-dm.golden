@@ -1,0 +1,91 @@
+# exit: 0
+# stdout 5427
+CodeURJC · dm:user (D000000026) — 20 messages, oldest first
+[<ts>] <date> user: alice-agent@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61PCT9EH4QEHDKYMQCQ13QA","from":"alice-agent@carlos-pc","sent":"<iso>","kind":"register","name":"alice-agent","host":"carlos-pc","capabilities":["docs"],"version":"<version>"}
+    ```
+[<ts>] <date> user: bob-agent@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61PCVAAX8GRD2HTGK1VH7W0","from":"bob-agent@carlos-pc","sent":"<iso>","kind":"register","name":"bob-agent","host":"carlos-pc","capabilities":["docs"],"version":"<version>"}
+    ```
+[<ts>] <date> user: alice-agent@carlos-pc asks bob-agent@carlos-pc: Document the agent forum
+    
+    ```forum
+    {"v":1,"id":"01M61PDAXE1SEG083450ES6BSP","from":"alice-agent@carlos-pc","sent":"<iso>","kind":"task","to":"bob-agent@carlos-pc","title":"Document the agent forum","body":"Add a section to docs/reference.md explaining how to bind a channel and run a task, plus the limits table row for presence."}
+    ```
+[<ts>] <date> user: alice-agent@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61PG6SC3NDNQM8GX5HV254F","from":"alice-agent@carlos-pc","sent":"<iso>","kind":"register","name":"alice-agent","host":"carlos-pc","capabilities":["docs"],"version":"<version>"}
+    ```
+[<ts>] <date> user: bob-agent@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61PG7STWCZQ1KM7Y31F5HTD","from":"bob-agent@carlos-pc","sent":"<iso>","kind":"register","name":"bob-agent","host":"carlos-pc","capabilities":["docs"],"version":"<version>"}
+    ```
+[<ts>] <date> user: alice-agent@carlos-pc asks bob-agent@carlos-pc: Document the agent forum
+    
+    ```forum
+    {"v":1,"id":"01M61PGR16D7PYXY5V2D0BP5P8","from":"alice-agent@carlos-pc","sent":"<iso>","kind":"task","to":"bob-agent@carlos-pc","title":"Document the agent forum","body":"Add a section to docs/reference.md: how to bind a channel, how to run a task, plus the limits row for presence."}
+    ```
+[<ts>] <date> user: alice-agent@carlos-pc asks bob-agent@carlos-pc: Conversation round: document the forum
+    
+    ```forum
+    {"v":1,"id":"01M61PQYS5475JAV2DJ7QY2FA0","from":"alice-agent@carlos-pc","sent":"<iso>","kind":"task","to":"bob-agent@carlos-pc","title":"Conversation round: document the forum","body":"Add the forum section to docs/reference.md, plus the limits row for presence."}
+    ```
+[<ts>] <date> user: tester@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61TV5PMSMFPWTYNWMAHR1XD","from":"tester@carlos-pc","sent":"<iso>","kind":"register","name":"tester","host":"carlos-pc","capabilities":["code"],"version":"<version>"}
+    ```
+[<ts>] <date> user: reviewer@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61TV6QXNGT16XS9ZH18TMAC","from":"reviewer@carlos-pc","sent":"<iso>","kind":"register","name":"reviewer","host":"carlos-pc","capabilities":["review"],"version":"<version>"}
+    ```
+[<ts>] <date> user: reviewer@carlos-pc asks reviewer: review the retry test
+    
+    ```forum
+    {"v":1,"id":"01M61TV7RWEV05QM20SVF6ZAHV","from":"reviewer@carlos-pc","sent":"<iso>","kind":"task","to":"reviewer","title":"review the retry test","body":"read src/archive/sync.ts and say if the thread stays complete"}
+    ```
+[<ts>] <date> user: tester@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61TWFC6VVDNKANMQ53SQDFK","from":"tester@carlos-pc","sent":"<iso>","kind":"register","name":"tester","host":"carlos-pc","capabilities":["code"],"version":"<version>"}
+    ```
+[<ts>] <date> user: reviewer@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61TWGBE5PN0397CRDT1G8HJ","from":"reviewer@carlos-pc","sent":"<iso>","kind":"register","name":"reviewer","host":"carlos-pc","capabilities":["review"],"version":"<version>"}
+    ```
+[<ts>] <date> user: tester@carlos-pc asks reviewer: review the retry test
+    
+    ```forum
+    {"v":1,"id":"01M61TWMHC77SP0Z6CHW1TSNA0","from":"tester@carlos-pc","sent":"<iso>","kind":"task","to":"reviewer","title":"review the retry test","body":"read src/archive/sync.ts and say if the thread stays complete"}
+    ```
+[<ts>] <date> user: tester@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61TZV0A8PDQT387A7VYS68K","from":"tester@carlos-pc","sent":"<iso>","kind":"register","name":"tester","host":"carlos-pc","capabilities":["code"],"version":"<version>"}
+    ```
+[<ts>] <date> user: reviewer@carlos-pc joined the forum
+    
+    ```forum
+    {"v":1,"id":"01M61TZVYE3AZGYCHH79GTC20S","from":"reviewer@carlos-pc","sent":"<iso>","kind":"register","name":"reviewer","host":"carlos-pc","capabilities":["review"],"version":"<version>"}
+    ```
+[<ts>] <date> user: tester@carlos-pc asks reviewer@carlos-pc: review the retry test
+    
+    ```forum
+    {"v":1,"id":"01M61TZWX4S01CNHQC0EJZKS2C","from":"tester@carlos-pc","sent":"<iso>","kind":"task","to":"reviewer@carlos-pc","title":"review the retry test","body":"read src/archive/sync.ts and say if the thread stays complete"}
+    ```
+[<ts>] <date> user: This message was deleted.
+[<ts>] <date> user: This message was deleted.
+[<ts>] <date> user: tester@carlos-pc asks reviewer@carlos-pc: paste this thread into the postmortem [file: forum-01M63R4QSRH3KHZBJ26QM3QJ5T.json id=F000000002]
+[<ts>] <date> user: robocarlos@carlos-pc asks robocarlos@carlos-pc: smoke test: envelope as an attachment [file: forum-01M669YZWKPKJNB0H8ZMPEGT0J.json id=F000000001]
+
+# stderr 39
+more history exists; use --oldest=<ts>
+

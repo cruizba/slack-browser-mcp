@@ -32,3 +32,11 @@ Capture the response, apply the four rules above, and drop the file in. Only
 `POST /api/<method>` is served, and only for the methods the client actually
 calls; an unrecorded method answers `ok: false` with `unknown_method` and logs a
 warning, so a missing fixture shows up instead of hiding.
+
+## What the fake does not do
+
+It answers with the recorded reply whatever the request parameters were. A
+`--limit 3` still yields the twenty recorded messages, because the fixture is a
+whole response, not a query engine. So a scenario through the fake proves the
+client sends the right method and reads the reply the same way; it cannot prove
+filtering, pagination or ordering, which need the unit tests on the ported code.

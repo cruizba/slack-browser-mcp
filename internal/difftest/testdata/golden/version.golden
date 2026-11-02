@@ -1,0 +1,6 @@
+# exit: 0
+# stdout 51
+slack-browser <version> (<version>, local changes)
+
+# stderr 0
+
