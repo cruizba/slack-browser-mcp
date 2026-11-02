@@ -1,0 +1,1763 @@
+{
+  "body": {
+    "channels": [
+      {
+        "context_team_id": "T000000001",
+        "created": 1456785415,
+        "creator": "U000000003",
+        "id": "C000000001",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "random",
+        "name_normalized": "random",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "canvas": {
+            "file_id": "F000000003",
+            "is_empty": true,
+            "is_migrated": true,
+            "quip_thread_id": "JKV9AAqfzEK"
+          },
+          "meeting_notes": {
+            "file_id": "F000000003"
+          },
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            },
+            {
+              "id": "bookmarks",
+              "label": "",
+              "type": "bookmarks"
+            },
+            {
+              "data": {
+                "file_id": "F000000004",
+                "shared_ts": "1787407801.710959"
+              },
+              "id": "Ct0BRYJAKZC6",
+              "label": "Sin t\u00edtulo",
+              "type": "canvas"
+            },
+            {
+              "id": "channel_canvas",
+              "is_disabled": true,
+              "label": "Canvas",
+              "type": "channel_canvas"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            },
+            {
+              "type": "bookmarks"
+            },
+            {
+              "data": {
+                "file_id": "F000000004",
+                "shared_ts": "1787407801.710959"
+              },
+              "id": "Ct0BRYJAKZC6",
+              "label": "Sin t\u00edtulo",
+              "type": "canvas"
+            },
+            {
+              "is_disabled": true,
+              "label": "Canvas",
+              "type": "channel_canvas"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": "A place for non-work-related flimflam, faffing, hodge-podge or jibber-jabber you'd prefer to keep out of more focused work-related channels."
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": "Non-work banter and water cooler conversation"
+        },
+        "unlinked": 0,
+        "updated": 1787407801836
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1456785415,
+        "creator": "U000000003",
+        "id": "C000000002",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": true,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "general",
+        "name_normalized": "general",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "canvas": {
+            "file_id": "F000000005",
+            "is_empty": false,
+            "is_migrated": true,
+            "quip_thread_id": "AbN9AA5fMb7"
+          },
+          "meeting_notes": {
+            "file_id": "F000000005"
+          },
+          "tabs": [
+            {
+              "data": {
+                "file_id": "F000000005",
+                "shared_ts": "1744242633.679729"
+              },
+              "id": "Ct08MATWE170",
+              "label": "Important links",
+              "type": "canvas"
+            },
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            },
+            {
+              "id": "bookmarks",
+              "label": "",
+              "type": "bookmarks"
+            },
+            {
+              "id": "channel_canvas",
+              "is_disabled": true,
+              "label": "Canvas",
+              "type": "channel_canvas"
+            }
+          ],
+          "tabz": [
+            {
+              "data": {
+                "file_id": "F000000005",
+                "shared_ts": "1744242633.679729"
+              },
+              "id": "Ct08MATWE170",
+              "label": "Important links",
+              "type": "canvas"
+            },
+            {
+              "type": "files"
+            },
+            {
+              "type": "bookmarks"
+            },
+            {
+              "is_disabled": true,
+              "label": "Canvas",
+              "type": "channel_canvas"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": "This channel is for team-wide communication and announcements. All team members are in this channel."
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": "Company-wide announcements and work-based matters"
+        },
+        "unlinked": 0,
+        "updated": 1788861917972
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1482148404,
+        "creator": "U000000004",
+        "id": "C000000003",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "development_tips",
+        "name_normalized": "development_tips",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [
+          "angular_tips"
+        ],
+        "properties": {
+          "canvas": {
+            "file_id": "F000000006",
+            "is_empty": true,
+            "is_migrated": true,
+            "quip_thread_id": "KCa9AAGgZct"
+          },
+          "is_dormant": true,
+          "meeting_notes": {
+            "file_id": "F000000006"
+          },
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            },
+            {
+              "id": "bookmarks",
+              "label": "",
+              "type": "bookmarks"
+            },
+            {
+              "id": "channel_canvas",
+              "is_disabled": true,
+              "label": "Canvas",
+              "type": "channel_canvas"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            },
+            {
+              "type": "bookmarks"
+            },
+            {
+              "is_disabled": true,
+              "label": "Canvas",
+              "type": "channel_canvas"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "U000000004",
+          "last_set": 1482148405,
+          "value": "Share angular tips"
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1783967941425
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1486571914,
+        "creator": "U000000004",
+        "id": "C000000004",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "kms",
+        "name_normalized": "kms",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [
+          "openvidu",
+          "kurento"
+        ],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742042230046
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1494329318,
+        "creator": "U000000003",
+        "id": "C000000005",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "operations",
+        "name_normalized": "operations",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            },
+            {
+              "id": "bookmarks",
+              "label": "",
+              "type": "bookmarks"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            },
+            {
+              "type": "bookmarks"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "U000000005",
+          "last_set": 1544600601,
+          "value": "Cualquier cosa menos infraestructura"
+        },
+        "unlinked": 0,
+        "updated": 1776088267776
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1495194932,
+        "creator": "U000000004",
+        "id": "C000000006",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "openvidu2",
+        "name_normalized": "openvidu2",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [
+          "openvidu"
+        ],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            },
+            {
+              "id": "bookmarks",
+              "label": "",
+              "type": "bookmarks"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            },
+            {
+              "type": "bookmarks"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1767887254035
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1530527837,
+        "creator": "U000000005",
+        "id": "C000000008",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "jenkins_ci",
+        "name_normalized": "jenkins_ci",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "U000000005",
+          "last_set": 1530527838,
+          "value": "Notificaciones de los Jobs"
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742047627115
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1539932829,
+        "creator": "U000000004",
+        "id": "C000000010",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "openvidu-testing",
+        "name_normalized": "openvidu-testing",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "U000000004",
+          "last_set": 1539932830,
+          "value": "Canal para organizar las pruebas reales sobre OpenVidu"
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742042229554
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1574930698,
+        "creator": "U000000005",
+        "id": "C000000013",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "aws_bot",
+        "name_normalized": "aws_bot",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true
+        },
+        "purpose": {
+          "creator": "U000000005",
+          "last_set": 1574930699,
+          "value": "AWS chat bot"
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "U000000005",
+          "last_set": 1574951766,
+          "value": "Canal para interactuar con AWS (Modo solo lectura)"
+        },
+        "unlinked": 0,
+        "updated": 1761829607649
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1591607619,
+        "creator": "U000000004",
+        "id": "C000000015",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "mediasoup-controller",
+        "name_normalized": "mediasoup-controller",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644307
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1592416818,
+        "creator": "U000000004",
+        "id": "C000000016",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "openvidu-support",
+        "name_normalized": "openvidu-support",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            },
+            {
+              "id": "bookmarks",
+              "label": "",
+              "type": "bookmarks"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            },
+            {
+              "type": "bookmarks"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1773313157244
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1595354025,
+        "creator": "U000000004",
+        "id": "C000000017",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "meetmonk",
+        "name_normalized": "meetmonk",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053643961
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1597398884,
+        "creator": "U000000004",
+        "id": "C000000018",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "rtmp-exporter",
+        "name_normalized": "rtmp-exporter",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644754
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1600967071,
+        "creator": "U000000001",
+        "id": "C000000020",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "external-elk",
+        "name_normalized": "external-elk",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644336
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1602590559,
+        "creator": "U000000009",
+        "id": "C000000023",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "openvidu-coturn",
+        "name_normalized": "openvidu-coturn",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644716
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1604911574,
+        "creator": "U000000004",
+        "id": "C000000024",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "airtable-changes",
+        "name_normalized": "airtable-changes",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644689
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1613723138,
+        "creator": "U000000004",
+        "id": "C000000025",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "composed-recording-bug",
+        "name_normalized": "composed-recording-bug",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644421
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1614851921,
+        "creator": "U000000004",
+        "id": "C000000026",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "loadtesting-tool",
+        "name_normalized": "loadtesting-tool",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1789668006842
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1617190513,
+        "creator": "U000000004",
+        "id": "C000000029",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": true,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": true,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "members": [
+          "U000000001",
+          "U000000004",
+          "U000000008",
+          "U000000010"
+        ],
+        "name": "mpdm-mica--oscarsotosanchez--4a.santos--carlos.ruiz-1",
+        "name_normalized": "mpdm-mica--oscarsotosanchez--4a.santos--carlos.ruiz-1",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "U000000004",
+          "last_set": 1617190513,
+          "value": "Group messaging with: @mica @oscarsotosanchez @4a.santos @carlos.ruiz"
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1749917536794
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1617705324,
+        "creator": "U000000004",
+        "id": "C000000030",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "openvidu-help",
+        "name_normalized": "openvidu-help",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644792
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1618840806,
+        "creator": "U000000004",
+        "id": "C000000031",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "multi-master",
+        "name_normalized": "multi-master",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644411
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1620119644,
+        "creator": "U000000004",
+        "id": "C000000033",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "call-pro",
+        "name_normalized": "call-pro",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644321
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1625231661,
+        "creator": "U000000001",
+        "id": "C000000034",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "global-accelerator",
+        "name_normalized": "global-accelerator",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644054
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1626430855,
+        "creator": "U000000001",
+        "id": "C000000035",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": true,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": true,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "members": [
+          "U000000001",
+          "U000000003",
+          "U000000004"
+        ],
+        "name": "mpdm-carlos.ruiz--mica--patxi-1",
+        "name_normalized": "mpdm-carlos.ruiz--mica--patxi-1",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "U000000001",
+          "last_set": 1626430855,
+          "value": "Group messaging with: @carlos.ruiz @mica @patxi"
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1749917536970
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1633334510,
+        "creator": "U000000004",
+        "id": "C000000038",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "dani-support",
+        "name_normalized": "dani-support",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644395
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1642609692,
+        "creator": "U000000001",
+        "id": "C000000043",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "forced-codec",
+        "name_normalized": "forced-codec",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true
+        },
+        "purpose": {
+          "creator": "U000000001",
+          "last_set": 1642609693,
+          "value": "Forced codec feature"
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644442
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1666261635,
+        "creator": "U000000011",
+        "id": "C000000044",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "speech-to-text",
+        "name_normalized": "speech-to-text",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644243
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1675789363,
+        "creator": "U000000011",
+        "id": "C000000045",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "drones",
+        "name_normalized": "drones",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "is_dormant": true,
+          "tabs": [
+            {
+              "id": "bookmarks",
+              "label": "",
+              "type": "bookmarks"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "bookmarks"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1742053644698
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1676447157,
+        "creator": "U000000004",
+        "id": "C000000046",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "openvidu-marketing",
+        "name_normalized": "openvidu-marketing",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {
+          "tabs": [
+            {
+              "id": "files",
+              "label": "",
+              "type": "files"
+            },
+            {
+              "id": "Ct07HNKQC0MT",
+              "label": "",
+              "type": "folder"
+            }
+          ],
+          "tabz": [
+            {
+              "type": "files"
+            },
+            {
+              "id": "Ct07HNKQC0MT",
+              "type": "folder"
+            }
+          ]
+        },
+        "purpose": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1771581024915
+      },
+      {
+        "context_team_id": "T000000001",
+        "created": 1680605359,
+        "creator": "U000000001",
+        "id": "C000000048",
+        "is_archived": false,
+        "is_channel": true,
+        "is_ext_shared": false,
+        "is_general": false,
+        "is_group": false,
+        "is_im": false,
+        "is_mpim": false,
+        "is_org_shared": false,
+        "is_pending_ext_shared": false,
+        "is_private": false,
+        "is_shared": false,
+        "is_slackbot_channel_eligible": false,
+        "is_slackbot_channel_enabled": false,
+        "name": "ci-notifications",
+        "name_normalized": "ci-notifications",
+        "parent_conversation": null,
+        "pending_connected_team_ids": [],
+        "pending_shared": [],
+        "previous_names": [],
+        "properties": {},
+        "purpose": {
+          "creator": "U000000001",
+          "last_set": 1680605360,
+          "value": "This channel is mainly for CI/CD notifications"
+        },
+        "shared_team_ids": [
+          "T000000001"
+        ],
+        "topic": {
+          "creator": "",
+          "last_set": 0,
+          "value": ""
+        },
+        "unlinked": 0,
+        "updated": 1724298349762
+      }
+    ],
+    "ok": true,
+    "response_metadata": {
+      "next_cursor": ""
+    }
+  },
+  "status": 200
+}

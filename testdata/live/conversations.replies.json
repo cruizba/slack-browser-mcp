@@ -1,0 +1,147 @@
+{
+  "body": {
+    "has_more": false,
+    "messages": [
+      {
+        "blocks": [
+          {
+            "block_id": "AsQCb",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "tester@carlos-pc asks reviewer@carlos-pc: paste this thread into the postmortem",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "display_as_bot": false,
+        "files": [
+          {
+            "created": 1793274830,
+            "display_as_bot": false,
+            "edit_link": "{{BASE}}/files/U000000001/F000000002/forum-01m63r4qsrh3khzbj26qm3qj5t.json/edit",
+            "editable": true,
+            "external_type": "",
+            "file_access": "visible",
+            "filetype": "json",
+            "has_rich_preview": false,
+            "id": "F000000002",
+            "is_external": false,
+            "is_modified_by_ai": false,
+            "is_public": false,
+            "is_starred": false,
+            "lines": 1,
+            "lines_more": 0,
+            "mimetype": "text/plain",
+            "mode": "snippet",
+            "name": "forum-01M63R4QSRH3KHZBJ26QM3QJ5T.json",
+            "permalink": "{{BASE}}/files/U000000001/F000000002/forum-01m63r4qsrh3khzbj26qm3qj5t.json",
+            "permalink_public": "https://slack-files.com/T000000001-F000000002-ccbce05f42",
+            "pretty_type": "JSON",
+            "preview": "{\"v\":1,\"id\":\"01M63R4QSRH3KHZBJ26QM3QJ5T\",\"from\":\"tester@carlos-pc\",\"sent\":\"2026-10-29T12:20:00.000Z\",\"kind\":\"task\",\"to\":\"reviewer@carlos-pc\",\"title\":\"paste this thread into the postmortem\",\"body\":\"Thread pegado de #incident (2026-10-29), tal cual:\\n\\nana  09:12  el indexer vuelve a estar ca\u00eddo, el healthcheck da 503\\nluis 09:13  \u00bfotra vez el lock de sync.ts?\\nana  09:13  pinta a eso. Log:\\n\\n```\\nERROR archive/sync.ts:214 lock \\\"sync\\\" held by pid 4812 for 00:41:07\\nretrying in 30s (attempt 7/10)\\n```\\n\\nluis 09:15  ese proceso muri\u00f3 el viernes, el lock es un fichero hu\u00e9rfano\\nana  09:16  si, `rm ~/.cache/slack-browser-mcp/sync.lock` y arranca bien\\nluis 09:17  hay que hacer que el lock caduque, no que lo borremos a mano\\n\\n```ts\\nconst lock = await acquire({ path, staleAfterMs: 10 * 60_000 })\\nif (!lock) throw new Error(\\\"another sync is running\\\")\\n```\\n\\nana  09:20  \\\"staleAfterMs\\\" ya existe pero el default es Infinity, por eso no caduca\\nluis 09:21  cambiamos el default a 10m y a\u00f1adimos el pid al mensaje...",
+            "preview_highlight": "<div class=\"CodeMirror cm-s-default CodeMirrorServer\">\n<div class=\"CodeMirror-code\">\n<div><pre>{<span class=\"cm-string cm-property\">&quot;v&quot;</span>:<span class=\"cm-number\">1</span>,<span class=\"cm-string cm-property\">&quot;id&quot;</span>:<span class=\"cm-string\">&quot;01M63R4QSRH3KHZBJ26QM3QJ5T&quot;</span>,<span class=\"cm-string cm-property\">&quot;from&quot;</span>:<span class=\"cm-string\">&quot;tester@carlos-pc&quot;</span>,<span class=\"cm-string cm-property\">&quot;sent&quot;</span>:<span class=\"cm-string\">&quot;2026-10-29T12:20:00.000Z&quot;</span>,<span class=\"cm-string cm-property\">&quot;kind&quot;</span>:<span class=\"cm-string\">&quot;task&quot;</span>,<span class=\"cm-string cm-property\">&quot;to&quot;</span>:<span class=\"cm-string\">&quot;reviewer@carlos-pc&quot;</span>,<span class=\"cm-string cm-property\">&quot;title&quot;</span>:<span class=\"cm-string\">&quot;paste this thread into the postmortem&quot;</span>,<span class=\"cm-string cm-property\">&quot;body&quot;</span>:<span class=\"cm-string\">&quot;Thread pegado de #incident (2026-10-29), tal cual:\\n\\nana  09:12  el indexer vuelve a estar ca\u00eddo, el healthcheck da 503\\nluis 09:13  \u00bfotra vez el lock de sync.ts?\\nana  09:13  pinta a eso. Log:\\n\\n```\\nERROR archive/sync.ts:214 lock \\&quot;sync\\&quot; held by pid 4812 for 00:41:07\\nretrying in 30s (attempt 7/10)\\n```\\n\\nluis 09:15  ese proceso muri\u00f3 el viernes, el lock es un fichero hu\u00e9rfano\\nana  09:16  si, `rm ~/.cache/slack-browser-mcp/sync.lock` y arranca bien\\nluis 09:17  hay que hacer que el lock caduque, no que lo borremos a mano\\n\\n```ts\\nconst lock = await acquire({ path, staleAfterMs: 10 * 60_000 })\\nif (!lock) throw new Error(\\&quot;another sync is running\\&quot;)\\n```\\n\\nana  09:20  \\&quot;staleAfterMs\\&quot; ya existe pero el default es Infinity, por eso no caduca\\nluis 09:21  cambiamos el default a 10m y a\u00f1adimos el pid al mensaje...</span></pre></div>\n</div>\n</div>\n",
+            "preview_is_truncated": true,
+            "public_url_shared": false,
+            "size": 4927,
+            "skipped_shares": true,
+            "timestamp": 1793274830,
+            "title": "user",
+            "url_private": "{{BASE}}/files-pri/T000000001-F000000002/forum-01m63r4qsrh3khzbj26qm3qj5t.json",
+            "url_private_download": "{{BASE}}/files-pri/T000000001-F000000002/download/forum-01m63r4qsrh3khzbj26qm3qj5t.json",
+            "user": "U000000001",
+            "user_team": "T000000001",
+            "username": ""
+          }
+        ],
+        "is_locked": false,
+        "last_read": "1793274833.726819",
+        "latest_reply": "1793274833.726819",
+        "reply_count": 1,
+        "reply_users": [
+          "U000000001"
+        ],
+        "reply_users_count": 1,
+        "subscribed": true,
+        "text": "tester@carlos-pc asks reviewer@carlos-pc: paste this thread into the postmortem",
+        "thread_ts": "1793274832.221059",
+        "ts": "1793274832.221059",
+        "type": "message",
+        "upload": true,
+        "user": "U000000001"
+      },
+      {
+        "blocks": [
+          {
+            "block_id": "TBY",
+            "elements": [
+              {
+                "elements": [
+                  {
+                    "text": "reviewer@carlos-pc finished 01M63R4QSRH3KHZBJ26QM3QJ5T: postmortem written, lock default fixed",
+                    "type": "text"
+                  }
+                ],
+                "type": "rich_text_section"
+              }
+            ],
+            "type": "rich_text"
+          }
+        ],
+        "display_as_bot": false,
+        "files": [
+          {
+            "created": 1793274832,
+            "display_as_bot": false,
+            "edit_link": "{{BASE}}/files/U000000001/F000000015/forum-01m63r4skyfq9aeq3sb2xhkhsw.json/edit",
+            "editable": true,
+            "external_type": "",
+            "file_access": "visible",
+            "filetype": "json",
+            "has_rich_preview": false,
+            "id": "F000000015",
+            "is_external": false,
+            "is_modified_by_ai": false,
+            "is_public": false,
+            "is_starred": false,
+            "lines": 1,
+            "lines_more": 0,
+            "mimetype": "text/plain",
+            "mode": "snippet",
+            "name": "forum-01M63R4SKYFQ9AEQ3SB2XHKHSW.json",
+            "permalink": "{{BASE}}/files/U000000001/F000000015/forum-01m63r4skyfq9aeq3sb2xhkhsw.json",
+            "permalink_public": "https://slack-files.com/T000000001-F000000015-5f47557cc2",
+            "pretty_type": "JSON",
+            "preview": "{\"v\":1,\"id\":\"01M63R4SKYFQ9AEQ3SB2XHKHSW\",\"from\":\"reviewer@carlos-pc\",\"sent\":\"2026-10-29T12:34:00.000Z\",\"kind\":\"result\",\"task\":\"01M63R4QSRH3KHZBJ26QM3QJ5T\",\"ok\":true,\"body\":\"Hecho. El postmortem est\u00e1 en docs/postmortems/2026-10-29-indexer.md y cita el hilo entero.\\n\\n```\\nlock staleAfterMs default: Infinity -> 10m\\nerror: lock \\\"sync\\\" held by pid 4812 (stale after 10m)\\n```\"}",
+            "preview_highlight": "<div class=\"CodeMirror cm-s-default CodeMirrorServer\">\n<div class=\"CodeMirror-code\">\n<div><pre>{<span class=\"cm-string cm-property\">&quot;v&quot;</span>:<span class=\"cm-number\">1</span>,<span class=\"cm-string cm-property\">&quot;id&quot;</span>:<span class=\"cm-string\">&quot;01M63R4SKYFQ9AEQ3SB2XHKHSW&quot;</span>,<span class=\"cm-string cm-property\">&quot;from&quot;</span>:<span class=\"cm-string\">&quot;reviewer@carlos-pc&quot;</span>,<span class=\"cm-string cm-property\">&quot;sent&quot;</span>:<span class=\"cm-string\">&quot;2026-10-29T12:34:00.000Z&quot;</span>,<span class=\"cm-string cm-property\">&quot;kind&quot;</span>:<span class=\"cm-string\">&quot;result&quot;</span>,<span class=\"cm-string cm-property\">&quot;task&quot;</span>:<span class=\"cm-string\">&quot;01M63R4QSRH3KHZBJ26QM3QJ5T&quot;</span>,<span class=\"cm-string cm-property\">&quot;ok&quot;</span>:<span class=\"cm-atom\">true</span>,<span class=\"cm-string cm-property\">&quot;body&quot;</span>:<span class=\"cm-string\">&quot;Hecho. El postmortem est\u00e1 en docs/postmortems/2026-10-29-indexer.md y cita el hilo entero.\\n\\n```\\nlock staleAfterMs default: Infinity -&gt; 10m\\nerror: lock \\&quot;sync\\&quot; held by pid 4812 (stale after 10m)\\n```&quot;</span>}</pre></div>\n</div>\n</div>\n",
+            "preview_is_truncated": false,
+            "public_url_shared": false,
+            "size": 379,
+            "skipped_shares": true,
+            "timestamp": 1793274832,
+            "title": "user",
+            "url_private": "{{BASE}}/files-pri/T000000001-F000000015/forum-01m63r4skyfq9aeq3sb2xhkhsw.json",
+            "url_private_download": "{{BASE}}/files-pri/T000000001-F000000015/download/forum-01m63r4skyfq9aeq3sb2xhkhsw.json",
+            "user": "U000000001",
+            "user_team": "T000000001",
+            "username": ""
+          }
+        ],
+        "parent_user_id": "U000000001",
+        "text": "reviewer@carlos-pc finished 01M63R4QSRH3KHZBJ26QM3QJ5T: postmortem written, lock default fixed",
+        "thread_ts": "1793274832.221059",
+        "ts": "1793274833.726819",
+        "type": "message",
+        "upload": true,
+        "user": "U000000001"
+      }
+    ],
+    "ok": true
+  },
+  "status": 200
+}
