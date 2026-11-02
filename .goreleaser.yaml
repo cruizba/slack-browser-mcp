@@ -1,0 +1,63 @@
+# One Linux runner builds every target: the module is CGO-free by design (modernc
+# SQLite, not the cgo binding), which is what makes the matrix a matrix instead of
+# three jobs on three machines.
+version: 2
+
+project_name: slack-browser-mcp
+
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  - id: slack-browser
+    main: ./cmd/slack-browser
+    binary: slack-browser
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/cruizba/slack-browser-mcp/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/cruizba/slack-browser-mcp/internal/buildinfo.Describe={{ .Tag }}
+      - -X github.com/cruizba/slack-browser-mcp/internal/buildinfo.Dirty=
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    # Windows gets a zip because Explorer opens it; everything else gets a tar.gz,
+    # which keeps the mode bits an installer needs.
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - docs/reference.md
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    Verification: `sha256sum -c slack-browser-mcp_{{ .Version }}_checksums.txt`
