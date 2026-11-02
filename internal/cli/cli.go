@@ -30,6 +30,8 @@ const (
 	cmdStatus  = "status"
 	cmdRead    = "read"
 	cmdSend    = "send"
+	cmdForum   = "agent-forum"
+	cmdAssist  = "assist"
 	cmdArchive = "archive"
 
 	subList  = "list"
@@ -93,40 +95,40 @@ func Run(args []string, ctx Context) int {
 	return dispatch(ctx, name, parsed)
 }
 
-// dispatch runs the command the table resolved the name to.
-func dispatch(ctx Context, name string, parsed ParsedArgs) int {
-	switch name {
-	case cmdAccounts:
-		return commandAccounts(ctx)
-	case cmdWorkspace:
-		return commandWorkspace(ctx, parsed)
-	case cmdVersion:
-		emit(ctx.Stdout, "%s %s\n", program, buildinfo.Line())
+// dispatch runs the command the table resolved the name to. The table is a map so
+// adding a command is one line and cannot change the order the others run in.
+var dispatchTable = map[string]func(Context, ParsedArgs) int{
+	cmdAccounts:  func(ctx Context, _ ParsedArgs) int { return commandAccounts(ctx) },
+	cmdWorkspace: commandWorkspace,
+	cmdVersion:   func(ctx Context, _ ParsedArgs) int { return commandVersion(ctx) },
+	cmdStatus:    commandStatus,
+	cmdRead:      commandRead,
+	cmdThread:    commandThread,
+	cmdSend:      commandSend,
+	cmdAssist:    commandAssist,
+	cmdArchive:   commandArchive,
+	cmdForum:     commandForum,
+	"sync":       commandSync,
+	"login":      commandLogin,
+	"serve":      func(ctx Context, _ ParsedArgs) int { return commandServe(ctx) },
+}
 
-		return 0
-	case cmdStatus:
-		return commandStatus(ctx, parsed)
-	case cmdRead:
-		return commandRead(ctx, parsed)
-	case cmdThread:
-		return commandThread(ctx, parsed)
-	case cmdSend:
-		return commandSend(ctx, parsed)
-	case "assist":
-		return commandAssist(ctx, parsed)
-	case cmdArchive:
-		return commandArchive(ctx, parsed)
-	case "sync":
-		return commandSync(ctx, parsed)
-	case "login":
-		return commandLogin(ctx, parsed)
-	case "serve":
-		return commandServe(ctx)
-	default:
+func dispatch(ctx Context, name string, parsed ParsedArgs) int {
+	handler, known := dispatchTable[name]
+	if !known {
 		emit(ctx.Stderr, "%s %s is not ported yet.\n", program, name)
 
 		return 1
 	}
+
+	return handler(ctx, parsed)
+}
+
+// commandVersion prints the build's version and where its commit stands.
+func commandVersion(ctx Context) int {
+	emit(ctx.Stdout, "%s %s\n", program, buildinfo.Line())
+
+	return 0
 }
 
 // unknown handles the three spellings of the index page and the commands nobody
