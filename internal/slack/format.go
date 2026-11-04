@@ -18,9 +18,16 @@ var (
 	groupDMName   = regexp.MustCompile(`^mpdm-(.+?)(?:-\d+)?$`)
 )
 
-// FormatTS is the `ts` as a person reads a time, keeping the raw value elsewhere
-// so a follow-up call can address the same message.
+// FormatTS is the `ts` as a person reads a time, in the zone the machine is set
+// to rather than in UTC, the clock the Slack client shows. The raw value is kept
+// elsewhere, so a follow-up call can address the same message.
 func FormatTS(ts string) string {
+	return formatTSIn(ts, time.Local)
+}
+
+// formatTSIn takes the zone as an argument so a test can pin one instead of
+// inheriting whichever zone the machine running the tests happens to have.
+func formatTSIn(ts string, loc *time.Location) string {
 	seconds, _, _ := strings.Cut(ts, ".")
 
 	parsed, err := strconv.ParseInt(seconds, 10, 64)
@@ -28,7 +35,7 @@ func FormatTS(ts string) string {
 		return ts
 	}
 
-	return time.Unix(parsed, 0).UTC().Format("2006-01-02 15:04:05")
+	return time.Unix(parsed, 0).In(loc).Format("2006-01-02 15:04:05")
 }
 
 func groupDMHandles(name string) []string {

@@ -339,11 +339,12 @@ so a result set that spans workspaces is never ambiguous.
   and a redacted 120-char preview. The full text is never stored, so the audit
   cannot become a second copy of secrets someone pasted into a channel.
 
-Every message line is `[<ts>] <iso time> <author>: <text>`, plus
+Every message line is `[<ts>] <local time> <author>: <text>`, plus
 `(N replies, thread_ts <ts>)` when a parent has replies, plus one
-`[file: <name> id=<file id>]` per attachment. The raw `ts` is the handle for
-follow-up calls (`thread_ts`, `oldest`, `latest`); the file id is the handle for
-`read_file`.
+`[file: <name> id=<file id>]` per attachment. The readable time is the zone the
+machine is set to, the clock the user sees in the Slack client, not UTC; the raw
+`ts` is the UTC-based handle for follow-up calls (`thread_ts`, `oldest`,
+`latest`), and the file id is the handle for `read_file`.
 
 Names come from the directory described in §7: `<@U…>`, `<#C…>`, `<!subteam^S…>`,
 `<!here>` and links are resolved at render time, so the model never reads a raw id

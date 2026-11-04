@@ -3,6 +3,7 @@ package slack_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cruizba/slack-browser-mcp/internal/slack"
 )
@@ -91,8 +92,10 @@ func TestEntitiesRoundTrip(t *testing.T) {
 func TestFormatTS(t *testing.T) {
 	t.Parallel()
 
-	if got := slack.FormatTS("1792500000.000100"); got != "2026-10-20 12:40:00" {
-		t.Fatalf("FormatTS = %q", got)
+	want := time.Unix(1792500000, 0).In(time.Local).Format("2006-01-02 15:04:05")
+
+	if got := slack.FormatTS("1792500000.000100"); got != want {
+		t.Fatalf("FormatTS = %q, want the host zone's %q", got, want)
 	}
 
 	if got := slack.FormatTS("not-a-ts"); got != "not-a-ts" {
@@ -152,9 +155,13 @@ func TestRenderMessages(t *testing.T) {
 		Scope: &slack.ReferenceScope{User: func(string) string { return "Michel" }},
 	})
 
-	want := "[1792500000.000100] 2026-10-20 12:40:00 Ana: hello @Michel  (2 replies, thread_ts 1792500000.000100)\n" +
-		"[1792500060.000200] 2026-10-20 12:41:00 Ana: line one\n    line two\n" +
-		"[1792500120.000300] 2026-10-20 12:42:00 bot: "
+	local := func(seconds int64) string {
+		return time.Unix(seconds, 0).In(time.Local).Format("2006-01-02 15:04:05")
+	}
+
+	want := "[1792500000.000100] " + local(1792500000) + " Ana: hello @Michel  (2 replies, thread_ts 1792500000.000100)\n" +
+		"[1792500060.000200] " + local(1792500060) + " Ana: line one\n    line two\n" +
+		"[1792500120.000300] " + local(1792500120) + " bot: "
 
 	if rendered != want {
 		t.Fatalf("RenderMessages:\n%s\nwant:\n%s", rendered, want)
