@@ -20,7 +20,7 @@ Specifications live in `docs/implementation-spec.md`,
 
 ## Go development
 
-Before any Go coding, review, debugging, troubleshooting, or setup task, load the `samber/cc-skills-golang@golang-how-to` skill first — it routes to whichever other Go skills the task needs.
+Before any Go coding, review, debugging, troubleshooting, or setup task, load the `golang-how-to` skill first — it routes to whichever other Go skills the task needs.
 
 Layout: `cmd/` holds the binaries, `internal/` everything else, one package per
 domain (`config`, `auth`, `slack`, `archive`, `forum`, `mcp`, `cli`).
@@ -35,4 +35,8 @@ what actually exercises them. `CGO_ENABLED=0` must stay buildable, which is why
 SQLite is `modernc.org/sqlite` and not the cgo binding.
 
 The vendored agent skills are in `.agents/skills/`, copied from
-`samber/cc-skills-golang`; `/golang-how-to` routes between them.
+`samber/cc-skills-golang`; `/golang-how-to` routes between them. The commit they
+came from is pinned in `.agents/upstream.json`: bump the `ref`, run
+`make skills-sync`, and commit the diff it reports. That target deletes the
+directory and copies it again, so an edit inside a skill is lost on the next
+sync — project rules belong in this file instead.

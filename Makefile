@@ -8,11 +8,19 @@ DESCRIBE ?= $(shell git describe --tags --always 2>/dev/null)
 DIRTY ?= $(shell git status --porcelain 2>/dev/null | head -1)
 BUILDINFO := github.com/cruizba/slack-browser-mcp/internal/buildinfo
 LDFLAGS := -s -w -X $(BUILDINFO).Version=$(VERSION) -X $(BUILDINFO).Describe=$(DESCRIBE)
+
+# The vendored skills are a copy, not a dependency, so the commit they came from is
+# pinned in .agents/upstream.json and `skills-sync` re-takes it. Only skills/ and the
+# license come across: rules/ serves harnesses this project does not vendor for.
+SKILLS_MANIFEST := .agents/upstream.json
+SKILLS_DIR := .agents/skills
+SKILLS_REPO := $(shell test -f $(SKILLS_MANIFEST) && sed -n 's/.*"repo"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' $(SKILLS_MANIFEST))
+SKILLS_REF := $(shell test -f $(SKILLS_MANIFEST) && sed -n 's/.*"ref"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' $(SKILLS_MANIFEST))
 ifneq ($(DIRTY),)
 LDFLAGS += -X $(BUILDINFO).Dirty=1
 endif
 
-.PHONY: all build build-all test test-short test-integration lint lint-fix fmt vet audit clean run help golden diff
+.PHONY: all build build-all test test-short test-integration lint lint-fix fmt vet audit clean run help golden diff skills-sync
 
 all: lint test build-all
 
@@ -79,6 +87,23 @@ vet:
 ## audit: Check the dependencies for known vulnerabilities
 audit:
 	govulncheck ./...
+
+## skills-sync: Re-vendor .agents/skills from the upstream commit pinned in .agents/upstream.json
+skills-sync:
+	@test -n "$(SKILLS_REPO)" && test -n "$(SKILLS_REF)" || { echo "skills-sync: $(SKILLS_MANIFEST) must define repo and ref" >&2; exit 1; }
+	@set -eu; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT INT TERM; \
+	git init -q "$$tmp"; \
+	git -C "$$tmp" remote add origin "$(SKILLS_REPO)"; \
+	if ! git -C "$$tmp" fetch -q --depth 1 origin "$(SKILLS_REF)"; then \
+		echo "skills-sync: cannot fetch $(SKILLS_REF) from $(SKILLS_REPO); the ref must be a full 40-character commit id" >&2; \
+		exit 1; \
+	fi; \
+	git -C "$$tmp" checkout -q FETCH_HEAD; \
+	test -d "$$tmp/skills"; \
+	rm -rf "$(SKILLS_DIR)"; \
+	cp -R "$$tmp/skills" "$(SKILLS_DIR)"; \
+	cp "$$tmp/LICENSE" .agents/LICENSE; \
+	echo "skills-sync: $(SKILLS_DIR) at $(SKILLS_REF), $$(find "$(SKILLS_DIR)" -type f | wc -l | tr -d ' ') files"
 
 ## clean: Remove build artifacts
 clean:
